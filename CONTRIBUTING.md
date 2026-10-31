@@ -16,7 +16,7 @@ English: [CONTRIBUTING.en.md](CONTRIBUTING.en.md)。
 
 ## 哪些区域现在收 PR
 
-Lite 版是从[社区版](https://github.com/Nice9Tian/PromptCut_Community)裁出来的：去掉了局域网和手机。在**两边文件内容一致**的区域，你的 PR 能干净地合回社区版；在被裁过的区域，合回去要人工搬，所以暂时只收 issue 不收 PR。
+Lite 版由脚本从[社区版](https://github.com/Nice9Tian/PromptCut_Community)生成：去掉了局域网和手机，根目录除了 `lite/` 都是生成结果。两边共有的代码请到社区版提 PR，这里只收 Lite 才有的差异。
 
 | 区域 | 现在 |
 |---|---|
@@ -54,4 +54,4 @@ npm test src/你改的/那个.test.mjs   # 也可以只跑一部分
 
 ## 许可
 
-你的贡献按 [MIT](LICENSE) 授权。这意味着上游也可以把它用在闭源的商业版里（MIT 允许，署名会保留）。提交 PR 即表示你同意这一点。
+你的贡献按 [MIT](LICENSE) 授权。这意味着它也会进入继承这份代码的闭源商业版（MIT 允许，署名会保留）。提交 PR 即表示你同意这一点。

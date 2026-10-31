@@ -1,5 +1,5 @@
 diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
-index 2f3a452fc9874dc97171415fcfd0de68cd0de875..cdb168db2650c8e792a1c10169a54fa2738790a3 100644
+index 365c0365dec8a453cdb138965c760acc5c2f0454..87c50e03fb276113ea51a7f8508784cf77e397ee 100644
 --- a/CONTRIBUTING.md
 +++ b/CONTRIBUTING.md
 @@ -1,4 +1,4 @@
@@ -12,8 +12,8 @@ index 2f3a452fc9874dc97171415fcfd0de68cd0de875..cdb168db2650c8e792a1c10169a54fa2
  
  ## 哪些区域现在收 PR
  
--社区版和闭源的商业版是同一套代码的两个版本，上游会把社区版的改动合回去。在**两边文件内容一致**的区域，你的 PR 能干净地合回上游；在还没拆开接缝的区域，合回去要人工搬，所以暂时只收 issue 不收 PR。
-+Lite 版是从[社区版](https://github.com/Nice9Tian/PromptCut_Community)裁出来的：去掉了局域网和手机。在**两边文件内容一致**的区域，你的 PR 能干净地合回社区版；在被裁过的区域，合回去要人工搬，所以暂时只收 issue 不收 PR。
+-这个仓库是上游：闭源的商业版和 Lite 版都继承这里的代码，合进 `main` 的改动会带过去。下面这些区域都收 PR。
++Lite 版由脚本从[社区版](https://github.com/Nice9Tian/PromptCut_Community)生成：去掉了局域网和手机，根目录除了 `lite/` 都是生成结果。两边共有的代码请到社区版提 PR，这里只收 Lite 才有的差异。
  
  | 区域 | 现在 |
  |---|---|
