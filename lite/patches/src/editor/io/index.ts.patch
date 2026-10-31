@@ -1,0 +1,117 @@
+diff --git a/src/editor/io/index.ts b/src/editor/io/index.ts
+index ddc1d06027d2a34d46c0b7106507f9bbcd418b55..cd71956359399323f4ebed4a17597f96bf4fd462 100644
+--- a/src/editor/io/index.ts
++++ b/src/editor/io/index.ts
+@@ -10,7 +10,6 @@ import { prerenderBase } from "../../render/prerender";
+ import { exportGate } from "../media/assetTiers";
+ import { awaitingUploaderMessage } from "../../render/mediaTier";
+ import { parseExportSkipped, type ExportSkipped } from "./exportSkipped";
+-import { holdOnlineQueueOriginals } from "../../online/mediaUploadQueue";
+ import { blockedByReadOnly } from "../readOnlyCore";
+ import { viewOnlyText } from "./viewOnly";
+ 
+@@ -49,7 +48,6 @@ export function registerMediaFile(id: string, file: File): void {
+ export async function importVideoFiles(files: FileList | File[], { place = true }: { place?: boolean } = {}): Promise<string[]> {
+   // 只读项目(游客):导入素材是写。按钮已置灰,走到这里是拖放之类没盖到的路
+   if (blockedByReadOnly()) throw new Error(viewOnlyText());
+-  const releaseHold = holdOnlineQueueOriginals();
+   try {
+     const fileArray = Array.from(files);
+     const mediaIds: string[] = [];
+@@ -104,7 +102,7 @@ export async function importVideoFiles(files: FileList | File[], { place = true
+ 
+     return mediaIds;
+   } finally {
+-    releaseHold();
++    // no-op
+   }
+ }
+ 
+@@ -351,11 +349,10 @@ export async function exportVideo(
+      * 交给预渲染进程之后是导出任务的 id(取消、取件、打开目录都认后一个;前一个仍然能用来取消)
+      */
+     onStart?: (id: string) => void;
+-  } & OnlineExportOptions = {},
++    frames?: string;
++    workers?: number | string;
++  } = {},
+ ): Promise<{ outDir: string; id: string; written?: boolean; skippedMedia?: ExportSkipped[] }> {
+-  // c10a 第 11.1 节:在线页面没有预渲染进程,在浏览器里逐帧导出。
+-  // `ONLINE` 按需取:`mode.ts` 读 `import.meta.env`,Node 单测里载入本模块时没有它
+-  if ((await import("../../online/mode")).ONLINE) return exportVideoOnline(opts);
+   // 导出开始时先把未生成、缺失或过期的声音生成好,再出画面(`product/rendering.md`「有声动效卡」)。项目快照在这之后才取
+   const prep = await prepareSoundsBeforeExport(opts);
+   try {
+@@ -505,8 +502,6 @@ function exportJobUrl(id: string, suffix = ""): string {
+ 
+ /** 中止一次导出。渲染进程和它拉起的 Chrome / ffmpeg 都会被结束。 */
+ export async function cancelExport(id: string): Promise<void> {
+-  const online = onlineJobs.get(id);
+-  if (online) { online.controller.abort(); return; }
+   // 还在「先生成声音」那一步:停掉生成(没提交的那一段不留东西);已经交给预渲染进程的,转去取消那个任务
+   const prep = soundPrepJobs.get(id);
+   if (prep) {
+@@ -524,11 +519,6 @@ export async function revealExport(id: string): Promise<void> {
+ 
+ /** 取回某个产物(preview.mp4 / overlay.mov),用来写进用户选的位置 */
+ export async function fetchExportFile(id: string, name: string): Promise<Blob> {
+-  const online = onlineJobs.get(id);
+-  if (online) {
+-    if (!online.blob) throw new Error("这次导出已经直接写到选的文件里了");
+-    return online.blob;
+-  }
+   const r = await fetch(exportJobUrl(id, `/file/${encodeURIComponent(name)}`));
+   if (!r.ok) throw new Error(`取不到 ${name}:${await r.text()}`);
+   return r.blob();
+@@ -536,12 +526,6 @@ export async function fetchExportFile(id: string, name: string): Promise<Blob> {
+ 
+ /** Stream a finished export directly into a File System Access writable. */
+ export async function streamExportFile(id: string, name: string, writable: FileSystemWritableFileStream): Promise<void> {
+-  const online = onlineJobs.get(id);
+-  if (online) {
+-    // 在线导出:已经直接写进选的文件的,这里什么都不用做;攒在内存里的,整块写过去
+-    if (online.blob) await writable.write(online.blob);
+-    return;
+-  }
+   const r = await fetch(exportJobUrl(id, `/file/${encodeURIComponent(name)}`));
+   if (!r.ok) throw new Error(`取不到 ${name}:${await r.text()}`);
+   if (!r.body) throw new Error(`取不到 ${name}:响应没有数据流`);
+@@ -555,18 +539,6 @@ export async function streamExportFile(id: string, name: string, writable: FileS
+   } finally { reader.releaseLock(); }
+ }
+ 
+-/* ------------------------------------------------------------------ *
+- * 在线页面的逐帧导出(`docs/plan/c10a-contract.md` 第 11.1 节):实现在 `src/export/onlineExport.ts`,这里按需载入
+- * (浏览器导出那一串在 Node 单测里载不进来;`mode.ts` 读 `import.meta.env`,单测里也没有)。任务表在这里,取消、取件按 id 找回来。
+- * ------------------------------------------------------------------ */
+-
+-export type { OnlineExportOptions } from "../../export/onlineExport";
+-import type { OnlineExportOptions, OnlineJob } from "../../export/onlineExport";
+-const onlineJobs = new Map<string, OnlineJob>();
+-async function exportVideoOnline(opts: Parameters<typeof exportVideo>[0] & OnlineExportOptions): Promise<{ outDir: string; id: string; written?: boolean }> {
+-  return (await import("../../export/onlineExport")).exportVideoOnline(opts ?? {}, onlineJobs);
+-}
+-
+ declare global {
+   interface Window {
+     __pcIo?: Record<string, unknown>;
+@@ -576,17 +548,14 @@ declare global {
+ if (typeof window !== "undefined") {
+   // 临时验证出口：puppeteer 无头验证时直接调用这四个函数（不用模拟 <input type=file>）。
+   window.__pcIo = { importVideoFiles, importProjectFile, importSrtFile, parseSrt, exportProjectJson, exportVideo, setMediaTranscript: (mediaId: string, transcript: any) => actions.setMediaTranscript(mediaId, transcript) };
+-  // 探针(`scripts/probes/lowmem-export-compare.mjs`、`online-export-modes-probe.mjs`):在当前页面上跑一次浏览器逐帧导出,回产物字节(base64)与统计。
+-  // 不经「另存为」、不下载;`originals: false` 时卡片一律由导出页活渲(桌面运行环境没有文档服务);参数见 `exportVideoBrowserProbe`
+-  window.__pcIo.exportVideoBrowser = async (o: { maxFrames?: number; originals?: boolean; sounds?: boolean; mode?: "fast" | "full"; capture?: number[]; waitLimit?: number; stallMs?: number } = {}) => (await import("../../export/onlineExport")).exportVideoBrowserProbe(o);
+   // 声音探针(`scripts/probes/sound-ab-probe.mjs`):在线构建里没有 `/src/…` 可引,生成、判定、导出前补齐声音从这里拿
+   Object.assign(window.__pcIo, { cancelExport, fetchExportFile });
+   window.__pcIo.sound = async () => {
+-    const [effects, cards, exportSounds, judge, upload] = await Promise.all([import("./soundGeneration"), import("./cardAudioGeneration"), import("./exportSounds"), import("./onlineSoundJudge"), import("./generatedAudioUpload")]);
++    const [effects, cards, exportSounds, upload] = await Promise.all([import("./soundGeneration"), import("./cardAudioGeneration"), import("./exportSounds"), import("./generatedAudioUpload")]);
+     return {
+       startSoundGeneration: effects.startSoundGeneration, waitSoundGeneration: effects.waitSoundGeneration,
+       generateCardAudio: cards.generateCardAudio, listExportSoundNeeds: exportSounds.listExportSoundNeeds,
+-      decideClipSound: judge.decideClipSound, hasGeneratedAudio: upload.hasGeneratedAudio,
++      hasGeneratedAudio: upload.hasGeneratedAudio,
+     };
+   };
+ }

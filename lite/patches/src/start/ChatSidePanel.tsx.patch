@@ -1,0 +1,13 @@
+diff --git a/src/start/ChatSidePanel.tsx b/src/start/ChatSidePanel.tsx
+index 35d4bee147e4fe2cada67ac163d5516bc49e7184..0d3a062cc6b18fb4074f18c5d5cba2757bfb5d04 100644
+--- a/src/start/ChatSidePanel.tsx
++++ b/src/start/ChatSidePanel.tsx
+@@ -19,7 +19,7 @@ import type { ChatMessage } from "../ai/types";
+ import { actions, useStore } from "../store/project";
+ import { useVisualRecord, visualIdOf } from "../editor/right/ToolVisual";
+ import { KIND_LABEL, bareToolName, toolKind } from "../editor/right/chat/iconRuns";
+-import { partsOf } from "../mobile/agentView";
++import { partsOf } from "./agentView";
+ import { ExtChatPanel } from "./ExtChatPanel";
+ import { EXT_WIDTH } from "./sideWidth";
+ import { VibeStage, mmss } from "./VibeStage";

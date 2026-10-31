@@ -1,0 +1,300 @@
+diff --git a/server/docservice/modules/project.mjs b/server/docservice/modules/project.mjs
+index 9ddb237e11deb1d0b4a9de5092c02b67ddf1605b..0d74ddbe6ad700fca0bee2a0009b82bfbaff0d9d 100644
+--- a/server/docservice/modules/project.mjs
++++ b/server/docservice/modules/project.mjs
+@@ -40,23 +40,6 @@ import { createHash } from 'node:crypto';
+ import { createMemoryStore, fileNameOf } from '../store/index.mjs';
+ import { actorOf } from './actor.mjs';
+ import { applyOps, entitiesOf, normalizeEntity, parsePath, formatPath, idSegment, OpError } from '../json-ops.mjs';
+-import { canonical, digest as historyDigest, historyError } from './operation-history.mjs';
+-export const ROLLBACK_OP_PREFIX = 'logout-rollback:';
+-let customRollbackPolicy = null;
+-export function registerProjectRollbackPolicy(policy) {
+-  customRollbackPolicy = policy && typeof policy === 'object' ? policy : null;
+-}
+-export const isReservedOpId = opId =>
+-  customRollbackPolicy?.isReservedOpId
+-    ? customRollbackPolicy.isReservedOpId(opId)
+-    : typeof opId === 'string' && opId.startsWith(ROLLBACK_OP_PREFIX);
+-export const rollbackOpId = (eventId, attempt) =>
+-  customRollbackPolicy?.rollbackOpId
+-    ? customRollbackPolicy.rollbackOpId(eventId, attempt)
+-    : `${ROLLBACK_OP_PREFIX}${eventId}:${attempt}`;
+-
+-/** 账号项目的一次提交从收到到回包超过这么久,记一行 `project.op.slow`(诊断;三级数字) */
+-export const SLOW_OP_MS = 5_000;
+ 
+ export const PROJECT_MODULE = 'project';
+ 
+@@ -162,13 +145,6 @@ export const snapshotBlobName = (projectId, projectRev) => `projects/${fileNameO
+ 
+ const sha256 = (text) => createHash('sha256').update(text, 'utf8').digest('hex');
+ 
+-/** 发给页面的写入身份与操作号里不带改密退出撤回的事件号（安全专审 Q5 / SEC-01：事件号是占号的凭据）。存储里照旧是全的。 */
+-const shownActor = (actor) => {
+-  if (!actor || typeof actor !== 'object' || actor.rollbackEventId === undefined) return actor;
+-  const { rollbackEventId: _event, ...rest } = actor;
+-  return { ...rest, rollback: true };
+-};
+-const shownOpId = (opId) => (isReservedOpId(opId) ? `${ROLLBACK_OP_PREFIX}${sha256(opId).slice(0, 24)}` : opId);
+ 
+ /**
+  * 真身快照的文件名：编码后的 projectId 加它的散列前缀。Windows 文件名不分大小写，只差大小写的两个项目
+@@ -253,7 +229,6 @@ export function projectModule({
+   maxOpsBytes = PROJECT_LIMITS.MAX_OPS_BYTES,
+   overwriteWindowMs = PROJECT_LIMITS.OVERWRITE_WINDOW_MS,
+   entityNames = PROJECT_ENTITY_NAMES,
+-  operationCoordinator,
+ } = {}) {
+   const entityOpts = { names: entityNames === null ? null : [...entityNames] };
+   /**
+@@ -287,100 +262,6 @@ export function projectModule({
+ 
+   const clock = (ctx) => (typeof now === 'function' ? now() : ctx.now());
+ 
+-  const snapshotOf = (projectId, st) => ({ v: 1, projectId, rev: st.projectRev, at: st.at, project: st.body,
+-    writers: [...st.writers].map(([entity, w]) => [entity, { actor: w.actor, at: w.at, rev: w.rev }]),
+-    history: st.history, opIds: [...st.opIds] });
+-  operationCoordinator?.bind({
+-    fenceRequested(fence, assertUnfenced) {
+-      for (const [connId, principal] of principals) {
+-        if (principal.projectId !== fence.projectId) continue;
+-        try { assertUnfenced({ projectId: fence.projectId, actor: principal }); }
+-        catch {
+-          lastCtx?.unsubscribe(connId, channelOf(fence.projectId));
+-          const sender = senders.get(connId); if (sender) sender.alive = false;
+-          lastCtx?.close(connId, 1008, 'operation-fenced');
+-        }
+-      }
+-    },
+-    read(projectId) {
+-      const st = stateOf(projectId);
+-      const raw = store.readBlob?.(stateBlobName(projectId));
+-      return { projectRev: st.projectRev, value: st.body, orderProjection: raw ? JSON.parse(raw).orderProjection : null };
+-    },
+-    /**
+-     * 改密退出撤回一个项目（`server/account/logout-rollback.mjs` 经 `doc-assembly.mjs` 叫进来）。在项目锁里按当时的内容算撤回
+-     * （`plan(内容)` 回 `{ ops, reverted, kept }`），有要撤的就作为一次补偿操作落地：写入身份是 `{ accountId, rollbackEventId }`，
+-     * 广播给订阅了这个项目的连接（各方照常应用），并给这个项目此刻在线的成员页面各发一条气泡 `shared.notice { event: 'content-rolled-back', name }`。
+-     * 不在线的不补：重启后认出已落地的同一次（`duplicate`）不再发。没有要撤的不落地、不发气泡。
+-     */
+-    async rollback({ projectId, eventId, accountId, attempt = 1, name = null, notify = true, plan }) {
+-      if (typeof plan !== 'function' || !Number.isSafeInteger(attempt) || attempt < 1) throw historyError('bad-rollback', 400);
+-      const opId = rollbackOpId(eventId, attempt);
+-      const actor = { userId: accountId, deviceId: null, role: 'system', conversation: null, session: null,
+-        identityVersion: 2, realm: 'account', accountId, rollbackEventId: eventId };
+-      let planned = null, notified = false;
+-      const out = await operationCoordinator.executeSystem({ projectId, principal: { kind: 'logout-rollback', eventId, accountId }, opId }, (binding) => {
+-        const st = stateOf(projectId);
+-        planned = plan(st.body);
+-        if (!planned.ops.length) return null;
+-        const applied = applyOps(st.body, planned.ops);
+-        const at = typeof now === 'function' ? now() : (lastCtx?.now?.() ?? Date.now());
+-        const record = { projectId, rev: st.projectRev + 1, opId, ops: planned.ops, actor, at, entities: entitiesOf(applied.effects, entityOpts) };
+-        const next = { ...st, writers: new Map(st.writers), history: [...st.history], opIds: new Map(st.opIds) };
+-        landCommit(next, record, applied.root);
+-        return { ...binding, projectId, opId, expectedRev: st.projectRev, actor, ops: planned.ops,
+-          beforeProjection: snapshotOf(projectId, st), projection: snapshotOf(projectId, next),
+-          result: { record, overwrote: [], victims: [], used: [], rollback: { eventId, reverted: planned.reverted, kept: planned.kept,
+-            remaining: planned.remaining ?? 0, overLimit: planned.overLimit ?? 0 } } };
+-      }, ({ operation, duplicate }) => {
+-        if (duplicate) return;
+-        const { record } = operation.result;
+-        stats.commits++;
+-        // 广播里不带事件号（安全专审 Q5）：成员只需知道是谁的撤回
+-        lastCtx?.publish(channelOf(projectId), { type: 'project.ops', projectId, rev: record.rev, opId: shownOpId(opId), ops: record.ops,
+-          actor: shownActor(record.actor), at: record.at });
+-        if (!notify) return; // 同一个项目分批撤时只在第一批发气泡
+-        for (const [connId, principal] of principals) {
+-          if (principal?.projectId !== projectId || principal.role !== 'page' || principal.scope === 'service' || typeof principal.service === 'string') continue;
+-          lastCtx?.send(connId, { type: 'shared.notice', event: 'content-rolled-back', projectId, name });
+-          notified = true;
+-        }
+-        log('project.rollback', { projectId, opId, reverted: operation.result.rollback.reverted.length, kept: operation.result.rollback.kept.length });
+-      });
+-      if (!out) return { state: 'done', opId: null, reverted: [], kept: planned?.kept ?? [], remaining: planned?.remaining ?? 0,
+-        overLimit: planned?.overLimit ?? 0, notified: false };
+-      if (out.cancelled) return { state: 'cancelled', opId };
+-      const result = out.operation.result.rollback;
+-      return { state: 'done', opId, reverted: result.reverted, kept: result.kept, remaining: result.remaining ?? 0, overLimit: result.overLimit ?? 0,
+-        notified, duplicate: out.duplicate };
+-    },
+-    materialize(operation, projection) {
+-      const { projectId } = operation;
+-      const expected = { ...operation.projection, orderProjection: { opId: operation.opId, requestId: operation.requestId,
+-        preparedDigest: operation.preparedDigest, witnessId: operation.witness.witnessId, orderSeq: operation.witness.orderSeq } };
+-      if (expected.projectId !== projectId || expected.rev !== operation.projectRev || historyDigest(expected.project) !== historyDigest(operation.after) ||
+-          canonical(operation.result.record.actor) !== canonical(operation.actor) || operation.result.record.opId !== operation.opId ||
+-          operation.result.record.rev !== operation.projectRev) throw historyError('needs-reconciliation');
+-      // Reload the real store, including a rename that succeeded just before a prior crash/error.
+-      projects.delete(projectId);
+-      const current = stateOf(projectId);
+-      const text = store.readBlob?.(stateBlobName(projectId));
+-      if (current.projectRev === operation.projectRev) {
+-        if (!text || canonical(JSON.parse(text)) !== canonical(expected)) throw historyError('needs-reconciliation');
+-      } else {
+-        if (current.projectRev !== operation.expectedRev || historyDigest(current.body) !== historyDigest(operation.before) ||
+-            canonical(snapshotOf(projectId, current)) !== canonical(operation.beforeProjection)) throw historyError('needs-reconciliation');
+-      }
+-      // Repeat durability completion even after a previous rename, never infer fsync from readback.
+-      projection.write(stateBlobName(projectId), expected);
+-      // Exact complete projection, including actor/rev/opId and all historical metadata.
+-      if (canonical(JSON.parse(store.readBlob(stateBlobName(projectId)))) !== canonical(expected)) throw historyError('needs-reconciliation');
+-      projects.delete(projectId);
+-      const landed = stateOf(projectId);
+-      if (landed.projectRev !== operation.projectRev || historyDigest(landed.body) !== historyDigest(operation.after)) throw historyError('needs-reconciliation');
+-    },
+-  });
+-
+   function log(event, fields) {
+     try {
+       lastCtx?.log(event, fields);
+@@ -518,7 +399,7 @@ export function projectModule({
+       .filter(([, w]) => nowMs - w.at <= overwriteWindowMs)
+       .sort((a, b) => b[1].rev - a[1].rev)
+       .slice(0, PROJECT_LIMITS.WRITERS_IN_STATE)
+-      .map(([entity, w]) => ({ entity, actor: shownActor(w.actor), at: w.at, rev: w.rev }));
++      .map(([entity, w]) => ({ entity, actor: w.actor, at: w.at, rev: w.rev }));
+   }
+ 
+   function open(ctx, connId, msg, reqId) {
+@@ -631,8 +512,8 @@ export function projectModule({
+     return {
+       expectRev,
+       since: shown.map((h) => {
+-        const s = { rev: h.rev, actor: shownActor(h.actor), paths: h.paths, entities: h.entities, at: h.at };
+-        if (h.opId !== undefined) s.opId = shownOpId(h.opId);
++        const s = { rev: h.rev, actor: h.actor, paths: h.paths, entities: h.entities, at: h.at };
++        if (h.opId !== undefined) s.opId = h.opId;
+         if (h.undoOf !== undefined) s.undoOf = h.undoOf;
+         if (h.announce) s.announce = true;
+         return s;
+@@ -721,7 +602,7 @@ export function projectModule({
+     // 所以提交者自己的连接若也以被覆盖的身份提交过，照样收
+     for (const v of victims) {
+       for (const target of identityConns.get(v.identity) ?? []) {
+-        ctx.send(target, { type: 'project.overwritten', projectId, entity: v.entity, by: actor, writer: shownActor(v.writer), rev, at });
++        ctx.send(target, { type: 'project.overwritten', projectId, entity: v.entity, by: actor, writer: v.writer, rev, at });
+       }
+     }
+     const broadcast = { type: 'project.ops', projectId, rev, opId, ops, actor, at };
+@@ -736,75 +617,6 @@ export function projectModule({
+     if (st.sinceSnapshot >= snapshotEvery) persistState(ctx, projectId, st);
+   }
+ 
+-  async function submitAccount(ctx, connId, msg, reqId) {
+-    const projectId = checkProjectId(msg.projectId);
+-    const opId = checkToken(msg.opId, 'opId');
+-    const session = checkSession(msg.session);
+-    const principal = principals.get(connId);
+-    const actor = actorOf(principal, session);
+-    if (!operationCoordinator) throw historyError('order-unavailable', 503);
+-    if (principal.role === 'render' || principal.access === 'r') throw historyError('operation-forbidden', 403);
+-    if (!Array.isArray(msg.ops) || !msg.ops.length) throw historyError('bad-path', 400);
+-    if (Buffer.byteLength(JSON.stringify(msg.ops)) > maxOpsBytes) throw historyError('too-large', 413);
+-    if (msg.expectRev != null && (!Number.isSafeInteger(msg.expectRev) || msg.expectRev < 0)) bad('expectRev 必须是非负整数');
+-    const undoOf = msg.undoOf == null ? null : checkToken(msg.undoOf, 'undoOf');
+-    const request = { opId, ops: msg.ops, expectRev: msg.expectRev ?? null, undoOf, session };
+-    /*
+-     * 慢提交的诊断(线上 2026-10-21:Agent 的 switch_cut 约 60 秒才落地,日志里看不出卡在哪;`docs/archive/agent-reports/AGENT-cut-stream-fix.md`
+-     * 缺陷 5):从收到到回包超过 `SLOW_OP_MS` 记一行 `project.op.slow`,分出排队(进有序提交之前:授权核对、项目锁)与落地(进锁之后)各多久。
+-     */
+-    const t0 = Date.now();
+-    let tPrepare = null, tCommitted = null;
+-    const slow = (outcome) => {
+-      const ms = Date.now() - t0;
+-      if (ms < SLOW_OP_MS) return;
+-      log('project.op.slow', { projectId, opId: String(opId).slice(0, 48), role: principal?.role ?? null, ms, outcome,
+-        queuedMs: tPrepare === null ? null : tPrepare - t0, landMs: tPrepare === null || tCommitted === null ? null : tCommitted - tPrepare });
+-    };
+-    return operationCoordinator.execute({ projectId, principal, actor, request }, (binding) => {
+-      tPrepare = Date.now();
+-      const st = stateOf(projectId);
+-      if (request.expectRev !== null && request.expectRev !== st.projectRev) throw historyError('stale');
+-      let ops, used, applied;
+-      try { ({ ops, used } = resolveUploads(projectId, msg.ops)); applied = applyOps(st.body, ops); }
+-      catch (error) { if (error instanceof OpError) throw historyError('bad-path', 400); throw error; }
+-      const entities = entitiesOf(applied.effects, entityOpts);
+-      const at = clock(ctx), rev = st.projectRev + 1, identity = identityOf(actor);
+-      const record = { projectId, rev, opId, ops, actor, at, entities, ...(undoOf ? { undoOf } : {}) };
+-      const overwrote = [], victims = [];
+-      for (const entity of entities) {
+-        const prev = st.writers.get(entity);
+-        if (!prev || prev.identity === identity || at - prev.at > overwriteWindowMs) continue;
+-        overwrote.push({ entity, by: prev.actor, rev: prev.rev, at: prev.at });
+-        if (!isUnfollowed(projectId, prev.identity, entity)) victims.push({ identity: prev.identity, entity, writer: prev.actor });
+-      }
+-      const next = { ...st, writers: new Map(st.writers), history: [...st.history], opIds: new Map(st.opIds) };
+-      landCommit(next, record, applied.root);
+-      return { ...binding, projectId, opId, expectedRev: st.projectRev, actor, ops,
+-        beforeProjection: snapshotOf(projectId, st), projection: snapshotOf(projectId, next), result: { record, overwrote, victims, used: used ?? [] } };
+-    }, result => {
+-      tCommitted = Date.now();
+-      const { operation, duplicate } = result;
+-      const { record, overwrote, victims, used } = operation.result;
+-      for (const key of used) bodyUploads.delete(key);
+-      trackIdentity(connId, identityOf(actor));
+-      reply(ctx, connId, { type: 'project.op.ok', projectId, opId, rev: record.rev, overwrote: duplicate ? [] : overwrote,
+-        ...(duplicate ? { duplicate: true } : {}), orderSeq: operation.witness.orderSeq }, reqId);
+-      if (duplicate) { stats.duplicates++; return; }
+-      stats.commits++; stats.overwrites += overwrote.length;
+-      for (const victim of victims) for (const target of identityConns.get(victim.identity) ?? []) {
+-        ctx.send(target, { type: 'project.overwritten', projectId, entity: victim.entity, by: record.actor,
+-          writer: shownActor(victim.writer), rev: record.rev, at: record.at });
+-      }
+-      const broadcast = { type: 'project.ops', projectId, rev: record.rev, opId, ops: record.ops, actor: record.actor, at: record.at,
+-        ...(record.undoOf ? { undoOf: record.undoOf } : {}) };
+-      if (used.length && Buffer.byteLength(JSON.stringify(broadcast)) > PROJECT_LIMITS.INLINE_BYTES) {
+-        delete broadcast.ops; broadcast.resync = true;
+-      }
+-      ctx.publish(channelOf(projectId), broadcast, { except: connId });
+-    }).then((out) => { slow('ok'); return out; }, (error) => { slow(String(error?.code ?? 'error').slice(0, 40)); throw error; });
+-  }
+-
+   /** 落一次真身快照，再把日志截断到快照之后（存储支持时）。出错只记日志：日志本身已经完整 */
+   function persistState(ctx, projectId, st) {
+     if (typeof store.writeBlob !== 'function') return;
+@@ -1112,35 +924,6 @@ export function projectModule({
+       const reqId = isReqId(msg.reqId) ? msg.reqId : undefined;
+       const fn = HANDLERS[msg.type];
+       if (!fn) return reply(ctx, connId, { type: 'error', reason: 'unsupported', detail: '项目模块不支持这种消息' }, reqId);
+-      const principal = principals.get(connId);
+-      if (principal?.realm === 'account' || principal?.identityVersion === 2) {
+-        return Promise.resolve().then(async () => {
+-          if (msg.type === 'project.op') return submitAccount(ctx, connId, msg, reqId);
+-          const projectId = checkProjectId(msg.projectId);
+-          // Existing authority-gated readers remain usable before the owner mounts order.
+-          // A projection that already belongs to order can never be read without recovery.
+-          if (!operationCoordinator) {
+-            const text = store.readBlob?.(stateBlobName(projectId));
+-            if (text && JSON.parse(text).orderProjection) throw historyError('order-unavailable', 503);
+-            return fn(ctx, connId, msg, reqId);
+-          }
+-          return operationCoordinator.read(projectId, principal, () => {
+-            if (msg.type === 'project.announce' && !stateOf(projectId).hasBody) throw historyError('operation-required');
+-            return fn(ctx, connId, msg, reqId);
+-          }, ['project.upload', 'project.snapshot.put'].includes(msg.type) ? 'write' : 'read');
+-        }).catch(error => {
+-          const reason = error instanceof BadMessage ? 'bad-message' : error.code ?? 'operation-unavailable';
+-          if (msg.type === 'project.op') {
+-            stats.rejected++;
+-            // 过期（stale）是在授权通过、进了有序提交之后才判的：和非账号路径一样带上当前版本和期间的改动，模型据此重读。
+-            // 其它拒绝理由（没授权、顺序服务不可用……）不带版本号，不向没通过授权的连接透露项目的进度。
+-            const stale = reason === 'stale' && Number.isSafeInteger(msg.expectRev) && msg.expectRev >= 0 && PROJECT_ID_RE.test(String(msg.projectId))
+-              ? (() => { const st = stateOf(msg.projectId); return { currentRev: st.projectRev, ...staleDetail(st, msg.expectRev) }; })() : {};
+-            return reply(ctx, connId, { type: 'project.op.rejected', projectId: msg.projectId, opId: msg.opId, reason, ...stale }, reqId);
+-          }
+-          return reply(ctx, connId, { type: 'error', reason }, reqId);
+-        });
+-      }
+       try {
+         fn(ctx, connId, msg, reqId);
+       } catch (err) {
+@@ -1178,7 +961,6 @@ export function projectModule({
+     /** Server-internal snapshot inspection; never expose the mutable cached body. */
+     bodyOf(projectId) {
+       if (!PROJECT_ID_RE.test(projectId)) return null;
+-      if (operationCoordinator && !operationCoordinator.isReady(projectId)) return null;
+       const state = stateOf(projectId);
+       return state.hasBody ? structuredClone(state.body) : null;
+     },

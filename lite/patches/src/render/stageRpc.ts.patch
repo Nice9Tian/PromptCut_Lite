@@ -1,0 +1,35 @@
+diff --git a/src/render/stageRpc.ts b/src/render/stageRpc.ts
+index bc0ce02974c37e3299a81dce49fa018cc6d52f1f..f5f3c07b2a1a49e8308ec9231b40edd966bfabbe 100644
+--- a/src/render/stageRpc.ts
++++ b/src/render/stageRpc.ts
+@@ -17,7 +17,6 @@ import type { RectWithBounds, RectsWithBoundsOptions, StageHit } from "./solid";
+ import type { ProjectPatch } from "./changedClips.mjs";
+ import type { CardCostRecord } from "./cardCostKey.mjs";
+ import type { StreamPlaneRequest } from "./streamPlayer";
+-import { sanitizeRpcError, sanitizeRpcResult, sanitizeStageEvent } from "../online/stageMessageGuard.ts";
+ import { SETTLE_MAX_MS, SETTLE_RPC_CAP_MS } from "./settleFrame.ts";
+ import type { SettleResult } from "./settleFrame";
+ import type { CardRunState } from "../kernel/registry.ts";
+@@ -560,22 +559,10 @@ export function createStageRpc(target: Window, targetOrigin: string = location.o
+       if (!p) return;
+       pending.delete(d.id);
+       if (p.timer) clearTimeout(p.timer);
+-      if (untrusted) {
+-        if (d.ok !== true) { p.reject(new Error(sanitizeRpcError(d.error) || `stage rpc ${p.method} failed`)); return; }
+-        let result: unknown;
+-        try { result = sanitizeRpcResult(p.method, d.result); } catch (err) { p.reject(err instanceof Error ? err : new Error(String(err))); return; }
+-        p.resolve(result);
+-        return;
+-      }
+       if (d.ok) p.resolve(d.result);
+       else p.reject(new Error(d.error || `stage rpc ${p.method} failed`));
+       return;
+     }
+-    if (untrusted) {
+-      const clean = sanitizeStageEvent(d, { maxSec: opts.maxSec?.() }) as StageEvent | null;
+-      if (clean) for (const l of listeners) l(clean);
+-      return;
+-    }
+     if (isStageEvent(d)) for (const l of listeners) l(d);
+   };
+   window.addEventListener("message", onMessage);

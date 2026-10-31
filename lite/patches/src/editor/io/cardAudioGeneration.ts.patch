@@ -1,0 +1,27 @@
+diff --git a/src/editor/io/cardAudioGeneration.ts b/src/editor/io/cardAudioGeneration.ts
+index c3f42689084543133c2d13fc577af4fe99b73188..bf7f018c6d07989efbe3f0d58a469a57824b8158 100644
+--- a/src/editor/io/cardAudioGeneration.ts
++++ b/src/editor/io/cardAudioGeneration.ts
+@@ -4,10 +4,9 @@ import { findClipInCut } from "../../kernel/cutSegments";
+ import { cardJson } from "../../kernel/cardGraph.mjs";
+ import { cardAudioIdentity, cardAudioSourceOffset, clipHasEmbeddedAudio, resolveCardAudioRendition } from "../../kernel/cardAudioRendition.mjs";
+ import { cardAudioIdentityHooks, renderEmbeddedCardWav } from "../../audio/cardAudio";
+-import { sha256Hex } from "../../online/snapUploader";
++import { sha256Hex } from "../../render/snapUploader";
+ import { hasGeneratedAudio, uploadGeneratedAudio } from "./generatedAudioUpload";
+ import { isViewOnly } from "./viewOnly";
+-import { decideClipSound } from "./onlineSoundJudge";
+ 
+ /** 与独立音效一样限制总任务数；任意用户卡仍只在一个小块里求值，不同时攒多份 PCM。 */
+ export const CARD_AUDIO_JOB_LIMIT = 4;
+@@ -70,10 +69,7 @@ export async function generateCardAudio(clipId: string, options: { signal?: Abor
+         return { ok: true as const, clipId, mediaId: reusable.media.id, reused: true };
+       }
+     }
+-    // 在线页面:这台设备跑得了、又判轻的才在浏览器里合成(`onlineSoundJudge.ts`;桌面运行环境恒合成)
+-    const decision = await decideClipSound(frozen, clip, controller.signal);
+     check();
+-    if (!decision.synth) throw new Error(decision.message);
+     release = await acquireSlot(controller.signal);
+     check();
+     const rendered = await renderEmbeddedCardWav(frozen, clip, controller.signal, options.onProgress);

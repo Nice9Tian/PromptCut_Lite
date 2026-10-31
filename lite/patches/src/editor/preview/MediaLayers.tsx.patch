@@ -1,0 +1,96 @@
+diff --git a/src/editor/preview/MediaLayers.tsx b/src/editor/preview/MediaLayers.tsx
+index e9f5ebdf2ec7d49991a88d04e998d69c9ef49af9..11f187fc69e6e3dc9d8ebfc3acdc556bc8aa1e42 100644
+--- a/src/editor/preview/MediaLayers.tsx
++++ b/src/editor/preview/MediaLayers.tsx
+@@ -12,11 +12,7 @@ import { isScrubbing, subscribeScrub } from "../timeline/useScrub";
+ import { driveMedia, releaseMedia, targetTimeOf } from "../../render/mediaDrive";
+ import { VideoTrack } from "../../render/VideoTrack";
+ import { playbackUrl } from "../../render/mediaTier";
+-import { onlinePage } from "../../online/pageFlag";
+-import { ONLINE_CARD_AUDIO_BLOCKED } from "../../online/soundPolicy";
+-import { onlineLiveCardAudio, onlineLiveEffectAudio } from "../io/onlineSoundSource";
+ import { confirmedMissingAudio } from "../io/missingMaterials";
+-import "../io/onlineSoundBoot";
+ 
+ /**
+  * 预览里的素材层:画面(视频/图片)和声音(配乐、旁白)。
+@@ -46,24 +42,7 @@ function AudioLayer({ project, clip, media, volume, t, playing, scrubbing, audio
+   const [cardState, setCardState] = useState<"idle" | CardState>("idle");
+   // 这一段卡片声音的播放源是当场合成的(素材效果卡、在线页面判轻的内置声音)还是已入库的产物;只给验收探针看(`data-pc-audio-source`)
+   const [cardLive, setCardLive] = useState(false);
+-  // 在线页面(`product/platforms.md`「卡片声音的平台边界」):产物的字节取不到时改由浏览器合成(判轻的内置声音)。
+-  // `productFailed` = 这一段的产物地址已经报过读不了;`effectUrl` = 独立音效按配方合成出来的临时地址
+-  const [productFailed, setProductFailed] = useState(false);
+-  const [effectUrl, setEffectUrl] = useState<string | null>(null);
+-  const effectKey = !nodeId && !missingAudio ? clip.soundEffect?.reuseKey : undefined;
+-  useEffect(() => { setProductFailed(false); }, [clip.id, clip.cardAudio?.mediaId, clip.mediaId, effectKey]);
+-  useEffect(() => {
+-    if (!productFailed || !effectKey) return;
+-    let current = true, release: (() => void) | undefined;
+-    void onlineLiveEffectAudio(project, clip).then((lease) => {
+-      if (!lease) return;
+-      if (!current) { lease.release(); return; }
+-      release = lease.release; setEffectUrl(lease.url);
+-    }, () => { /* 合成不出来:这一段保持没有声音 */ });
+-    return () => { current = false; release?.(); setEffectUrl(null); };
+-    // 只看配方身份:项目别处的改动不用重新合成
+-    // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [productFailed, effectKey, clip.id]);
++
+   // 换了素材效果卡(HMR 重跑 src/cards/index.ts)之后 project 引用不变,effect 不会自己重跑;
+   // configureCardAudio 每调一次 +1 的这个版本号就是重取的触发。
+   const cardAudioEpoch = useSyncExternalStore(subscribeCardAudioEpoch, getCardAudioEpoch, getCardAudioEpoch);
+@@ -75,25 +54,12 @@ function AudioLayer({ project, clip, media, volume, t, playing, scrubbing, audio
+     const frames = Math.max(1, Math.ceil((clip.end - clip.start) * CARD_AUDIO_SAMPLE_RATE));
+     let release: (() => void) | undefined;
+     const acquire = async () => {
+-      if (embedded && !productFailed) {
+-        try {
+-          const result = persistentCardAudio(project, clip);
+-          setCardOffset(result.offset);
+-          return { url: playbackUrl(result.media, localHashes), release() {}, live: false };
+-        } catch (error) {
+-          // 在线页面:没有有效产物、判轻的内置声音由浏览器合成(同一个源时钟,偏移已在节点里);桌面照旧提示
+-          const live = await onlineLiveCardAudio(project, clip, nodeId, frames);
+-          if (!live) throw error;
+-          setCardOffset(0);
+-          return live;
+-        }
++      if (embedded) {
++        const result = persistentCardAudio(project, clip);
++        setCardOffset(result.offset);
++        return { url: playbackUrl(result.media, localHashes), release() {}, live: false };
+       }
+       setCardOffset(0);
+-      if (onlinePage()) {
+-        const live = await onlineLiveCardAudio(project, clip, nodeId, frames);
+-        if (!live) throw new Error(embedded ? `${clip.label ?? clip.id} 的卡片声音素材无法读取，请恢复素材或重新生成` : ONLINE_CARD_AUDIO_BLOCKED);
+-        return live;
+-      }
+       return acquireCardAudioClipUrl({ project, nodeId, frames });
+     };
+     void acquire().then((lease) => {
+@@ -107,7 +73,7 @@ function AudioLayer({ project, clip, media, volume, t, playing, scrubbing, audio
+       ref.current?.dispatchEvent(new CustomEvent("promptcut:card-audio-error", { bubbles: true, detail: { nodeId, clipId: clip.id, error: message } }));
+     });
+     return () => { current = false; release?.(); };
+-  }, [project, nodeId, clip.id, clip.start, clip.end, onCardState, cardAudioEpoch, embedded, localHashes, productFailed]);
++  }, [project, nodeId, clip.id, clip.start, clip.end, onCardState, cardAudioEpoch, embedded, localHashes]);
+   useLayoutEffect(() => {
+     // While a 素材效果卡 node is loading or has failed there is deliberately no source URL.
+     // driveMedia may attempt play(), but it cannot emit source-media audio as a fallback.
+@@ -133,12 +99,10 @@ function AudioLayer({ project, clip, media, volume, t, playing, scrubbing, audio
+   return <audio ref={ref}
+     onCanPlay={() => { if (nodeId && cardUrl) { setCardState("ready"); onCardState?.(clip.id, "ready"); } }}
+     onError={() => {
+-      // 在线页面:产物的字节取不到(没同步到、素材服务里被清了)→ 换成浏览器合成的播放源
+-      if (!missingAudio && onlinePage() && !productFailed && (effectKey || (nodeId && embedded))) { setProductFailed(true); return; }
+       if (nodeId && cardUrl) { const message = `${clip.label ?? clip.id} 的卡片声音素材无法读取，请恢复素材或重新生成`; setCardState("error"); onCardState?.(clip.id, "error", message); }
+     }}
+-    src={nodeId ? (cardUrl ?? undefined) : missingAudio ? MISSING_MATERIAL_WAV_URL : (effectUrl ?? held.current)} preload="auto" hidden
+-    data-pc-audio-clip={clip.id} data-pc-audio-source={nodeId ? (cardUrl ? (cardLive ? "live" : "product") : undefined) : (effectUrl ? "live" : "product")}
++    src={nodeId ? (cardUrl ?? undefined) : missingAudio ? MISSING_MATERIAL_WAV_URL : held.current} preload="auto" hidden
++    data-pc-audio-clip={clip.id} data-pc-audio-source={nodeId ? (cardUrl ? (cardLive ? "live" : "product") : undefined) : "product"}
+     data-card-audio-state={nodeId ? cardState : undefined} data-card-audio-node={nodeId ?? undefined} />;
+ }
+ 

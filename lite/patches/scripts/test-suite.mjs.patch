@@ -1,0 +1,31 @@
+diff --git a/scripts/test-suite.mjs b/scripts/test-suite.mjs
+index 1c7cc3e8a02376cfada15e1e0613fe65cf2990b7..8f149d3fc135415d9794dfaf8e6ab2231edcba5a 100644
+--- a/scripts/test-suite.mjs
++++ b/scripts/test-suite.mjs
+@@ -21,25 +21,7 @@ import { canRecoverInitialRun, exitDescription, retryReason, rootSummaryCounts,
+ const root = path.resolve(fileURLToPath(import.meta.url), '..', '..');
+ const reporter = path.join(root, 'scripts', 'test-event-reporter.mjs');
+ const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'promptcut-test-'));
+-/*
+- * 缺省要跑哪些测试。
+- *
+- * A2（2026-10-28）把云端专属的测试与探针搬到了闭源目录下（镜像原来的目录结构）。私有仓库里它们
+- * 照样要跑，公开仓库里那个目录根本不存在、这几条就是空集。
+- *
+- * 闭源目录按 `PROMPTCUT_CLOUD_DIR` 找，缺省是仓库根下的 `cloud` —— 和
+- * `server/docservice/extensions.mjs`、`server/vite-plugin-hosted-gate.ts` 同一个约定：
+- * 切到子模块布局之后，闭源目录不在公开仓库根下面，写死路径会让这几条永远落空。
+- * 本文件因此登记在 `server/test/community-ownership.mjs` 的 `LOADER_WHITELIST` 里。
+- */
+-function defaultGlobs() {
+-  const base = ['server/test/*.test.mjs', 'src/**/*.test.mjs', 'tools/report-worker/*.test.mjs'];
+-  const envDir = process.env.PROMPTCUT_CLOUD_DIR?.trim();
+-  const cloudDir = envDir ? path.resolve(envDir) : path.join(root, 'cloud');
+-  if (!fs.existsSync(cloudDir)) return base;
+-  const rel = path.relative(root, cloudDir).split(path.sep).join('/') || '.';
+-  return [...base, `${rel}/server/test/*.test.mjs`, `${rel}/src/**/*.test.mjs`];
+-}
++const defaultGlobs = () => ['server/test/*.test.mjs', 'src/**/*.test.mjs'];
+ 
+ const files = process.argv.length > 2 ? process.argv.slice(2) : defaultGlobs();
+ const baseArgs = ['--experimental-test-module-mocks', '--test-global-setup=server/test/global-setup.mjs', '--test'];

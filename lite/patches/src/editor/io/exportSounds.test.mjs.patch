@@ -1,0 +1,50 @@
+diff --git a/src/editor/io/exportSounds.test.mjs b/src/editor/io/exportSounds.test.mjs
+index 6b5d69f5499811ddee497080b0c27ba280aedaa4..33cc9128092d5b9020472835434a509e137b99c0 100644
+--- a/src/editor/io/exportSounds.test.mjs
++++ b/src/editor/io/exportSounds.test.mjs
+@@ -6,11 +6,9 @@ const { registerCards } = await import('../../kernel/registry.ts');
+ const { findClip } = await import('../../kernel/project.ts');
+ const { audioPlanOf } = await import('../../kernel/audioPlan.mjs');
+ const { configureCardAudio, assertProjectCardAudio } = await import('../../audio/cardAudio.ts');
+-const { createMemorySoundCostStore, soundCostStoreKey } = await import('../../audio/soundCost.ts');
+ const { listExportSoundNeeds, prepareExportSounds, ExportSoundError } = await import('./exportSounds.ts');
+ const { generateCardAudio } = await import('./cardAudioGeneration.ts');
+ const { startSoundGeneration, waitSoundGeneration, setSoundEffectRenderer } = await import('./soundGeneration.ts');
+-const { configureOnlineSoundJudge, soundTargetOf } = await import('./onlineSoundJudge.ts');
+ 
+ let sourceVersion = 'v1', evaluations = 0, failAudio = null;
+ const def = { id: 'av-export', name: '声画导出卡', source: 'native', defaults: { value: .25 }, controls: [], frameMode: 'direct', kind: 'animation', inputs: {}, Component() {},
+@@ -229,33 +227,6 @@ test('A10 音效合成失败同样指出片段;锁住的序列上的有声卡生
+   } finally { setSoundEffectRenderer(null); f.restore(); }
+ });
+ 
+-test('A11 在线页面:判轻的在浏览器里生成;判重、又没有产物的不合成,导出失败并指出片段', async () => {
+-  const f = service();
+-  const store = createMemorySoundCostStore();
+-  const restore = configureOnlineSoundJudge({ online: () => true, store: () => store, device: () => 'test-device' });
+-  try {
+-    sourceVersion = 'v1'; failAudio = null;
+-    actions.newProject('在线导出');
+-    const light = actions.addCardClip(def.id, 0, { duration: .2, params: { value: .25 } });
+-    await prepareExportSounds({ signal: signal() });
+-    assert.ok(findClip(getState().project, light.id).clip.cardAudio, '判轻:在线页面自己生成');
+-    const heavy = actions.addCardClip(def.id, 1, { duration: .2, params: { value: .5 } });
+-    const p = getState().project, key = soundTargetOf(p, findClip(p, heavy.id).clip).soundKey;
+-    await store.putCost(soundCostStoreKey(key, 'test-device'), { soundKey: key, kind: 'card', device: 'test-device', blockMs: 300, blockMaxMs: 300, blockFrames: 4096, sampleRate: 48000, samples: 16, measuredAt: 1 });
+-    const before = evaluations, handed = [];
+-    const error = await prepareExportSounds({ signal: signal(), deps: { backfill: async (request) => { handed.push([request.clip.id, request.reason]); return false; } } }).then(() => null, (e) => e);
+-    assert.ok(error instanceof ExportSoundError); assert.equal(error.clipId, heavy.id); assert.match(error.message, /判重/);
+-    assert.equal(evaluations, before, '判重:一块都不在浏览器里合成');
+-    assert.deepEqual(handed, [[heavy.id, 'heavy']], '没有产物:交给渲染节点的接口被调到');
+-    assert.equal(findClip(getState().project, heavy.id).clip.cardAudio, undefined);
+-  } finally { restore(); f.restore(); }
+-});
+-
+-/*
+- * A12(在线某一档一律不合成)删了:声音不按身份、不按档区分(2026-10-07 用户定,`product/platforms.md`「卡片声音的平台边界」),
+- * 在线页面只按 A11 的轻重判定合成或交给渲染节点。
+- */
+-
+ /*
+  * 剪辑段(`product/rendering.md`「导出时自动生成声音」递归进剪辑段):被引用剪辑里的有声卡,导出前在它自己那条剪辑里生成,
+  * 结果写回那条停放的剪辑;混音按剪辑段的音量、淡入淡出、静音处理。

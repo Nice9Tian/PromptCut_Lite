@@ -1,0 +1,70 @@
+diff --git a/server/render-node/host.mjs b/server/render-node/host.mjs
+index 40d4045248bced152e71bea299f251cab2bfd74e..3aad99ee97043004f4c65bd5dd08ca11e6c1582c 100644
+--- a/server/render-node/host.mjs
++++ b/server/render-node/host.mjs
+@@ -92,8 +92,6 @@ import { createLocalNode, idleLockTakeover } from './local-node.mjs';
+ import { createRotation, orderByPolicy } from './multi-queue.mjs';
+ import { checkClaimable } from './filter.mjs';
+ import { isExportFramesTask } from './export-plan.mjs';
+-import { normalizeEntry, SHARED_CONFIG_ENV } from '../auth/shared-config.mjs';
+-import { localDeviceInfo } from '../auth/device.mjs';
+ 
+ /** 主机并发总数的上限(契约第 2 节) */
+ export const HOST_MAX_CONCURRENT = 4;
+@@ -138,56 +136,6 @@ export function hostMaxConcurrent(value) {
+   return value;
+ }
+ 
+-/**
+- * 解析主机配置(文件内容 JSON.parse 之后):一项或数组(M6a 契约第 11 节),每项规整见 `normalizeEntry`
+- * (缺字段、格式不对、空数组抛 `code: 'bad-shared-config'`,错误信息里没有口令与 K)。
+- * 主机只开 `render` 连接:某项给了 `role` 且不是 `render` 抛 `bad-host-config`。
+- * `maxConcurrent` 可写在任意一项上,取各项最大值,缺省 1;任一项的值不合格(含超过 4)抛 `bad-host-config`。
+- * @param {unknown} raw
+- * @param {{ device?: { deviceId: string, deviceName: string } }} [options] 缺省设备信息(同 `normalizeEntry` 第二个参数)
+- * @returns {{ entries: object[], maxConcurrent: number }}
+- */
+-export function parseHostConfig(raw, { device } = {}) {
+-  const list = Array.isArray(raw) ? raw : [raw];
+-  if (list.length === 0) {
+-    const err = new Error(`${SHARED_CONFIG_ENV}:配置是空数组`);
+-    err.code = 'bad-shared-config';
+-    throw err;
+-  }
+-  const entries = list.map((item) => (device ? normalizeEntry(item, device) : normalizeEntry(item)));
+-  for (const [i, item] of list.entries()) {
+-    if (item.role !== undefined && item.role !== 'render') throw badHost(`第 ${i} 项的 role 要是 'render'(主机只开 render 连接)`);
+-  }
+-  const given = list.filter((item) => item.maxConcurrent !== undefined && item.maxConcurrent !== null).map((item) => hostMaxConcurrent(item.maxConcurrent));
+-  return { entries, maxConcurrent: given.length ? Math.max(...given) : 1 };
+-}
+-
+-/**
+- * 读主机配置:`PROMPTCUT_SHARED_CONFIG` 指的文件,内容见 `parseHostConfig`;读不了、不是 JSON 抛 `bad-shared-config`。
+- * `PROMPTCUT_HOST_MAX_CONCURRENT`(`render-host --max-concurrent`)设了就优先,同样要 1～4 的整数,否则 `bad-host-config`。
+- * 没设环境变量回 null。
+- * @returns {null | { entries: object[], maxConcurrent: number }}
+- */
+-export function loadHostConfig(env = process.env) {
+-  const file = env[SHARED_CONFIG_ENV];
+-  if (!file) return null;
+-  let raw;
+-  try {
+-    raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+-  } catch (err) {
+-    const e = new Error(`${SHARED_CONFIG_ENV}:读不了配置文件(${err?.code ?? 'bad-json'})`);
+-    e.code = 'bad-shared-config';
+-    throw e;
+-  }
+-  const parsed = parseHostConfig(raw, { device: localDeviceInfo(env) });
+-  const override = env[HOST_CONCURRENCY_ENV];
+-  if (override !== undefined && override !== '') {
+-    if (!/^\d+$/.test(String(override))) throw badHost(`${HOST_CONCURRENCY_ENV} 要是 1～4 的整数`);
+-    parsed.maxConcurrent = hostMaxConcurrent(Number(override));
+-  }
+-  return parsed;
+-}
+-
+ /** `superseded`:执行器判这份内容已被新版本取代、报给队列作废的任务数(`render-queue-contract.md` J.15),不计入 `failed` */
+ /**
+  * `completed` / `dedup` 只数**细任务**:渲完交付的、与产物库里已有而以去重方式交付的。`plans` 数做完的计划任务(切分并发布了细任务;

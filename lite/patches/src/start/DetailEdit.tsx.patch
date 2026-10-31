@@ -1,0 +1,21 @@
+diff --git a/src/start/DetailEdit.tsx b/src/start/DetailEdit.tsx
+index 6f5a114578f34c291862372f5b306cfadbda3ad4..43e4b8873faa0d5b2ec6da4e928b8c116dc601c9 100644
+--- a/src/start/DetailEdit.tsx
++++ b/src/start/DetailEdit.tsx
+@@ -17,14 +17,14 @@
+  *
+  * 2026-10-23 先做的那一版是自己画的只读轨道(拖不动、改不了),和上面那句语义对不上,同日换成了真时间轴。
+  * 真时间轴的右键菜单在这一页多一项「引用到输入框」(`TimelineView` 的 `quoteClip`,只这一页传),
+- * 写法和编辑器「引用到 AI」同一个(`@卡片 名字(片段 id)`,`src/mobile/agentView.ts` 的 `quoteToken`),Agent 认得。
++ * 写法和编辑器「引用到 AI」同一个(`@卡片 名字(片段 id)`,`src/start/agentView.ts` 的 `quoteToken`),Agent 认得。
+  */
+ import { useLayoutEffect, useRef, useState } from "react";
+ import type { JSX } from "react";
+ import { actions, useStore } from "../store/project";
+ import { TimelineView } from "../editor/timeline";
+ import { ResizeHandle } from "../editor/ResizeHandle";
+-import { quoteToken } from "../mobile/agentView";
++import { quoteToken } from "./agentView";
+ import { overlayQuoteId } from "../editor/timeline/overlayActions";
+ import { VibeStage } from "./VibeStage";
+ 

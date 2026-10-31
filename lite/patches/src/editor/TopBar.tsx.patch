@@ -1,0 +1,385 @@
+diff --git a/src/editor/TopBar.tsx b/src/editor/TopBar.tsx
+index 7457ddb46e1ee02daec4f9454c96250316243a9e..a67144d4f2315a1ceac26cd955259fb7834a84f3 100644
+--- a/src/editor/TopBar.tsx
++++ b/src/editor/TopBar.tsx
+@@ -1,13 +1,11 @@
+-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
++import { useEffect, useRef, useState } from "react";
+ import { createPortal } from "react-dom";
+-import { getActiveCollectDelegationUrl, subscribeActiveCollectDelegation } from "../ai/collectDelegationStore";
+ import { actions, getState, useStore } from "../store/project";
+ import { cancelExport, exportVideo, streamExportFile, revealExport, importProjectFile, getMediaFile } from "./io";
+ import { newProject, pickSaveTarget, serializeProc, writeProcToDisk, loadProc, forgetSaveTarget, PROC_EXT, PROC_FORMAT } from "./io/proc";
+ import { PROCP_EXT, isProcpFile, loadProcpFile, packMissingMessage, packProcp } from "./io/procp";
+ import { exportSkippedMessage } from "./io/exportSkipped";
+ import { ExportDialog, type ExportState } from "./ExportDialog";
+-import type { ExportMode } from "../export/cardLayers";
+ import { exportGateNow } from "./media/assetTiers";
+ import { awaitingUploaderMessage } from "../render/mediaTier";
+ import { ensureActiveDraftId, saveDraft, setActiveDraftId } from "./io/drafts";
+@@ -31,7 +29,6 @@ import {
+ } from "../ui/icons";
+ import { openVoiceSettings } from "../ai/voiceSettingsStore";
+ import { ModeSwitch } from "./ModeSwitch";
+-import { LanOpenDialog } from "./LanOpenDialog";
+ import { AgentBrowserTab } from "./AgentBrowserTab";
+ import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
+ import { SkinDialog } from "./SkinDialog";
+@@ -42,20 +39,8 @@ import { ReadOnlyMarker } from "./ReadOnlyFence";
+ import { SyncChips } from "./sync/SyncChips";
+ import { BackupsDialog } from "./sync/BackupsDialog";
+ import { useSync, whenSaved } from "./sync/syncManager";
+-import { unsentAtRisk, UNSENT_LEAVE_TEXT } from "./sync/onlineStatus";
+-import { onlineUnsupported } from "../online/pageFlag";
+ import "../ui/toolbar.css";
+ 
+-/** 在线浏览器模式里置灰的项目菜单项:都要编辑器进程(草稿、另存、本地备份),C10a 不提供(契约第 2 节) */
+-const ONLINE_OFF = (entry: string): string => onlineUnsupported(entry);
+-
+-/**
+- * 在线构建的编译期常量(写法与用意见 `src/online/pageFlag.ts` 的「在线构建剪枝」),值同 `mode.ts` 的 `ONLINE`。
+- * 在线页面上置灰的项(新建、打开、保存、打包保存、SKILL)背后的函数在在线构建里换成空函数,
+- * 连同草稿、打包、Skill 对话框背后的 /api 调用一起剪掉(M8 遗留 L24)。
+- */
+-const ONLINE_BUILD = typeof import.meta.env !== "undefined" && import.meta.env.VITE_PC_ONLINE === "1";
+-
+ /**
+  * 「快捷键」「关于 PromptCut」的说明文字。桌面版在标题栏菜单「帮助」里点开(`WindowTitleBar.tsx`,经 `pc-titlebar-command` 交到下面的 `onCommand`);
+  * 在线构建不画标题栏(2026-10-22 用户定),这两项改住在「⋯」菜单里,点了弹同一段说明。
+@@ -64,8 +49,6 @@ const SHORTCUTS_TEXT = "空格 播放/暂停\nCtrl/Cmd + Z 撤销\nCtrl/Cmd + Sh
+ const ABOUT_TEXT = "PromptCut\nAI 视频编辑器";
+ 
+ /** 「⋯」菜单里没有图标的那几项占位:图标默认 18px,占住同样宽度,文字才和「皮肤…」那一行对齐 */
+-const MoreMenuNoIcon = () => <span aria-hidden="true" style={{ flex: "0 0 18px", width: 18 }} />;
+-
+ /** 顶栏宽度档位:宽档(全部展开)、中档(图标收缩)、窄档(折叠更多菜单) */
+ type BarTier = "wide" | "icon" | "narrow";
+ 
+@@ -142,7 +125,6 @@ export function TopBar() {
+   const barRef = useRef<HTMLDivElement>(null);
+   const moreBtnRef = useRef<HTMLButtonElement>(null);
+   const menuRef = useRef<HTMLDivElement>(null);
+-  const collectUrl = useSyncExternalStore(subscribeActiveCollectDelegation, getActiveCollectDelegationUrl, () => null);
+ 
+   const [tier, setTier] = useState<BarTier>("wide");
+   const [settingsOpen, setSettingsOpen] = useState(false);
+@@ -150,7 +132,6 @@ export function TopBar() {
+   const [menuOpen, setMenuOpen] = useState(false);
+   const [skillOpen, setSkillOpen] = useState(false);
+   // 「在手机上打开」(`workflow/editing.md`「局域网里的第二块屏」):只有桌面那一侧给这个入口
+-  const [lanOpen, setLanOpen] = useState(false);
+   /**
+    * 「本地备份…」。C6.5 的「新建共享项目」「打开共享项目」两项已删(C10a 契约第 6 节「旧入口」):
+    * 要和别人一起做,在项目设置里勾「多用户协作」;加入别人的项目在开始页。
+@@ -207,14 +188,7 @@ export function TopBar() {
+ 
+   const name = useStore((s) => s.project.name);
+   // 不订阅整份项目:顶栏只在导出那一下要项目,当场 getState() 取;订阅了的话每挪一次片段顶栏整条重渲(tiers-probe T4)
+-  // 在线页面都是云端项目(改动实时同步上云端,「保存项目」置灰),只读模式也不能保存:都不标未保存的「*」与蓝点,回首页 / 切氛围式也不弹未保存确认
+-  const dirty = useStore((s) => !ONLINE_BUILD && s.dirty) && !viewOnly;
+-  /**
+-   * 在线页面离开编辑界面之前要问一句的那一种:离线(或离线批次等用户决定)、手里有还没提交上去的改动,
+-   * 而且改动只在这个页面里 —— 游客的项目不落盘(`syncManager.ts` 里浏览器本地缓存只给账号项目写),
+-   * 或者浏览器本地缓存这次写不成(配额、隐私模式)。和 `SyncOverlays.tsx` 挂浏览器离开确认用的是同一个判断。
+-   */
+-  const unsentRisk = useSync((v) => unsentAtRisk(v.status, v.unconfirmed, v.offlineStore));
++  const dirty = useStore((s) => s.dirty) && !viewOnly;
+   const projectInput = useRef<HTMLInputElement>(null);
+ 
+   /** 顶栏项目名就地改名:点一下标签变输入框 */
+@@ -379,7 +353,7 @@ export function TopBar() {
+     showSaveNotice({ tone, title: tone === "error" ? "这次没有保存" : "已保存", message });
+   };
+ 
+-  const saveProject = ONLINE_BUILD ? async () => {} : async () => {
++  const saveProject = async () => {
+     await saveProcFile(`${name}${PROC_EXT}`, {
+       writeProc: (produce, fileName) => writeProcToDisk(produce, fileName),
+       settle: (ms) => whenSaved(ms),
+@@ -399,7 +373,7 @@ export function TopBar() {
+    * 装包(从本地内容库按哈希取素材)只能排在挑好落点之后。包里素材按内容哈希去重,
+    * 同一份素材被几条片段引用也只有一份字节。
+    */
+-  const savePackedProject = ONLINE_BUILD ? async () => {} : async () => {
++  const savePackedProject = async () => {
+     await savePackedFile(`${name}${PROCP_EXT}`, {
+       pick: (fileName) => pickSaveTarget(fileName, "PromptCut 打包项目", { "application/zip": [PROCP_EXT] }),
+       settle: (ms) => whenSaved(ms),
+@@ -430,7 +404,7 @@ export function TopBar() {
+    * 在线浏览器先选导出方式(`docs/semantics/workflow/project.md`「导出视频」:「快速导出」或「完整导出」):不带 `mode` 进来时只把
+    * 对话框切到选择那一步,选了以后带着 `mode` 再进来 —— 那一次点击就是「另存为」要的用户手势。桌面版没有这一步。
+    */
+-  const exportProject = async (mode?: ExportMode) => {
++  const exportProject = async () => {
+     const project = getState().project;
+     // C6.6:按轮询到的集合先判一次(不发请求,不耽误下面「另存为」要的用户手势);
+     // 素材原尺寸还没传完就不弹另存为,直接提示等待上传方。exportVideo 里还会再问一遍素材服务
+@@ -439,12 +413,6 @@ export function TopBar() {
+       setExportState({ phase: "error", done: 0, total: 1, target: "", message: awaitingUploaderMessage(pending) });
+       return;
+     }
+-    if (ONLINE_BUILD && !mode) {
+-      setExportState({ phase: "asking", done: 0, total: 1, target: "" });
+-      return;
+-    }
+-    // 选保存位置期间选择的对话框先收起来(用户取消选位置就整个不导出)
+-    if (ONLINE_BUILD) setExportState(null);
+     const suggested = `${name}.mp4`;
+     let target: FileSystemFileHandle | null = null;
+     try {
+@@ -462,15 +430,10 @@ export function TopBar() {
+       total: Math.max(1, Math.floor(project.duration * (project.fps || 30))),
+       target: target ? target.name : "产物目录（本机不支持选择位置）",
+       startedAt: Date.now(),
+-      ...(mode ? { mode } : {}),
+     });
+ 
+     try {
+       const { outDir, id, written, skippedMedia } = await exportVideo({
+-        // 在线浏览器模式(c10a 第 11.1 节)边编边写进这个落点,回 written: true;桌面那一路不看它
+-        target,
+-        // 在线浏览器:选的导出方式;导出前还在等什么(素材原尺寸、渲染节点)显示在进度窗口里。桌面那一路不看这两项
+-        ...(mode ? { mode, onWaiting: (message: string | null) => setExportState((st) => (st ? { ...st, waiting: message ?? undefined } : st)) } : {}),
+         onStart: (jobId) => {
+           exportIdRef.current = jobId;
+           setExportState((st) => (st ? { ...st, id: jobId } : st));
+@@ -505,7 +468,7 @@ export function TopBar() {
+   };
+ 
+   /** 新建项目:清空当前编排,并断开草稿绑定(保存时会新开一份) */
+-  const createProject = ONLINE_BUILD ? () => {} : () => {
++  const createProject = () => {
+     if (dirty && !confirm("当前项目还有未保存的改动，新建会丢掉它们。继续？")) return;
+     newProject();
+     setActiveDraftId(null);
+@@ -516,7 +479,7 @@ export function TopBar() {
+    * 只认裸 Project 和 {cards} 编排,拿它开 .proc 会直接报「无法识别」—— 所以 .proc 走
+    * loadProc(连剧本和对话一起灌回去),其余的旧 JSON 才交给 importProjectFile。
+    */
+-  const openProjectFile = ONLINE_BUILD ? async (_file: File) => {} : async (file: File) => {
++  const openProjectFile = async (file: File) => {
+     if (dirty && !confirm("当前项目还有未保存的改动，打开别的项目会丢掉它们。继续？")) return;
+     // .procp 是「编排 + 素材」的 zip 包(A1):先把素材按哈希拆进本地内容库,
+     // 再拿里面那条 project.proc 走和 .proc 完全一样的路。不能先 file.text() ——
+@@ -537,15 +500,8 @@ export function TopBar() {
+     forgetSaveTarget();
+   };
+ 
+-  /**
+-   * 在线页面离开编辑界面之前的那一句：问的不是「项目没保存」（云端项目没有这回事，issue #16），
+-   * 是「离线时攒的改动只在这个页面里，离开就没了」。放行就走。
+-   */
+-  const okToLeaveOnline = () => !ONLINE_BUILD || !unsentRisk || confirm(UNSENT_LEAVE_TEXT);
+-
+   /** 回到开始页。Shell 在监听这个事件 */
+   const goHome = () => {
+-    if (!okToLeaveOnline()) return;
+     if (dirty && !confirm("当前项目还有未保存的改动，回首页会丢掉它们。继续？")) return;
+     window.dispatchEvent(new Event("pc-go-home"));
+   };
+@@ -577,7 +533,6 @@ export function TopBar() {
+       }
+       window.dispatchEvent(new Event("pc-go-home"));
+     };
+-    if (ONLINE_BUILD) { if (okToLeaveOnline()) go(); return; }
+     if (!dirty) { go(); return; }
+     void saveDraft(ensureActiveDraftId()).then(go, (e: unknown) => {
+       const why = e instanceof Error ? e.message : String(e);
+@@ -592,23 +547,22 @@ export function TopBar() {
+       const command = (event as CustomEvent<string>).detail;
+       switch (command) {
+         // 在线页面:这几项在菜单里都置灰(C10 契约第 10 节),标题栏菜单发来的同名命令同样不做
+-        case "new-project": if (!ONLINE_BUILD) createProject(); break;
+-        case "open-project": if (!ONLINE_BUILD) projectInput.current?.click(); break;
+-        case "save-project": if (!viewOnly && !ONLINE_BUILD) void saveProject(); break;
++        case "new-project": createProject(); break;
++        case "open-project": projectInput.current?.click(); break;
++        case "save-project": if (!viewOnly) void saveProject(); break;
+         case "export-video": void run(() => exportProject())(); break;
+         case "go-home": goHome(); break;
+         case "undo": if (!ro.locked) actions.undo(); break;
+         case "redo": if (!ro.locked) actions.redo(); break;
+         case "open-skin": setSkinOpen(true); break;
+-        case "open-voice": if (!ONLINE_BUILD) openVoiceSettings(); break;
++        case "open-voice": openVoiceSettings(); break;
+         case "shortcuts": alert(SHORTCUTS_TEXT); break;
+         case "about": alert(ABOUT_TEXT); break;
+       }
+     };
+     window.addEventListener("pc-titlebar-command", onCommand);
+     return () => window.removeEventListener("pc-titlebar-command", onCommand);
+-    // unsentRisk 也在里头(「回首页」要照它问一句):不列进来的话这个处理器会捏着旧的那一份
+-  }, [viewOnly, ro.locked, dirty, name, unsentRisk]);
++  }, [viewOnly, ro.locked, dirty, name]);
+ 
+   const toggleMoreMenu = () => {
+     if (!menuOpen && moreBtnRef.current) {
+@@ -718,54 +672,6 @@ export function TopBar() {
+             <IconPalette />
+             <span className="pc-btn-label">皮肤…</span>
+           </button>
+-          {/* 在线构建没有标题栏菜单(2026-10-22 用户定),它「帮助」里的这两项挪到这里;桌面版仍在标题栏菜单里,这里不重复 */}
+-          {ONLINE_BUILD && (
+-            <>
+-              <button
+-                type="button"
+-                className="pc-btn"
+-                style={{ width: "100%", justifyContent: "flex-start" }}
+-                data-pc="more-shortcuts"
+-                onClick={() => {
+-                  setMenuOpen(false);
+-                  alert(SHORTCUTS_TEXT);
+-                }}
+-              >
+-                <MoreMenuNoIcon />
+-                <span className="pc-btn-label">快捷键</span>
+-              </button>
+-              <button
+-                type="button"
+-                className="pc-btn"
+-                style={{ width: "100%", justifyContent: "flex-start" }}
+-                data-pc="more-about"
+-                onClick={() => {
+-                  setMenuOpen(false);
+-                  alert(ABOUT_TEXT);
+-                }}
+-              >
+-                <MoreMenuNoIcon />
+-                <span className="pc-btn-label">关于 PromptCut</span>
+-              </button>
+-            </>
+-          )}
+-          {/* 在手机上打开(`workflow/editing.md`「局域网里的第二块屏」):同一局域网里的手机扫码进同一个本机项目。
+-              在线页面没有这一项 —— 那边的项目在云端,手机直接开项目直达地址就行 */}
+-          {!ONLINE_BUILD && (
+-            <button
+-              type="button"
+-              className="pc-btn"
+-              style={{ width: "100%", justifyContent: "flex-start" }}
+-              data-pc="more-lan-open"
+-              onClick={() => {
+-                setMenuOpen(false);
+-                setLanOpen(true);
+-              }}
+-            >
+-              <MoreMenuNoIcon />
+-              <span className="pc-btn-label">在手机上打开</span>
+-            </button>
+-          )}
+           {/* 模式开关只在窄档收进来,宽档它还在条上;项目设置已经住进「项目」菜单 */}
+           {tier === "narrow" && (
+             <div className="pc-more-menu-row">
+@@ -787,11 +693,11 @@ export function TopBar() {
+             left: Math.max(8, Math.min(projRect?.left ?? 0, window.innerWidth - 248)),
+           }}
+         >
+-          <button type="button" role="menuitem" className="pc-proj-item" disabled={ONLINE_BUILD} title={ONLINE_BUILD ? ONLINE_OFF("新建项目") : undefined} onClick={() => { setProjOpen(false); createProject(); }}>
++          <button type="button" role="menuitem" className="pc-proj-item" onClick={() => { setProjOpen(false); createProject(); }}>
+             <IconNew />
+             <span className="pc-proj-text"><b>新建项目</b><small>开一个空项目</small></span>
+           </button>
+-          <button type="button" role="menuitem" className="pc-proj-item" disabled={ONLINE_BUILD} title={ONLINE_BUILD ? ONLINE_OFF("打开项目") : undefined} onClick={() => { setProjOpen(false); projectInput.current?.click(); }}>
++          <button type="button" role="menuitem" className="pc-proj-item" onClick={() => { setProjOpen(false); projectInput.current?.click(); }}>
+             <IconOpen />
+             <span className="pc-proj-text"><b>打开项目…</b><small>{PROC_EXT} 项目文件</small></span>
+           </button>
+@@ -799,8 +705,8 @@ export function TopBar() {
+             type="button"
+             role="menuitem"
+             className="pc-proj-item"
+-            disabled={viewOnly || ONLINE_BUILD}
+-            title={ONLINE_BUILD ? ONLINE_OFF("保存项目") : viewOnly ? viewOnlyText() : undefined}
++            disabled={viewOnly}
++            title={viewOnly ? viewOnlyText() : undefined}
+             onClick={() => { setProjOpen(false); void saveProject(); }}
+           >
+             <IconSave />
+@@ -812,8 +718,8 @@ export function TopBar() {
+             role="menuitem"
+             className="pc-proj-item"
+             data-pc="menu-pack"
+-            disabled={viewOnly || ONLINE_BUILD}
+-            title={ONLINE_BUILD ? ONLINE_OFF("打包保存") : viewOnly ? viewOnlyText() : "编排和素材打成一个包,换台机器直接打开"}
++            disabled={viewOnly}
++            title={viewOnly ? viewOnlyText() : "编排和素材打成一个包,换台机器直接打开"}
+             onClick={() => { setProjOpen(false); void savePackedProject(); }}
+           >
+             <IconSave />
+@@ -822,12 +728,12 @@ export function TopBar() {
+           <div className="pc-proj-sep" role="separator" />
+           <button type="button" role="menuitem" className="pc-proj-item" data-pc="menu-backups" onClick={() => { setProjOpen(false); setBackupsOpen(true); }}>
+             <IconSave />
+-            <span className="pc-proj-text"><b>本地备份…</b><small>{ONLINE_BUILD ? "被覆盖、离线丢弃的修改(只留在本页)" : "被覆盖、离线丢弃的修改"}</small></span>
++            <span className="pc-proj-text"><b>本地备份…</b><small>被覆盖、离线丢弃的修改</small></span>
+           </button>
+           <div className="pc-proj-sep" role="separator" />
+           <button type="button" role="menuitem" className="pc-proj-item" onClick={() => { setProjOpen(false); setSettingsOpen(true); }}>
+             <IconSettings />
+-            <span className="pc-proj-text"><b>项目设置…</b><small>尺寸、帧率、多用户协作</small></span>
++            <span className="pc-proj-text"><b>项目设置…</b><small>尺寸、帧率、渲染与创造力</small></span>
+           </button>
+         </div>,
+         document.body,
+@@ -840,33 +746,6 @@ export function TopBar() {
+         <SyncChips />
+       </div>
+ 
+-      {/* 桌面版代下时的醒目提示条 */}
+-      {collectUrl && (
+-        <div
+-          className="pc-bar-group"
+-          role="status"
+-          aria-live="polite"
+-          style={{
+-            display: "inline-flex",
+-            alignItems: "center",
+-            padding: "2px 10px",
+-            borderRadius: "999px",
+-            fontSize: "12px",
+-            color: "var(--ui-accent, #3b82f6)",
+-            background: "var(--ui-accent-subtle, rgba(59, 130, 246, 0.12))",
+-            border: "1px solid var(--ui-accent, rgba(59, 130, 246, 0.3))",
+-            maxWidth: "420px",
+-            overflow: "hidden",
+-            textOverflow: "ellipsis",
+-            whiteSpace: "nowrap",
+-            fontWeight: 500,
+-          }}
+-          title={`云端 Agent 正在用这台电脑上的登录下载：${collectUrl}`}
+-        >
+-          {`云端 Agent 正在用这台电脑上的登录下载：${collectUrl}`}
+-        </div>
+-      )}
+-
+       {/* 只读(?observe=1,或这个项目只给了只读权限):告诉人这份是看的不是改的,别让人白点一下才发现 */}
+       {viewOnly && (
+         <span
+@@ -901,7 +780,7 @@ export function TopBar() {
+           {dirty && <span className="pc-proj-dirty" title="有没保存的改动" />}
+         </button>
+         {/* 配音设置:开子窗口,和开始页配音卡的「设置」是同一个 */}
+-        <Btn onClick={openVoiceSettings} label="配音设置" icon={<IconVoice />} collapsed={tier !== "wide"} disabled={ONLINE_BUILD} title={ONLINE_BUILD ? ONLINE_OFF("配音") : undefined} />
++        <Btn onClick={openVoiceSettings} label="配音设置" icon={<IconVoice />} collapsed={tier !== "wide"} />
+         <Btn
+           onClick={run(() => exportProject())}
+           label="导出视频"
+@@ -921,10 +800,7 @@ export function TopBar() {
+ 
+       {/* 项目设置对话框 */}
+       <SkinDialog open={skinOpen} onClose={() => setSkinOpen(false)} />
+-      {/* 在线页面 SKILL 置灰(ModeSwitch),对话框打不开 */}
+-      {ONLINE_BUILD ? null : <SkillDialog open={skillOpen} onClose={() => setSkillOpen(false)} />}
+-      {/* 和第 754 行那个菜单项一样要带 !ONLINE_BUILD：漏了的话 LanOpenDialog 连它的 /api/lan-open 一起进在线产物 */}
+-      {!ONLINE_BUILD && lanOpen && <LanOpenDialog onClose={() => setLanOpen(false)} />}
++      <SkillDialog open={skillOpen} onClose={() => setSkillOpen(false)} />
+       <BackupsDialog open={backupsOpen} onClose={() => setBackupsOpen(false)} />
+       <ProjectSettingsDialog
+         open={settingsOpen}
+@@ -942,7 +818,6 @@ export function TopBar() {
+         onReveal={() => {
+           if (exportState?.id) void revealExport(exportState.id);
+         }}
+-        onPick={(picked) => { void run(() => exportProject(picked))(); }}
+       />
+     </div>
+   );

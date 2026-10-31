@@ -1,0 +1,13 @@
+diff --git a/server/test/asset-client.test.mjs b/server/test/asset-client.test.mjs
+index ad01a8236ec87ccefd0ccd0eeb49a0947658cdf1..ae3f927a7f12b66e7153131979cd386dc0eb288b 100644
+--- a/server/test/asset-client.test.mjs
++++ b/server/test/asset-client.test.mjs
+@@ -31,7 +31,7 @@ function bytesOf(size, seed) {
+   return out;
+ }
+ const randomToken = () => crypto.randomBytes(24).toString('base64url');
+-const { assetTicketKit } = await import('./fake-shared-env.mjs');
++const { assetTicketKit } = await import('./fake-asset-service.mjs');
+ 
+ /**
+  * 记录每个请求的 fetch。`hook(info)` 可以返回一个 Response（或抛错）来代替真的请求；返回 undefined 就照常发。

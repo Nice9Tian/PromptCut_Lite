@@ -1,0 +1,13 @@
+diff --git a/src/editor/left/ClipSpeedForm.tsx b/src/editor/left/ClipSpeedForm.tsx
+index 547e859dcb8af309aafca3b9256d6a56eab6aacc..3cf1d4124ba6215c605cdd04a96e1ba315d6c058 100644
+--- a/src/editor/left/ClipSpeedForm.tsx
++++ b/src/editor/left/ClipSpeedForm.tsx
+@@ -12,7 +12,7 @@ export function speedResultText(r: ReturnType<typeof actions.setClipSpeed>, clip
+ /**
+  * 编辑分区里视频段、声音段的「速度」一栏:几档倍数,也能手动输入(0.25～4,可带小数,超出范围拒绝并提示,不夹)。
+  * 起点不动、终点按新速度重算(store 的 setClipSpeed:变长碰到后面的段整体推开、变短尾部留空)。
+- * 手机版的入口在子导航栏的「速度」(`src/mobile/sheets.tsx` 的 SpeedSheet),两边同一个动作、同一句说明。
++ * 起点不动、终点按新速度重算(store 的 setClipSpeed:变长碰到后面的段整体推开、变短尾部留空)。
+  */
+ export function ClipSpeedForm({ clip }: { clip: TrackClip }) {
+   const kind = useStore((s) => s.project.media.find((m) => m.id === clip.mediaId)?.kind);

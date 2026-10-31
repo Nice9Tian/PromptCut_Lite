@@ -1,0 +1,13 @@
+diff --git a/server/test/card-authoring-guide.test.mjs b/server/test/card-authoring-guide.test.mjs
+index a1390708bdc7af0b2a7ae974662104cde3532227..9c9dd25735e501a06b15e8e11a3ccf27982e58a3 100644
+--- a/server/test/card-authoring-guide.test.mjs
++++ b/server/test/card-authoring-guide.test.mjs
+@@ -366,8 +366,6 @@ test('GA-07 工具说明与 Agent 提示词里讲怎么写卡的地方和指南
+   assert.match(prompt, /remotion 式/);
+   assert.match(prompt, /frameMode/);
+   assert.doesNotMatch(prompt, /动画交给 `?motion\/react`?/, '提示词不再一律劝人动画交给 motion/react');
+-  const cloud = read('server/agent/service/cloud-tools.mjs');
+-  assert.match(cloud, /frameMode/, '云端 Agent 的提示词要提到 frameMode');
+ });
+ 
+ test('GA-08 指南里「第 N.M 节」「N.M 节」「第 N 节」的引用都指向真有的标题', () => {

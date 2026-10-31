@@ -1,0 +1,27 @@
+diff --git a/server/media-tiers.mjs b/server/media-tiers.mjs
+index 8e703bd9dcea5b4746a5732b867ae8d3ab883078..f4817c328f1278d2d5d399d6b7f68bca2b3ad71b 100644
+--- a/server/media-tiers.mjs
++++ b/server/media-tiers.mjs
+@@ -42,7 +42,6 @@ import path from 'node:path';
+ import crypto from 'node:crypto';
+ import { spawn } from 'node:child_process';
+ import { AsyncLocalStorage } from 'node:async_hooks';
+-import { publishProjectFile } from './asset-store/project-io.mjs';
+ const tierJobContext = new AsyncLocalStorage();
+ 
+ export const SMALL_MAX_WIDTH = 800;
+@@ -299,11 +298,9 @@ export function createTierManager({ dir, lib, ffmpeg, queue = null, log = () =>
+     const had = await exists(dest);
+     await ownership?.assert();
+     tierJobContext.getStore()?.signal.throwIfAborted();
+-    let size;
+-    if (ownership) {
+-      const existing = await lib.entry?.(hash), lease = tierJobContext.getStore();
+-      await publishProjectFile({ temp: tmp, target: dest, lease, assert: async () => { await ownership.assert(); await lease?.assert(); }, afterCommit: async () => { size = (await fs.stat(dest)).size; await lib.writeIndex(hash, { file: fileName, name, ext, size, contentType: lib.contentTypeForExt(ext) }); }, rollback: async () => { if (existing) await lib.writeIndex(hash, existing); else await lib.forget?.(hash); } });
+-    } else { if (had) await fs.rm(tmp, { force: true }); else await fs.rename(tmp, dest); size = (await fs.stat(dest)).size; await lib.writeIndex(hash, { file: fileName, name, ext, size, contentType: lib.contentTypeForExt(ext) }); }
++    if (had) await fs.rm(tmp, { force: true }); else await fs.rename(tmp, dest);
++    const size = (await fs.stat(dest)).size;
++    await lib.writeIndex(hash, { file: fileName, name, ext, size, contentType: lib.contentTypeForExt(ext) });
+     return { hash, ext, name, bytes: size, path: dest, url: `/@media/${hash}`, contentType: lib.contentTypeForExt(ext), deduped: had, ...(ownership ? { projectId: ownership.projectId } : {}) };
+     } finally { await fs.rm(tmp, { force: true }).catch(() => {}); }
+   }

@@ -1,0 +1,62 @@
+diff --git a/src/editor/io/cardAudioGeneration.test.mjs b/src/editor/io/cardAudioGeneration.test.mjs
+index 5122ac1fa004545a84fab81a87f46ffb8e5bf8c7..1cc8c3eb5a00d20b9ec7693e488e5ee4c6df2627 100644
+--- a/src/editor/io/cardAudioGeneration.test.mjs
++++ b/src/editor/io/cardAudioGeneration.test.mjs
+@@ -3,7 +3,7 @@ import test from 'node:test';
+ import assert from 'node:assert/strict';
+ const { actions, getState } = await import('../../store/project.ts');
+ const { registerCards } = await import('../../kernel/registry.ts');
+-const { configureCardAudio, renderEmbeddedCardWav, persistentCardAudio, generatedCardAudioClipsAt } = await import('../../audio/cardAudio.ts');
++const { configureCardAudio, persistentCardAudio, generatedCardAudioClipsAt } = await import('../../audio/cardAudio.ts');
+ const { generateCardAudio, cancelCardAudioGeneration } = await import('./cardAudioGeneration.ts');
+ const { findClip, flattenOverlay } = await import('../../kernel/project.ts');
+ const { serializeProc, parseProc } = await import('./proc.ts');
+@@ -101,22 +101,6 @@ test('源码和参数更新过期，取消/重开时晚到上传不改项目', a
+     assert.throws(() => audioPlanOf(getState().project), /已过期/);
+   } finally { immediate.restore(); }
+ });
+-test('在线只复用WAV，从不执行用户audio；缺失持久声音明确失败', async () => {
+-  const f = service();
+-  try {
+-    // 用户卡:在线页面不执行它的声音代码(内置卡 2026-10-06 起可以在线合成,见 onlineSoundJudge.test.mjs)
+-    const userDef = { ...def, id: 'av-user-fixture', source: 'user' };
+-    registerCards([userDef]);
+-    configureCardAudio({ getCard: id => id === def.id ? def : id === userDef.id ? userDef : undefined, sourceVersionOf: () => sourceVersion });
+-    sourceVersion = 'v1'; actions.newProject('声画'); const clip = actions.addCardClip(userDef.id, 0, { duration: .2 }); await generateCardAudio(clip.id);
+-    globalThis.__pcOnlinePage = true;
+-    const p = getState().project, c = findClip(p, clip.id).clip, count = evaluations;
+-    assert.equal(persistentCardAudio(p, c).media.kind, 'audio'); assert.equal(generatedCardAudioClipsAt(p, .1).length, 1);
+-    await assert.rejects(() => renderEmbeddedCardWav(p, c, new AbortController().signal), /在线/);
+-    assert.equal(evaluations, count);
+-    assert.throws(() => persistentCardAudio(p, { ...c, cardAudio: undefined }), /尚未生成/);
+-  } finally { delete globalThis.__pcOnlinePage; f.restore(); configureCardAudio({ getCard: id => id === def.id ? def : undefined, sourceVersionOf: () => sourceVersion }); }
+-});
+ test('换卡清掉旧音频能力，失败验证不会遗留取消任务', async () => {
+   const clip = fresh(); actions.setClipParams(clip.id, { invalid: () => 1 });
+   await assert.rejects(() => generateCardAudio(clip.id)); assert.equal(cancelCardAudioGeneration(clip.id), false);
+@@ -173,25 +157,3 @@ test('声画卡的audio-only类型误声明在添加、换卡、新轨添加前
+   assert.throws(() => actions.setClipCard(clip.id, 'invalid-av'), /声画卡不能使用 kind:audio/);
+   assert.equal(getState().project, p);
+ });
+-
+-test('在线AV的上游独立用户音频素材效果卡源码变化，也必须使持久WAV过期', async () => {
+-  const { cardAudioIdentity } = await import('../../kernel/cardAudioRendition.mjs');
+-  const { setSyncedUserCards } = await import('../../kernel/registry.ts');
+-  const root = { ...def, id: 'root-av' }, up = { id: 'upstream-audio', defaults: { value: 1 }, kind: 'audio', audio() {} };
+-  const c = { id: 'root', cardId: root.id, embeddedAudio: true, nodeId: 'n', start: 0, end: 1, params: {} };
+-  const p = { media: [{ id: 'wav', kind: 'audio', hash: 'a'.repeat(64), url: '/@media/wav' }], tracks: [{ id: 't', clips: [c] }],
+-    cardNodes: [{ id: 'n', adapter: 'card', cardId: root.id, inputs: { source: { nodeId: 'up' } } }, { id: 'up', adapter: 'card', cardId: up.id, kind: 'audio', inputs: {}, params: {} }] };
+-  c.cardAudio = { version: 1, mediaId: 'wav', cardId: root.id, sourceKey: 'key', sourceOffset: 0, duration: 1, sampleRate: 48000, frames: 48000, channels: 2,
+-    identity: cardAudioIdentity(p, c, { getCard: id => id === root.id ? root : up, sourceVersionOf: () => 'v1' }) };
+-  configureCardAudio({ getCard: () => undefined, sourceVersionOf: () => undefined });
+-  globalThis.__pcOnlinePage = true;
+-  try {
+-    setSyncedUserCards([{ id: root.id, name: 'root', embeddedAudio: true, audioSourceVersion: 'v1' }, { id: up.id, name: 'upstream', audioSourceVersion: 'v1' }]);
+-    assert.equal(persistentCardAudio(p, c).media.id, 'wav');
+-    setSyncedUserCards([{ id: root.id, name: 'root', embeddedAudio: true, audioSourceVersion: 'v1' }, { id: up.id, name: 'upstream', audioSourceVersion: 'v2' }]);
+-    assert.throws(() => persistentCardAudio(p, c), /已过期/);
+-  } finally {
+-    delete globalThis.__pcOnlinePage; setSyncedUserCards([]);
+-    configureCardAudio({ getCard: id => id === def.id ? def : undefined, sourceVersionOf: () => sourceVersion });
+-  }
+-});

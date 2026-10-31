@@ -1,0 +1,23 @@
+diff --git a/vite.prerender.config.ts b/vite.prerender.config.ts
+index 24c8bb33caed69260d6f869eb5e6a55788821a3f..db591b1792a36e9a21099fb899fc396f122729ff 100644
+--- a/vite.prerender.config.ts
++++ b/vite.prerender.config.ts
+@@ -5,8 +5,6 @@ import { defineConfig, type Plugin } from "vite";
+ import react from "@vitejs/plugin-react";
+ import tailwindcss from "@tailwindcss/vite";
+ import { apiGuardPlugin } from "./server/vite-plugin-api-guard";
+-import { hostedGatePlugin } from "./server/vite-plugin-hosted-gate";
+-import { cloudSeamsPlugin } from "./server/vite-plugin-cloud-seams";
+ import { exportPlugin } from "./server/vite-plugin-export";
+ import { mediaPlugin } from "./server/vite-plugin-media";
+ import { assetProxyPlugin } from "./server/asset-client";
+@@ -84,8 +82,7 @@ export default defineConfig({
+   // 依赖扫描入口只找真正的页面,不把 out/frame-library 下的快照 .html 当入口(`server/vite-scan-ignore.mjs`)
+   optimizeDeps: { entries: DEP_SCAN_ENTRIES },
+   // 跨源守卫要排在所有接口前面(中间件按 configureServer 的调用顺序注册)
+-  // hostedGatePlugin 只在托管方渲染服务的工作进程里生效(页面请求闸、出口代理,`server/hosted-render/vite-gate.mjs`),别处是空的
+-  plugins: [cloudSeamsPlugin(), prerenderGatePlugin(), hostedGatePlugin(), corsForEditor(), apiGuardPlugin(), react(), tailwindcss(), exportPlugin(), mirrorPlugin(), costsPlugin(), framesPlugin(), mediaRoutes(), vitePluginCards(), rawEolPlugin(), visionPlugin()],
++  plugins: [prerenderGatePlugin(), corsForEditor(), apiGuardPlugin(), react(), tailwindcss(), exportPlugin(), mirrorPlugin(), costsPlugin(), framesPlugin(), mediaRoutes(), vitePluginCards(), rawEolPlugin(), visionPlugin()],
+   server: {
+     // 渲染页每一趟都是全新的页面,用不着热更新;源码改了照样重新变换(watcher 还开着)
+     hmr: false,

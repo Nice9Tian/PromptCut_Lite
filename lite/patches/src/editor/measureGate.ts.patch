@@ -1,0 +1,22 @@
+diff --git a/src/editor/measureGate.ts b/src/editor/measureGate.ts
+index eb46ed5530b6563f380a7a0a31ecc35616932ffa..a1ee21114a26e2fb2cbae004d224b4d1a7900b67 100644
+--- a/src/editor/measureGate.ts
++++ b/src/editor/measureGate.ts
+@@ -17,7 +17,6 @@
+  *
+  * 桌面运行环境(不是在线页面)一开始就是开的,也不按连接关。Node 单测里 `onlinePage()` 恒为 false,同样是开的。
+  */
+-import { onlinePage } from "../online/pageFlag";
+ import { anyCardLoading, onCardRunStatesChanged } from "../kernel/registry";
+ 
+ /** 卡片源码第一次同步最多等这么久(毫秒),过了照常开始测量 */
+@@ -83,8 +82,7 @@ function hold(link: unknown, ms: number): void {
+ /** 问门之前:第一次按是不是在线页面定初值;在线页面的连接换了就重新关上 */
+ function check(): void {
+   if (state === "unset") {
+-    if (onlinePage()) holdMeasureForCardSources();
+-    else open("desktop", null);
++    open("desktop", null);
+     return;
+   }
+   if (state === "open" && diag.reason !== "desktop") {

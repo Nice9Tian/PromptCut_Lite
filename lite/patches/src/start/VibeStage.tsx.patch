@@ -1,0 +1,13 @@
+diff --git a/src/start/VibeStage.tsx b/src/start/VibeStage.tsx
+index ca0962da3c530f28867d83421f1c75b5d762d4f9..82738973287978c73e74285719e17a08b8239716 100644
+--- a/src/start/VibeStage.tsx
++++ b/src/start/VibeStage.tsx
+@@ -3,7 +3,7 @@
+  *
+  * 就是编辑界面的预览(`src/editor/Preview.tsx`,手机版用的那一种只出画面的样子 `variant="mobile"`)加它的测量遮罩
+  * (`ProbeGate`,打开项目时把卡片测一遍;成本记录全命中时一帧都不出现)—— 和手机版编辑界面挂的同一套
+- * (`src/mobile/MobileEditor.tsx`)。播放、跳转走 store 的同一套动作,所以「画面」和「详细编辑」看的是同一个播放头。
++ * 播放、跳转走 store 的同一套动作,所以「画面」和「详细编辑」看的是同一个播放头。
+  *
+  * 同一时刻只挂一个(舞台是 iframe,挂两份就是两套舞台):「详细编辑」展开时拓展栏那一格换成一行字。
+  * 项目还没连上(store 里不是云端项目)时不挂,调用方给空态。

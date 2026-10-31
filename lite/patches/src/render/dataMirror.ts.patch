@@ -1,0 +1,19 @@
+diff --git a/src/render/dataMirror.ts b/src/render/dataMirror.ts
+index d5c9dbcf60ed05eab1790038784393c95bca9b21..089eddc8c540b343d3d053c55a463cbea78a94fa 100644
+--- a/src/render/dataMirror.ts
++++ b/src/render/dataMirror.ts
+@@ -1,6 +1,5 @@
+ import type { Project } from "../kernel/project";
+ import { getState, subscribe } from "../store/project";
+-import { onlinePage } from "../online/pageFlag";
+ import { changedClips, projectHash, type ProjectPatch } from "./changedClips.mjs";
+ 
+ /**
+@@ -67,7 +66,6 @@ let started = false;
+  */
+ function isMirrorPage(): boolean {
+   // 在线浏览器模式没有编辑器进程可镜像(C10a 契约第 2 节)
+-  if (onlinePage()) return false;
+   try {
+     const p = new URLSearchParams(location.search);
+     if (p.has("observe") || p.get("view")) return false;

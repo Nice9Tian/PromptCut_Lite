@@ -1,0 +1,24 @@
+diff --git a/src/editor/left/UserCardMenu.tsx b/src/editor/left/UserCardMenu.tsx
+index bd2613e81dfa1812f98dd36fd46d6ce526b6b8c8..a8a8332a8c10791b75c09e5b7b64d40a7a3e92fa 100644
+--- a/src/editor/left/UserCardMenu.tsx
++++ b/src/editor/left/UserCardMenu.tsx
+@@ -1,7 +1,6 @@
+ import { useEffect } from "react";
+ import { setCardScope, type CardScope, type ScopeEntry } from "../cardScope";
+ import { getState } from "../../store/project";
+-import { onlinePage, onlineUnsupported } from "../../online/pageFlag";
+ 
+ /**
+  * 定制卡的右键菜单:在「项目素材」和「自定义素材」之间换档。
+@@ -66,10 +65,7 @@ export function UserCardMenu({
+       <button
+         type="button"
+         className="block w-full px-3 py-1.5 text-left text-neutral-200 hover:bg-neutral-700/50 disabled:opacity-40"
+-        // 在线浏览器模式:改卡的归属要写编辑器进程里的卡片目录(C10 契约第 10 节「建卡与改卡」),置灰
+-        disabled={onlinePage()}
+-        title={onlinePage() ? onlineUnsupported("改卡") : undefined}
+-        onClick={() => { if (!onlinePage()) void apply(); }}
++        onClick={() => { void apply(); }}
+       >
+         {label}
+       </button>

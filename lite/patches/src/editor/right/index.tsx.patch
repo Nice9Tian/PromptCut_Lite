@@ -1,0 +1,35 @@
+diff --git a/src/editor/right/index.tsx b/src/editor/right/index.tsx
+index 7fe1a22b9b19ddd535138c5426ff9b658ef47ba9..f0cbc66ab7c74d6fca50177f7cca12aa22bd3fad 100644
+--- a/src/editor/right/index.tsx
++++ b/src/editor/right/index.tsx
+@@ -11,15 +11,10 @@ import { AgentBrowserFrame } from "./AgentBrowserFrame";
+ 
+ import { editorApi } from "../../mcp/api";
+ 
+-/** 在线构建的编译期常量,写法与用意见 `src/online/pageFlag.ts` 的「在线构建剪枝」 */
+-const ONLINE_BUILD = typeof import.meta.env !== "undefined" && import.meta.env.VITE_PC_ONLINE === "1";
+-
+ export function RightPanel() {
+   const [mcpConnected, setMcpConnected] = useState(false);
+ 
+   useEffect(() => {
+-    // 在线浏览器模式没有编辑器进程:不连 Agent 的工具通道(C10a 契约第 2 节);在线构建里连同工具执行器一起剪掉
+-    if (ONLINE_BUILD) return;
+     const cleanup = connectMcpExecutor(() => editorApi, (s) => setMcpConnected(s.connected));
+     // 「用户正在编辑」推给同一个编辑器进程(A2),Agent 读写到这些片段时工具结果带提示
+     const stopEditing = startUserEditing();
+@@ -45,11 +40,11 @@ export function RightPanel() {
+         在线构建里不挂,连同背后的 /api 调用一起剪掉(C10 契约第 10 节;M8 遗留 L24)
+       */}
+       {/* 站点登录框:开始页的卡和 collect_login 工具都会打开它,挂在这里才能在编辑台里出现 */}
+-      {ONLINE_BUILD ? null : <CollectLoginDialog />}
++      <CollectLoginDialog />
+       {/* 配音设置子窗口:顶栏的「配音设置」按钮开它 */}
+-      {ONLINE_BUILD ? null : <VoiceSettingsDialog />}
++      <VoiceSettingsDialog />
+       {/* 桌面壳模式下 agent 交出浏览器时的浮层(Chrome 方案下永远不会打开) */}
+-      {ONLINE_BUILD ? null : <AgentBrowserFrame />}
++      <AgentBrowserFrame />
+     </>
+   );
+ }

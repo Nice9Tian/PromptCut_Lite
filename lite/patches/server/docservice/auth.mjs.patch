@@ -1,0 +1,184 @@
+diff --git a/server/docservice/auth.mjs b/server/docservice/auth.mjs
+index 2355babfd12fe12c6e0ba6c6779f4b4b0cfed480..fd42c82c615ee44bf4db6055902fd4e919d830e4 100644
+--- a/server/docservice/auth.mjs
++++ b/server/docservice/auth.mjs
+@@ -1,63 +1,137 @@
+ /**
+- * 文档服务握手的旧入口（M5a，`docs/plan/render-queue-contract.md` G.5），M6a 起只剩集群令牌的管理身份。
++ * 文档服务的本机回环鉴权与子协议解析。
+  *
+- * 数据面的鉴权在 `../auth/handshake.mjs`（`docs/plan/auth-contract.md` 第 5 节）：证明、连接票据、本机声明、
+- * 回环本机身份。集群令牌从数据面彻底退出，只守管理接口：带对令牌的连接是管理身份
+- * `{ userId: 'admin', tenantId: null, scope: 'admin' }`，发数据面消息回 `forbidden`（组装层的放行判断）。
+- *
+- * `createClusterAuth` 保留给只有令牌、没有凭证存储的场合（测试、只开管理接口的进程）：
+- * - 设了令牌：`promptcut.v1` 加 `promptcut.token.<令牌>` → 管理身份；别的一律拒；
+- * - 没设令牌、`allowAnonymous`：一律匿名 `{ userId: 'anonymous', tenantId: null }`（旧客户端、本机开发）。
+- * 令牌原文不进任何日志、错误信息、诊断输出：比对前两边各取 sha256，再定长比较。
++ * - 回环来源什么都不带（或只带 `promptcut.v1`）→ 本机页面身份 `LOCAL_PRINCIPAL`；
++ * - 回环来源带 `promptcut.v1` + `promptcut.role.agent.<对话号>` → 本机 Agent 身份；
++ * - 非回环来源或其它未授权子协议组合一律拒绝（401）。
+  */
+ import { createHash, timingSafeEqual } from 'node:crypto';
+-import { PROTOCOL, TOKEN_PREFIX } from '../auth/protocol.mjs';
+-import { offeredProtocols, checkTokenFormat, ADMIN_PRINCIPAL } from '../auth/handshake.mjs';
+ 
+-export { PROTOCOL, offeredProtocols, checkTokenFormat };
++export const PROTOCOL = 'promptcut.v1';
++export const TOKEN_PREFIX = 'promptcut.token.';
++export const ROLE_PREFIX = 'promptcut.role.';
++
++export const LOCAL_PRINCIPAL = Object.freeze({ userId: 'local', tenantId: 'local', scope: 'local', role: 'page' });
++export const ADMIN_PRINCIPAL = Object.freeze({ userId: 'admin', tenantId: null, scope: 'admin' });
++
++const TOKEN_RE = /^[A-Za-z0-9_-]{32,256}$/;
+ 
+-const ANONYMOUS = Object.freeze({ userId: 'anonymous', tenantId: null });
++/** 集群令牌格式：base64url 字符，32～256 个 */
++export const checkTokenFormat = (token) => typeof token === 'string' && TOKEN_RE.test(token);
+ 
+-/** 回环地址：只绑这些地址时算本机 */
++/** 握手请求里客户端给的子协议列表（多个头、逗号分隔都拆开） */
++export function offeredProtocols(req) {
++  const raw = req?.headers?.['sec-websocket-protocol'];
++  if (raw === undefined) return [];
++  const text = Array.isArray(raw) ? raw.join(',') : String(raw);
++  return text.split(',').map((s) => s.trim()).filter((s) => s !== '');
++}
++
++/**
++ * 监听地址是不是本机回环。只认 `127.0.0.1`、`::1`、`localhost`（大小写不敏感）。
++ */
+ export function isLoopbackHost(host) {
+-  return host === '127.0.0.1' || host === '::1' || host === 'localhost';
++  const h = String(host ?? '').trim().toLowerCase();
++  return h === '127.0.0.1' || h === '::1' || h === 'localhost';
++}
++
++/** 回环地址（含 IPv4 映射的 IPv6） */
++export function isLoopbackAddress(address) {
++  const a = String(address ?? '').toLowerCase();
++  return a === '::1' || /^127\./.test(a) || /^::ffff:127\./.test(a);
+ }
+ 
+-const digest = (text) => createHash('sha256').update(text, 'utf8').digest();
++function sha256(text) {
++  return createHash('sha256').update(text, 'utf8').digest();
++}
+ 
+ /**
+- * @param {object} options
+- * @param {string} [options.token] 集群令牌；设了就是令牌模式
+- * @param {boolean} [options.allowAnonymous] 没设令牌时是否放行匿名连接；不放行就全部拒绝
+- * @param {(event: string, fields: object) => void} [options.log] 握手被拒时记 `auth.reject { remote, reason }`
++ * 本机回环握手鉴权（兼容 `createHandshakeAuth` 的回环行为）。
+  */
+-export function createClusterAuth({ token, allowAnonymous = false, log = () => {} } = {}) {
+-  const tokenMode = token !== undefined && token !== null;
+-  if (tokenMode && !checkTokenFormat(token)) throw new TypeError('createClusterAuth: 集群令牌格式不对（要 32～256 个 base64url 字符）');
+-  const expected = tokenMode ? digest(token) : null;
+-
+-  function reject(req, reason) {
+-    log('auth.reject', { remote: req?.socket?.remoteAddress ?? null, reason });
+-    return null;
++export function createHandshakeAuth({
++  isLoopback = (req) => isLoopbackAddress(req?.socket?.remoteAddress),
++  remoteOf = (req) => req?.socket?.remoteAddress ?? null,
++  log = () => {},
++} = {}) {
++  function authenticate(req) {
++    const remote = remoteOf(req);
++    const reject = (reason) => {
++      log('auth.reject', { remote, reason });
++      return null;
++    };
++    let loopback = false;
++    try {
++      loopback = !!isLoopback(req);
++    } catch {
++      loopback = false;
++    }
++    const offered = offeredProtocols(req);
++    const items = offered.filter((p) => p !== PROTOCOL && !p.startsWith('promptcut.session.'));
++    const roleItems = items.filter((p) => p.startsWith(ROLE_PREFIX));
++    const otherItems = items.filter((p) => !p.startsWith(ROLE_PREFIX));
++
++    if (otherItems.length > 1) return reject('multiple');
++    if (otherItems.length > 0) return reject('no-credential');
++
++    if (roleItems.length > 0) {
++      if (!loopback) return reject('bad-format');
++      if (roleItems.length > 1) return reject('multiple');
++      if (!offered.includes(PROTOCOL)) return reject('bad-format');
++      const m = /^agent\.([1-9][0-9]{0,14})$/.exec(roleItems[0].slice(ROLE_PREFIX.length));
++      if (!m) return reject('bad-format');
++      return { ...LOCAL_PRINCIPAL, role: 'agent', conversation: Number(m[1]) };
++    }
++    return loopback ? { ...LOCAL_PRINCIPAL } : reject('no-credential');
+   }
+ 
+   return {
+-    /** 返回 principal；null 表示拒绝（握手回 401） */
+-    authenticate(req) {
+-      if (!tokenMode) return allowAnonymous ? { ...ANONYMOUS } : reject(req, 'no-credential');
+-      const offered = offeredProtocols(req);
+-      if (!offered.includes(PROTOCOL)) return reject(req, 'bad-format');
+-      const given = offered.filter((p) => p.startsWith(TOKEN_PREFIX));
+-      if (given.length === 0) return reject(req, 'no-credential');
+-      // 给了多个令牌项不猜哪个是真的
+-      if (given.length !== 1) return reject(req, 'multiple');
+-      const ok = timingSafeEqual(digest(given[0].slice(TOKEN_PREFIX.length)), expected);
+-      return ok ? { ...ADMIN_PRINCIPAL } : reject(req, 'bad-proof');
+-    },
+-
+-    /** 握手成功时要回显的子协议；客户端没给 `promptcut.v1` 就不回 */
++    authenticate,
+     protocolFor(req) {
+       return offeredProtocols(req).includes(PROTOCOL) ? PROTOCOL : null;
+     },
+   };
+ }
++
++export const createLocalLoopbackAuth = createHandshakeAuth;
++
++/**
++ * 构造给 `createDocService` 用的 `authenticate(req)`（测试与独立服务兼容）。
++ */
++export function createTokenAuth({ token, allowAnonymous = false, log = () => {} } = {}) {
++  const hasToken = token !== undefined && token !== null && token !== '';
++  if (!hasToken && !allowAnonymous) {
++    throw new Error('createTokenAuth: 必须给 token，或显式设 allowAnonymous: true（仅本机回环）');
++  }
++  if (hasToken && !checkTokenFormat(token)) {
++    throw new TypeError('createTokenAuth: 令牌格式不对（要 32～256 个 base64url 字符）');
++  }
++  const expectedDigest = hasToken ? sha256(token) : null;
++
++  return function authenticate(req) {
++    const remote = req?.socket?.remoteAddress ?? null;
++    const offered = offeredProtocols(req);
++    const tokens = offered.filter((p) => p.startsWith(TOKEN_PREFIX));
++    if (tokens.length > 1) {
++      log('auth.reject', { remote, reason: 'multiple-tokens' });
++      return null;
++    }
++    if (!hasToken) {
++      return { ...ADMIN_PRINCIPAL };
++    }
++    if (!offered.includes(PROTOCOL) || tokens.length === 0) {
++      log('auth.reject', { remote, reason: 'missing-token' });
++      return null;
++    }
++    const given = tokens[0].slice(TOKEN_PREFIX.length);
++    if (!checkTokenFormat(given)) {
++      log('auth.reject', { remote, reason: 'bad-token-format' });
++      return null;
++    }
++    const ok = timingSafeEqual(sha256(given), expectedDigest);
++    if (!ok) {
++      log('auth.reject', { remote, reason: 'bad-token' });
++      return null;
++    }
++    return { ...ADMIN_PRINCIPAL };
++  };
++}

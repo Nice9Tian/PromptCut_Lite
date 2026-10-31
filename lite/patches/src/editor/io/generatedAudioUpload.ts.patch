@@ -1,0 +1,22 @@
+diff --git a/src/editor/io/generatedAudioUpload.ts b/src/editor/io/generatedAudioUpload.ts
+index bae4482773969da7255b4f8e1a2047a4bd6c5e4f..d162c9cbf47786dcb7e93f17510e460b46298097 100644
+--- a/src/editor/io/generatedAudioUpload.ts
++++ b/src/editor/io/generatedAudioUpload.ts
+@@ -6,15 +6,14 @@
+  * 读写同一张,只读成员拿它写会被素材服务拒)。账号项目的请求不带网站的登录 Cookie(素材服务见到 Cookie 就拒)。
+  */
+ import { getState } from "../../store/project";
+-import { createSnapUploader, sha256Hex } from "../../online/snapUploader";
++import { createSnapUploader, sha256Hex } from "../../render/snapUploader";
+ import { docRequest, hasDocLink, remoteAccountProjectId, remoteAssetBase, remoteAssetTicketInfo } from "../media/assetTiers";
+-import { onlinePage } from "../../online/pageFlag";
+ 
+ function generatedAudioService(signal: AbortSignal) {
+   const projectId = getState().project.id;
+   const remoteBase = remoteAssetBase();
+   const accountProject = remoteBase ? remoteAccountProjectId() : null;
+-  const base = remoteBase ?? (onlinePage() ? null : "/api/asset");
++  const base = remoteBase ?? "/api/asset";
+   if (!base) throw new Error("尚未连接素材服务,请连接项目后重试");
+   if (hasDocLink() && !remoteBase) throw new Error("共享项目素材服务尚未就绪,请稍后重试");
+   const stillCurrent = () => {

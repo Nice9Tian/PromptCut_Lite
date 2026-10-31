@@ -1,0 +1,28 @@
+diff --git a/src/editor/left/importAssets.ts b/src/editor/left/importAssets.ts
+index c6cc3d682b78fea6de645154fb46d89388f2341f..42fed1363bb20fdc7889e2981c6370d67f32aad5 100644
+--- a/src/editor/left/importAssets.ts
++++ b/src/editor/left/importAssets.ts
+@@ -3,7 +3,6 @@ import { actions } from "../../store/project";
+ import { importVideoFiles, registerMediaFile } from "../io";
+ import { applyUploadedMedia, uploadMediaFile } from "../io/mediaUpload";
+ import { classifyFileDetailed, EXT_KIND } from "../io/mediaKinds";
+-import { holdOnlineQueueOriginals } from "../../online/mediaUploadQueue";
+ import { blockedByReadOnly } from "../readOnlyCore";
+ import { viewOnlyText } from "../io/viewOnly";
+ 
+@@ -114,7 +113,6 @@ export interface ImportResult {
+ export async function importMediaFiles(files: FileList | File[]): Promise<ImportResult> {
+   // 只读项目(游客):导入素材是写。按钮已置灰,走到这里是拖放之类没盖到的路
+   if (blockedByReadOnly()) throw new Error(viewOnlyText());
+-  const releaseHold = holdOnlineQueueOriginals();
+   try {
+     const counts: Record<AssetKind, number> = { video: 0, audio: 0, image: 0 };
+     const skipped: string[] = [];
+@@ -146,6 +144,6 @@ export async function importMediaFiles(files: FileList | File[]): Promise<Import
+ 
+     return { counts, skipped, firstKind, rejected };
+   } finally {
+-    releaseHold();
++    // no-op
+   }
+ }

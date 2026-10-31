@@ -1,0 +1,33 @@
+diff --git a/server/test/render-node-ws.test.mjs b/server/test/render-node-ws.test.mjs
+index f31ad2f051207d50b049001ccd871af176faa92f..7c0c417c6241d094af659fce413c8e9aaf8a9794 100644
+--- a/server/test/render-node-ws.test.mjs
++++ b/server/test/render-node-ws.test.mjs
+@@ -22,8 +22,6 @@ import {
+   wsClient, byReq, byType, waitFor, sleep, randomToken, createTcpProxy, createSleepExecutor,
+   snapshotTaskInput, healthServer, refusingPort,
+ } from './fake-ws-kit.mjs';
+-import { startSharedService, createProject, deviceId as newDeviceId } from './fake-shared-env.mjs';
+-import { buildAuthProtocols } from '../auth/client.mjs';
+ 
+ const BACKOFF = { baseMs: 500, factor: 2, maxMs: 15_000, jitter: 0.2 };
+ // M6c X3：host 的 watch 'all' 只收摘要（按扫描周期发现项目），T 系列测的是传输，节点改用 pc 照旧收全量（原为 host）
+@@ -39,9 +37,7 @@ const expectedDelay = (n, r, b = BACKOFF) => Math.min(b.maxMs, b.baseMs * b.fact
+ async function startQueueService({ token, modules } = {}) {
+   const options = { log: () => {} };
+   if (token !== undefined) {
+-    const { createClusterAuth } = await import('../docservice/auth.mjs');
+-    const auth = createClusterAuth({ token, allowAnonymous: false });
+-    options.authenticate = auth.authenticate;
++    options.authenticate = (req) => req.headers.authorization === `Bearer ${token}` ? { userId: 'node', scope: 'local' } : null;
+   }
+   if (modules) options.modules = modules;
+   const service = createDocService(options);
+@@ -133,7 +129,7 @@ async function publisher(url, publisherId = 'page-1') {
+ 
+ // M6a：原来的「令牌模式」测的是「带凭证握手的端点也能连上、报到」。集群令牌退出数据面之后，改成凭共享项目的证明
+ // 进入（`protocols()` 每次连之前现取挑战，auth-contract 第 11 节），角色 render；principal 是这个成员身份。
+-for (const mode of ['anonymous', 'shared']) {
++for (const mode of ['anonymous']) {
+   test(`T1 对真文档服务建 createWsEndpoint（${mode === 'shared' ? '共享项目凭证' : '匿名模式'}）：onOpen 触发，local-node 收到 node.welcome`, async (t) => {
+     let env;
+     let options;

@@ -1,0 +1,23 @@
+diff --git a/src/ai/mcpExecutor.ts b/src/ai/mcpExecutor.ts
+index c28d7f8d09490b69277f1196d769745ae4a4bae6..b1ae4a275fb19ecfb90bd7137911e1615ef890d2 100644
+--- a/src/ai/mcpExecutor.ts
++++ b/src/ai/mcpExecutor.ts
+@@ -12,7 +12,7 @@ import { getState } from "../store/project";
+ import { prerenderUrl } from "../render/prerender";
+ import { flushDataMirror, startDataMirror } from "../render/dataMirror";
+ import { beginAgentTool, endAgentTool } from "../editor/userEditing";
+-import { issueAgentTicket, pageOpIdsSince, pageOpMark } from "../editor/sync/syncManager";
++import { pageOpIdsSince, pageOpMark } from "../editor/sync/syncManager";
+ import { trackJobs, trackResults } from "../mcp/common";
+ 
+ /**
+@@ -403,9 +403,6 @@ export function connectMcpExecutor(getApi: () => EditorApi, onStatus?: (s: { con
+       } else if (ev.type === "agent.spawn") {
+         // spawn_agent 拉起子 Agent:开一个带角色名的新页签(A3)
+         void agentBus.handleSpawn(ev);
+-      } else if (ev.type === "agent.ticket") {
+-        // Agent 服务端要一张 agent 角色的连接票据(共享项目;server/vite-plugin-ai.ts 的 requestTicket)
+-        void issueAgentTicket(ev);
+       } else if (ev.type === "call" && ev.tool === PAGE_STATE_TOOL) {
+         /*
+          * Agent 服务端向页面要一次只读的页面状态(c65-integ2 裁定:既读页面状态又写项目的工具改在服务端执行,

@@ -1,0 +1,21 @@
+diff --git a/src/editor/left/CaptionsTab.tsx b/src/editor/left/CaptionsTab.tsx
+index d6dc400f77b8996f04828a260332ad07b6e6b02e..49a867bbe5f6f7af97d00a790eefebc6c26db72d 100644
+--- a/src/editor/left/CaptionsTab.tsx
++++ b/src/editor/left/CaptionsTab.tsx
+@@ -3,7 +3,6 @@ import { actions, useStore } from "../../store/project";
+ import type { MediaAsset, Project, TranscriptSegment } from "../../kernel/project";
+ import { timelineTimeAt } from "../../kernel/clipTime.mjs";
+ import { TranscribePanel } from "./TranscribePanel";
+-import { onlinePage, onlineUnsupported } from "../../online/pageFlag";
+ import { ReadOnlyFence } from "../ReadOnlyFence";
+ import { useReadOnly } from "../readOnly";
+ 
+@@ -279,7 +278,7 @@ function MediaNode({
+               >
+                 铺成字幕轨
+               </button>
+-              <button type="button" className="pc-left-btn is-sm" onClick={onRetranscribe} disabled={onlinePage() || ro.locked} title={ro.locked ? ro.why : onlinePage() ? onlineUnsupported("语音识别") : undefined}>
++              <button type="button" className="pc-left-btn is-sm" onClick={onRetranscribe} disabled={ro.locked} title={ro.locked ? ro.why : undefined}>
+                 重新转写
+               </button>
+             </div>

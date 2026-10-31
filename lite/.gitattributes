@@ -1,0 +1,3 @@
+# 补丁里的换行符要和社区版的文件一致，git 不能动
+patches/** -text
+files/** -text

@@ -1,0 +1,12 @@
+diff --git a/desktop/src-tauri/Cargo.toml b/desktop/src-tauri/Cargo.toml
+index c2f3a8d579489469cd1288a32a07c0144efd3ba4..afe9dbc121bc7c2ee639aa793c9fd7c3e877e9e3 100644
+--- a/desktop/src-tauri/Cargo.toml
++++ b/desktop/src-tauri/Cargo.toml
+@@ -13,7 +13,6 @@ name = "promptcut_lib"
+ crate-type = ["staticlib", "cdylib", "rlib"]
+ 
+ [build-dependencies]
+-serde_json = "1"
+ tauri-build = { version = "2", features = [] }
+ 
+ [dependencies]

@@ -1,0 +1,11 @@
+diff --git a/server/test/multi-agent.test.mjs b/server/test/multi-agent.test.mjs
+index 9d535adb8d031669529e2a78a971a315ab3d3dac..87e361bab50bbe3a2ea325268ec01756e3b213dd 100644
+--- a/server/test/multi-agent.test.mjs
++++ b/server/test/multi-agent.test.mjs
+@@ -438,6 +438,4 @@ test('MA-S14 分工模式归档后没有残留入口:标识符、路由、文件
+   };
+   for (const d of ['src', 'server', 'scripts']) walk(path.join(ROOT, d));
+   assert.deepEqual(hits, [], `分工模式的入口还有残留:\n${hits.join('\n')}`);
+-  const baseline = JSON.parse(fs.readFileSync(path.join(ROOT, 'server/test/c10-api-ratchet-baseline.json'), 'utf8')).paths;
+-  assert.equal(baseline.includes('/api/ai/plan') || baseline.includes('/api/ai/triage'), false, '在线构建的 /api 棘轮基线按删掉的路由更新');
+ });

@@ -1,0 +1,13 @@
+diff --git a/src/editor/quoteBus.ts b/src/editor/quoteBus.ts
+index 0416640c4adf8878d1f4d04152a68672ecc377b0..5eee073e9f9c95cdea6412f1720d3b547b23a371 100644
+--- a/src/editor/quoteBus.ts
++++ b/src/editor/quoteBus.ts
+@@ -9,7 +9,7 @@
+  * 引用块的写法只有 `quoteToken` 一处:以前本机 AI 栏和云端 AI 栏各自拼 `@卡片 …(…)`,
+  * 加「叠加卡」这一级时两处都要改,漏一处就是另一个面板里引用写错级别。
+  */
+-import { quoteToken } from "../mobile/agentView";
++import { quoteToken } from "../start/agentView";
+ 
+ const EVENT = "pc-quote-clip";
+ 

@@ -1,0 +1,45 @@
+diff --git a/server/test/docservice-events.test.mjs b/server/test/docservice-events.test.mjs
+index d207e5acea0e764e03407a5f3602b93e871c3774..f2e3504c580ea64e21f880f855da6887f0d40052 100644
+--- a/server/test/docservice-events.test.mjs
++++ b/server/test/docservice-events.test.mjs
+@@ -6,7 +6,6 @@ import test from 'node:test';
+ import assert from 'node:assert/strict';
+ import { byType, wsClient } from './fake-ws-kit.mjs';
+ import { startStandalone, ask } from './fake-docservice-env.mjs';
+-import { startSharedService, createProject, join } from './fake-shared-env.mjs';
+ import { projectModule } from '../docservice/modules/project.mjs';
+ import { contentModule } from '../docservice/modules/content.mjs';
+ import { eventsModule, eventDetailKey } from '../docservice/modules/events.mjs';
+@@ -160,32 +159,3 @@ test('DS-E5 事件广播只借项目频道：没 open 项目的连接收不到
+   assert.deepEqual(await page.quiet(byType('events.event'), 100), []);
+ });
+ 
+-test('DS-E6 组装层按空间配组：共享项目空间里的项目提交与事件不串到 local 空间；/healthz 的 modules 含 events', async (t) => {
+-  const host = await startSharedService({ mode: 'hosted', isLoopback: (req) => !String(req?.headers?.['sec-websocket-protocol'] ?? '').includes('promptcut.auth.') });
+-  t.after(() => host.close());
+-  const P = await createProject(host.base);
+-  const bob = await join(host.base, { projectId: P.projectId, username: 'bob', password: 'project-pw', deviceId: 'dev-bob-0001-abcdefghij' });
+-  const amy = await join(host.base, { projectId: P.projectId, username: 'amy', password: 'project-pw', deviceId: 'dev-amy-0001-abcdefghij' });
+-  await bob.opened;
+-  await amy.opened;
+-  const local = wsClient(host.base);
+-  await local.opened;
+-  t.after(() => { bob.close(); amy.close(); local.close(); });
+-
+-  const pid = 'proj-1';
+-  await ask(amy, { type: 'project.open', projectId: pid });
+-  await ask(local, { type: 'project.open', projectId: pid });
+-  const ok = await ask(bob, { type: 'project.op', projectId: pid, opId: 'o1', ops: [{ op: 'set', path: '', value: { a: 1 } }] });
+-  assert.deepEqual({ type: ok.type, rev: ok.rev }, { type: 'project.op.ok', rev: 1 });
+-  assert.equal((await amy.next(byType('project.ops'))).rev, 1);
+-  await ask(bob, { type: 'events.create', projectId: pid, eventId: 'e1', tool: 'x', detail: { q: 1 } });
+-  const ev = await amy.next(byType('events.event'));
+-  assert.ok(ev.actor.userId.startsWith('bob@'));
+-  assert.deepEqual(await local.quiet((m) => m.type === 'project.ops' || m.type === 'events.event', 150), [], 'local 空间收不到');
+-  const st = await ask(local, { type: 'project.open', projectId: pid });
+-  assert.deepEqual({ rev: st.rev, project: st.project }, { rev: 0, project: null }, 'local 空间里同名项目是另一份');
+-  const d = await ask(local, { type: 'content.get', kind: 'event-detail', key: `${pid}/e1` });
+-  assert.equal(d.missing, true);
+-  const h = await (await fetch(`http://127.0.0.1:${host.port}/healthz`)).json();
+-  assert.ok(h.modules.includes('events'), JSON.stringify(h.modules));
+-});

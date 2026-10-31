@@ -1,0 +1,35 @@
+diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
+index 2f3a452fc9874dc97171415fcfd0de68cd0de875..cdb168db2650c8e792a1c10169a54fa2738790a3 100644
+--- a/CONTRIBUTING.md
++++ b/CONTRIBUTING.md
+@@ -1,4 +1,4 @@
+-# 参与 PromptCut Community
++# 参与 PromptCut Lite
+ 
+ 欢迎 issue 和 PR。这份文件说清三件事：**语义优先**、**哪些区域现在收 PR**、**提交前自己跑什么**。
+ 
+@@ -16,7 +16,7 @@ English: [CONTRIBUTING.en.md](CONTRIBUTING.en.md)。
+ 
+ ## 哪些区域现在收 PR
+ 
+-社区版和闭源的商业版是同一套代码的两个版本，上游会把社区版的改动合回去。在**两边文件内容一致**的区域，你的 PR 能干净地合回上游；在还没拆开接缝的区域，合回去要人工搬，所以暂时只收 issue 不收 PR。
++Lite 版是从[社区版](https://github.com/Nice9Tian/PromptCut_Community)裁出来的：去掉了局域网和手机。在**两边文件内容一致**的区域，你的 PR 能干净地合回社区版；在被裁过的区域，合回去要人工搬，所以暂时只收 issue 不收 PR。
+ 
+ | 区域 | 现在 |
+ |---|---|
+@@ -26,10 +26,13 @@ English: [CONTRIBUTING.en.md](CONTRIBUTING.en.md)。
+ | `src/mcp/`、`src/voice/` | 欢迎 PR |
+ | `server/bakery/`、`server/harness/`、`server/runners/`、`server/vision/`、`server/voice/`、`server/render-queue/` | 欢迎 PR |
+ | `python/`、`scripts/`、`docs/` | 欢迎 PR |
+-| `src/editor/`（含 `sync/`、`right/`）、`src/start/`、`src/ai/` | 欢迎 PR |
+-| `src/online/`、`src/mobile/`、`server/auth/`、`server/lan/`（局域网共享与手机界面） | 欢迎 PR |
++| `src/editor/`（除下面两处） | 欢迎 PR |
++| `src/editor/sync/`、`src/editor/right/` | 暂缓：上游正在把本地与云端的接缝拆开，这两处两边内容还不一致 |
++| `src/start/`、`src/ai/` | 同上 |
+ | `desktop/` | 欢迎 PR，但只有 Windows x64 验证过 |
+ 
++想在"暂缓"区域动手，先开 issue 说一下，我们会告诉你那块接缝拆到哪儿了。
++
+ ## 提交前自己跑什么
+ 
+ ```bash

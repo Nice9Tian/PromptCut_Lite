@@ -1,0 +1,109 @@
+diff --git a/server/vite-plugin-cards.ts b/server/vite-plugin-cards.ts
+index e52131f1f280c4a0e748e71add3ca3a697002103..1786377d1a95a30cf86959e42307c6d08127da56 100644
+--- a/server/vite-plugin-cards.ts
++++ b/server/vite-plugin-cards.ts
+@@ -15,31 +15,9 @@ import {
+   setCardHasher, setCardIdentifier, emitCardSourceChange,
+ } from './card-overrides.mjs';
+ import { createCardSync, isSyncablePath, sourceHash } from './card-sync.mjs';
+-import { accountCardProtocols, accountDocUrlAllowed, cardSyncConnect } from './account-card-link.mjs';
+ import { cardCodePreimage, localImportsOf, CARD_CODE_ID_HEX } from '../src/render/cardCodeIdentity.mjs';
+-// 同步文件源码闸门:检查点留在本文件(cardOverridesLoader),缺省全部直通放行;有云端构建扩展表时注入托管渲染的严审规则
+-const { checkSyncedSource, rejectedStub, hostedWorkerKind, normalizeBrowserCssImports } = await (async () => {
+-  const pass = {
+-    hostedWorkerKind: (): 'resident' | 'isolated' | null => null,
+-    checkSyncedSource: (_rel: string, _source: string, _options?: { rootHas?: (p: string) => boolean }): { ok: boolean; errors: string[] } => ({ ok: true, errors: [] }),
+-    rejectedStub: (_rel: string, _errors: string[], _options?: { raw?: boolean }): string => 'export default null;\n',
+-    normalizeBrowserCssImports: (text: string): string => text,
+-  };
+-  const here = path.dirname(fileURLToPath(import.meta.url));
+-  const gateFile = fs.existsSync(path.join(here, 'vite-plugin-hosted-gate.ts'))
+-    ? path.join(here, 'vite-plugin-hosted-gate.ts')
+-    : path.resolve(process.cwd(), 'server', 'vite-plugin-hosted-gate.ts');
+-  if (!fs.existsSync(gateFile)) return pass;
+-  try {
+-    const mod: any = await import(pathToFileURL(gateFile).href);
+-    const sg = mod?.buildExtensions?.sourceGate;
+-    return sg ? { ...pass, ...sg } : pass;
+-  } catch {
+-    return pass;
+-  }
+-})();
+ import { remotionStyleErrors } from './remotion-style-check.mjs';
+-import { remotionLockSuffix } from '../src/online/cardRuntime/remotionLock.mjs';
++import { remotionLockSuffix } from '../src/render/remotionLock.mjs';
+ 
+ /* ────────────────────────────────────────────────────────────────────
+  * 0.4 起:Agent 能读、能改**所有**卡片的原始源码(内置卡也算),但改不了 HTML。
+@@ -1348,8 +1326,6 @@ export function userOverlayModuleCode(root: string): string {
+  */
+ function cardOverridesLoader(): Plugin {
+   let projectRoot = process.cwd();
+-  /** 托管方渲染服务的工作进程才有值(`resident` / `isolated`);别的进程是 null,下面那段预检不走 */
+-  const hostedKind = hostedWorkerKind();
+   return {
+     name: 'promptcut-card-overrides',
+     enforce: 'pre',
+@@ -1373,19 +1349,10 @@ function cardOverridesLoader(): Plugin {
+        * Tailwind 在 Node 一侧处理之前先过同步文件预检(`hosted-render/source-gate.mjs`),不过的换成一段报错的桩——装卡时已经拦过一遍,
+        * 这里是第二道(文件不经卡片同步落到改动层里的情况)。常驻工作进程本来就不该有改动层文件,一律不载入。别的进程不走这一段。
+        */
+-      if (hostedKind) {
+-        const rel = toRel(projectRoot, file);
+-        const verdict = hostedKind === 'isolated' ? checkSyncedSource(rel, text, { rootHas: (p: string) => fs.existsSync(path.join(projectRoot, p)) }) : { ok: false, errors: ['常驻工作进程不载入任何项目带来的代码'] };
+-        if (!verdict.ok) {
+-          console.log(`[page-gate] source-rejected ${JSON.stringify({ rel, errors: verdict.errors.slice(0, 3) })}`);
+-          return rejectedStub(rel, verdict.errors, { raw: /[?&]raw\b/.test(id) });
+-        }
+-      }
+       // `?raw` 要的是源码字符串(cards/user/index.ts 打包 .proc 用),不是模块本身。
+       // 原样交出去的话,Vite 会把 TSX 源码当成这个 ?raw 模块的 JS 来跑。
+       // 换行统一成 LF(同 `raw-eol.mjs`):源码版本 / 身份键不随检出方式变
+       if (/[?&]raw\b/.test(id)) return `export default ${JSON.stringify(text.replace(/\r\n/g, "\n"))}`;
+-      if (hostedKind === 'isolated' && file.endsWith('.css')) return normalizeBrowserCssImports(text);
+       return text;
+     },
+     /*
+@@ -1618,8 +1585,6 @@ export default function vitePluginCards(): Plugin[] {
+         notify: (e: object) => {
+           try { server.ws.send({ type: 'custom', event: 'pc:card-sync', data: { type: 'notice', notice: e } }); } catch { /* 没有页面就算了,诊断接口里还看得到 */ }
+         },
+-        // 账号云端项目的连接有寿命、要按票据到期换会话(`server/account-card-link.mjs`);别的空间与缺省端点相同
+-        connect: cardSyncConnect(syncLog),
+         log: syncLog,
+       }) : null;
+       const localDocUrl = () => {
+@@ -1662,31 +1627,8 @@ export default function vitePluginCards(): Plugin[] {
+           try {
+             if (!cardSync) return sendJson(res, 200, { ok: true, enabled: false });
+             const input = JSON.parse(body || '{}');
+-            const mode = input?.mode === 'ticket' ? 'ticket' : input?.mode === 'account' ? 'account' : 'local';
+-            if (mode === 'local') {
+-              bindLocal();
+-              return sendJson(res, 200, { ok: true, enabled: true, ...cardSync.status(), notices: undefined });
+-            }
+-            const projectId = typeof input.projectId === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(input.projectId) ? input.projectId : null;
+-            if (!projectId) return sendJson(res, 400, { ok: false, error: 'projectId 不合法' });
+-            if (typeof input.url !== 'string' || !/^wss?:\/\//.test(input.url)) return sendJson(res, 400, { ok: false, error: 'mode 为 ticket 时要给文档服务的 ws(s):// 地址' });
+-            // 账号项目:只能连账号云端的文档服务(票据是成员本人权限的凭证,不能送到绑定请求随便说的地址去)
+-            if (mode === 'account' && !accountDocUrlAllowed(input.url)) return sendJson(res, 400, { ok: false, error: '账号项目只能连账号云端的文档服务' });
+-            let first: string | null = typeof input.ticket === 'string' && input.ticket.length > 0 && input.ticket.length <= 2048 ? input.ticket : null;
+-            syncProjectId = projectId;
+-            cardSync.bind({
+-              projectId,
+-              url: input.url,
+-              local: false,
+-              keys: keysForCards(input.cardIds),
+-              protocols: mode === 'account'
+-                ? accountCardProtocols(() => requestPageTicket(projectId))
+-                : async () => {
+-                  const t = first ?? (await requestPageTicket(projectId)).ticket;
+-                  first = null;
+-                  return ['promptcut.v1', `promptcut.ticket.${t}`];
+-                },
+-            });
++            bindLocal();
++            return sendJson(res, 200, { ok: true, enabled: true, ...cardSync.status(), notices: undefined });
+             sendJson(res, 200, { ok: true, enabled: true, ...cardSync.status(), notices: undefined });
+           } catch (e: any) {
+             sendJson(res, 400, { ok: false, error: e?.message || String(e) });

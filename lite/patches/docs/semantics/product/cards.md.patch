@@ -1,0 +1,13 @@
+diff --git a/docs/semantics/product/cards.md b/docs/semantics/product/cards.md
+index 15e76f7378af705c4045438badca8b77bacab009..a09b193d863232f30696bf6f4513934bcdafff7d 100644
+--- a/docs/semantics/product/cards.md
++++ b/docs/semantics/product/cards.md
+@@ -21,7 +21,7 @@
+ | **组合卡** | 用部件库里的部件搭成的一棵实例树，每个部件有自己的框、参数和进场时机 |
+ | **素材封装卡** | 把 Lottie 动画、粒子配置翻译成的卡，参数是翻译好的旋钮 |
+ 
+-- 用户卡（用户或 Agent 写的卡）与素材效果卡在桌面版里照常运行；在线浏览器里经文档服务同步来之后只在隔离环境里执行，画面和声音都算，范围、退回和限制见 `platforms.md` 的「在线浏览器模式」（2026-10-06 用户定）。
++- 用户卡（用户或 Agent 写的卡）与素材效果卡在桌面版舞台里照常运行，受舞台端口白名单保护（见 `platforms.md`）。
+ 
+ ## 约定封装
+ 

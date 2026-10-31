@@ -1,0 +1,11 @@
+diff --git a/src/editor/sync/useConflictMerge.ts b/src/editor/sync/useConflictMerge.ts
+index 0bc5e44a2bfe13007a1cb692477d8b0a970b3898..cd1c8145b3da6cd931c740f72524de4bc528ad12 100644
+--- a/src/editor/sync/useConflictMerge.ts
++++ b/src/editor/sync/useConflictMerge.ts
+@@ -1,5 +1,5 @@
+ /**
+- * 「冲突合并」窗口的界面状态(桌面窗口 `ConflictMerge.tsx` 与手机版面板 `src/mobile/sheets.tsx` 共用):
++ * 「冲突合并」窗口的界面状态(`ConflictMerge.tsx`):
+  * 两级列表按当前项目现算(`mergeItems.ts` 的 `mergeRows`),勾选、顶端两个按钮、底部三个按钮的动作都在这里。
+  *
+  * 「每次点合并时重新核对」在两处做:列表重算时某个已勾选的二级项的云端值变了(窗口开着时别人又改了它),

@@ -1,0 +1,13 @@
+diff --git a/src/kernel/remotionStyle/lock.ts b/src/kernel/remotionStyle/lock.ts
+index 80a9384eb1b3f23913641f21df2f870c61ae9bd8..b7b14cca1bd30997847c08bb1015621a94223bdf 100644
+--- a/src/kernel/remotionStyle/lock.ts
++++ b/src/kernel/remotionStyle/lock.ts
+@@ -6,7 +6,7 @@
+  * （`COUNTER.n += 1`），看不出绕一道的（`const c = COUNTER; c.n += 1`）。所以载入时把顶层的对象都冻住：
+  * 不管从哪条路写进来，写的那一刻当场报错。只在模块载入时做一次，不是每帧。
+  *
+- * 谁调它：载入用户卡的两条路在卡片源码末尾接上一句调用（`../../online/cardRuntime/remotionLock.mjs` 生成）——
++ * 谁调它：载入用户卡的两条路在卡片源码末尾接上一句调用（`../../render/remotionLock.mjs` 生成）——
+  * 桌面与渲染节点是开发服务器的转换钩子，在线页面是转译那一步。只接在「声明成 remotion 式、并且引用了本框架」
+  * 的用户卡后面：框架出现之前建的卡不可能引用它，所以老卡一张都不会被锁。
+  *

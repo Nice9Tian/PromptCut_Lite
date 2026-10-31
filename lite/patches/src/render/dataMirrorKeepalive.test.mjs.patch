@@ -1,0 +1,43 @@
+diff --git a/src/render/dataMirrorKeepalive.test.mjs b/src/render/dataMirrorKeepalive.test.mjs
+index 4904de32c59a62f54afb88985d37fa3c7b8b3eb1..ac835758678bb87433199ba4ba454978db055bfb 100644
+--- a/src/render/dataMirrorKeepalive.test.mjs
++++ b/src/render/dataMirrorKeepalive.test.mjs
+@@ -4,7 +4,7 @@
+  * 跑:node --experimental-test-module-mocks --test src/render/dataMirrorKeepalive.test.mjs
+  *
+  * 保活走和 `wanted` 同一条轻路:`keepalive: true`、不读响应、失败静默。停下时原有的「停下推一次」不动。
+- * 只读观看页、舞台页、导出页、在线页面不做镜像,所以也不发保活。
++ * 只读观看页、舞台页、导出页不做镜像,所以也不发保活。
+  */
+ import { srcUrl } from "../testing/registerTs.mjs";
+ import { test, mock, beforeEach, afterEach } from "node:test";
+@@ -20,8 +20,6 @@ mock.module(srcUrl("store/project.ts"), { exports: {
+   getState: () => storeState,
+   subscribe: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
+ } });
+-let online = false;
+-mock.module(srcUrl("online/pageFlag.ts"), { namedExports: { onlinePage: () => online } });
+ 
+ const mirror = await import(srcUrl("render/dataMirror.ts"));
+ /** 每个用例起的镜像,用例结束(含断言失败)统一收掉,免得下一个用例看到上一个的状态 */
+@@ -36,7 +34,6 @@ const keepalives = () => heads().filter((c) => c.init.keepalive === true && c.bo
+ 
+ beforeEach(() => {
+   calls = [];
+-  online = false;
+   listeners.clear();
+   storeState = { ...storeState, t: 0, playing: false };
+   globalThis.location = { search: "" };
+@@ -180,12 +177,3 @@ for (const [label, search] of [["只读观看页 ?observe", "?observe"], ["只
+     stop();
+   });
+ }
+-
+-test("在线页面没有本机预渲染进程:不发保活", async () => {
+-  online = true;
+-  const stop = startMirror();
+-  setStore({ playing: true });
+-  await run(10_000);
+-  assert.equal(calls.length, 0);
+-  stop();
+-});

@@ -1,0 +1,13 @@
+diff --git a/src/editor/sync/labels.ts b/src/editor/sync/labels.ts
+index 47f0d08fcb9979282bdbc1f10717bb94f9de0598..49dc10e2d30bc9c751c38d336c757ec74cbb9940 100644
+--- a/src/editor/sync/labels.ts
++++ b/src/editor/sync/labels.ts
+@@ -11,7 +11,7 @@ import { relocatePath } from "../../kernel/cutPaths";
+ import type { Project } from "../../kernel/project";
+ import { getCard } from "../../kernel/registry";
+ import type { Writer } from "../../store/docsync";
+-import { cloudAgentLabel } from "./hostedServices";
++const cloudAgentLabel = (username: string | undefined): string => (username && username.trim() ? `${username.trim()}的云端 Agent` : "云端 Agent");
+ 
+ /** 集合名 → 类别 */
+ const KIND: Record<string, string> = {

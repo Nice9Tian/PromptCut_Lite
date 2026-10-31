@@ -1,0 +1,164 @@
+diff --git a/server/asset-service.ts b/server/asset-service.ts
+index 2e81bb511063595a1d7b4d9f56ca451abe636ed5..ab069676d4f16fe612d35e90cb51f8f2fe28b400 100644
+--- a/server/asset-service.ts
++++ b/server/asset-service.ts
+@@ -120,7 +120,7 @@ import { Readable } from "stream";
+ import path from "path";
+ import { createHash } from "crypto";
+ import { apiPath, isAssetServicePath, clientAddressOf, isLocalOrigin } from "./http-guard.mjs";
+-import { createBlobStore, candidateFileResolver, projectScopeOfRoot, assetContextOf, setAssetContext, authorizedAssetStore, createGuestAssetQuota, guestIdOfUserId, SNIFF_BYTES } from "./asset-store/index.mjs";
++import { createBlobStore, candidateFileResolver } from "./asset-store/index.mjs";
+ import {
+   mediaDir, isMediaHash, extOfName, contentTypeForExt, resolveHashFile, writeMediaIndex, parseRange,
+ } from "./vite-plugin-media";
+@@ -250,8 +250,6 @@ function artifactContentType(ext: string): string {
+ 
+ /** 产物命名空间的 fs 目录:`<root>/out/asset-store/<ns>`(契约第 1 节) */
+ export function artifactStoreDir(root: string, ns: "snap" | "px"): string {
+-  const scoped = projectScopeOfRoot(root);
+-  if (scoped) return scoped.dirs[ns];
+   return process.env.PROMPTCUT_ARTIFACT_DIR ? path.resolve(process.env.PROMPTCUT_ARTIFACT_DIR, ns) : path.resolve(root, "out", "asset-store", ns);
+ }
+ 
+@@ -445,7 +443,6 @@ async function serveBlob(req: IncomingMessage, res: ServerResponse, store: Asset
+   // 流先打开再发头:入库的东西万一刚被删,还能干净地回 404
+   const stream = head ? null : await store.read(hash, range ? { start: range.start, end: range.end } : {});
+   if (!head && !stream) return sendJson(res, 404, { ok: false, error: "not-found" });
+-  await assetContextOf(req)?.lease.assert();
+   if (res.destroyed) { stream?.destroy(); return; }
+   if (longCache) {
+     headers["Cache-Control"] = ASSET_MEDIA_CACHE_CONTROL;
+@@ -579,16 +576,16 @@ function accessOf(req: IncomingMessage, write: boolean, tickets: AssetTicketVeri
+     // 不许写预渲染产物;它写的块算成员的,不进托管方服务的容量账(回的结果不带 `service`)
+     if (v.actsFor === "member") {
+       if (write && ns !== "media") return DENY_403;
+-      return { ok: true, projectId: v.projectId, accountId: guestIdOfUserId(v.userId) ?? v.userId };
++      return { ok: true, projectId: v.projectId, accountId: v.userId };
+     }
+     if (write && v.service && ns !== "snap" && ns !== "px") return DENY_403;
+-    return { ok: true, service: v.service, projectId: v.projectId, accountId: guestIdOfUserId(v.userId) ?? v.userId };
++    return { ok: true, service: v.service, projectId: v.projectId, accountId: v.userId };
+   }
+   if (write) return DENY_401; // 写入一律不认查询串
+   const q = queryTicketOf(req);
+   if (q === null) return DENY_401;
+   const v = verify(q);
+-  return v.ok && v.access === "r" ? { ok: true, service: v.service, projectId: v.projectId, accountId: guestIdOfUserId(v.userId) ?? v.userId } : DENY_401;
++  return v.ok && v.access === "r" ? { ok: true, service: v.service, projectId: v.projectId, accountId: v.userId } : DENY_401;
+ }
+ 
+ /* ------------------------------------------------------------------ *
+@@ -740,70 +737,13 @@ export function assetServiceMiddleware(root: string, opts: AssetServiceOptions =
+     return (artifactStores[ns] ??= defaultArtifactStore(root, ns));
+   };
+   // 缺省的核对器惰性加载:第一次有非本机请求带票据时才打开凭证存储
+-  let defaultTickets: AssetTicketVerifier | null | undefined;
+-  const ticketsOf = async (): Promise<AssetTicketVerifier | null> => {
+-    if (opts.tickets !== undefined) return opts.tickets;
+-    if (defaultTickets === undefined) {
+-      try {
+-        const { assetTicketVerifierFor } = await import("./auth/asset-tickets.mjs");
+-        const { prepareLocalDocumentDir } = await import("./recovery/paths.mjs");
+-        defaultTickets = assetTicketVerifierFor(path.join(prepareLocalDocumentDir(root), "auth")) as AssetTicketVerifier;
+-      } catch {
+-        defaultTickets = null;
+-      }
+-    }
+-    return defaultTickets;
+-  };
++  const ticketsOf = async (): Promise<AssetTicketVerifier | null> => opts.tickets ?? null;
+   const isTrusted = typeof opts.isTrusted === "function" ? opts.isTrusted : isLoopbackRequest;
+   /*
+    * 游客素材限额(`asset-store/guest-quota.mjs`):只管游客往 media 写。按数据层排队:托管下每个项目一个数据层,
+    * 用项目编号当键;本机只有一个 media 数据层,用它本身当键。
+    */
+-  const guestQuota: GuestQuotaHook = createGuestAssetQuota({ isVideoExt: (ext: string) => contentTypeForExt(ext).startsWith("video/") });
+-  const guestTrace = (who: { projectId?: string; accountId?: string }) =>
+-    ({ accountId: who.accountId, guest: who.accountId ? { quota: guestQuota, key: opts.projectStores && who.projectId ? `project:${who.projectId}` : media } : null });
+-  /**
+-   * 托管下媒体中间件的整件上传(`POST /api/media/upload/<名>`)与补算内容键(`POST /api/media/adopt`)也往项目的 media 写,
+-   * 不经下面的分片路由。它们由 `vite-plugin-media.ts` 自己核权,这里只先看一眼是不是游客:是就按游客限额拦,
+-   * 放行后占着这个项目的游客队直到回完包;不是游客原样 next。
+-   * - 核权出错(包括暂时性的 503)照错误回,不往下放(claude/guest-fix〔裁〕,审查 S2):原先 `catch` 了就 next,
+-   *   媒体中间件再核一次、碰巧成功,这次游客的整件上传就没经过限额;
+-   * - 游客不能补算内容键(审查 S3):那条路给素材收集用,游客用不到;它会把媒体目录里任何文件(包括还没收尾、
+-   *   没核哈希的分片暂存 `.chunks/<哈希>/data`)挂进库,绕过收尾时的视频条数;
+-   * - 整件上传报的扩展名不是视频时,先从请求体里读出开头几十个字节按文件头认(`peekBody`,审查 A2)。
+-   */
+-  const isWholeMediaWrite = (req: IncomingMessage) => req.method === "POST" && (String(req.url || "").startsWith("/api/media/upload/") || String(req.url || "").startsWith("/api/media/adopt"));
+-  const gateWholeMediaWrite = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+-    let lease: any;
+-    try {
+-      lease = await opts.projectAccess.resolve(req, { action: "write", resource: { ns: "media", route: apiPath(req.url) }, close: () => { req.destroy(); res.destroy(); } });
+-    } catch (err: any) { return reject(req, res, err?.status ?? 503, { ok: false, error: err?.code ?? "authority-unavailable" }); }
+-    let verdict: Awaited<ReturnType<GuestQuotaHook["whole"]>>;
+-    try {
+-      const accountId = typeof lease.principal?.accountId === "string" ? lease.principal.accountId : undefined;
+-      const upload = String(req.url || "").startsWith("/api/media/upload/");
+-      if (!upload && guestIdOfUserId(accountId ?? null)) verdict = { ok: false, status: 403, error: "guest-adopt-forbidden" };
+-      else {
+-      const declared = Number(req.headers["content-length"]);
+-      const bytes = upload && req.headers["content-length"] !== undefined && Number.isSafeInteger(declared) && declared >= 0 ? declared : null;
+-      // 扩展名:整件上传从 URL 里的文件名拿(和 vite-plugin-media 的 handleMediaUpload 同一取法),补算内容键从 `path` 参数的文件名拿
+-      let ext = "";
+-      try {
+-        const u = new URL(String(req.url || "/"), "http://promptcut.local");
+-        ext = extOfName(upload ? decodeURIComponent(u.pathname.split("/").pop() || "") : (u.searchParams.get("path") || ""));
+-      } catch { ext = ""; }
+-      verdict = await guestQuota.whole({ accountId, bytes, ext, peek: () => peekBody(req, SNIFF_BYTES), store: opts.projectStores.project(lease.projectId).stores.media, key: `project:${lease.projectId}`, needsLength: upload });
+-      }
+-    } catch (err: any) {
+-      // 读开头时对面断了、数据层出错:照错误回,不往下放
+-      verdict = { ok: false, status: err?.status ?? 500, error: err?.code ?? "media-failed" };
+-    } finally { void lease.release(); }
+-    if (!verdict.ok) return reject(req, res, verdict.status as 403, { ok: false, error: verdict.error });
+-    const release = verdict.release;
+-    res.once("close", release);
+-    res.once("finish", release);
+-    return next();
+-  };
++  const guestTrace = (who: { projectId?: string; accountId?: string }) => ({ accountId: who.accountId, guest: null });
+   /*
+    * px 的容量淘汰:在本进程内部做,不对外开删除接口。只拿 px 这一个数据层,media / snap 碰不到。
+    * 惰性 import(好几个单测把本文件单独转译,静态 import 兄弟模块会解析失败)。
+@@ -839,20 +779,6 @@ export function assetServiceMiddleware(root: string, opts: AssetServiceOptions =
+       res.setHeader("Cache-Control", "no-store");
+       res.setHeader("Referrer-Policy", "no-referrer");
+     }
+-    if (opts.projectAccess) {
+-      res.setHeader("Cache-Control", "no-store");
+-      try {
+-        const lease = await opts.projectAccess.resolve(req, { action: write ? "write" : "read", resource: { ns: ns ?? "media", route: apiPath(req.url) }, close: () => { req.destroy(); res.destroy(); } });
+-        const p = lease.principal;
+-        if (write && p.access !== "rw") { lease.release(); reject(req, res, 403, { ok: false, error: "forbidden" }); return null; }
+-        if (write && ((p.actsFor === "member" && ns !== "media") || (p.service && p.actsFor !== "member" && ns === "media"))) { lease.release(); reject(req, res, 403, { ok: false, error: "forbidden" }); return null; }
+-        const scope = opts.projectStores.project(lease.projectId);
+-        setAssetContext(req, { ...scope, lease });
+-        res.once("close", () => lease.release());
+-        res.once("finish", () => lease.release());
+-        return { ok: true, projectId: lease.projectId, service: p.actsFor === "member" ? undefined : p.service, accountId: typeof p.accountId === "string" ? p.accountId : undefined };
+-      } catch (err: any) { reject(req, res, err?.status ?? 503, { ok: false, error: err?.code ?? "authority-unavailable" }); return null; }
+-    }
+     let trusted = false;
+     try { trusted = !!isTrusted(req); } catch { trusted = false; }
+     const access = accessOf(req, write, trusted ? null : await ticketsOf(), () => trusted, ns);
+@@ -862,7 +788,6 @@ export function assetServiceMiddleware(root: string, opts: AssetServiceOptions =
+   };
+   const handler = async function assetService(req: Connect.IncomingMessage, res: ServerResponse, next: () => void) {
+     if (isAssetMergePath(req.url)) return answerMerge(req, res);
+-    if (opts.projectAccess && isWholeMediaWrite(req)) return gateWholeMediaWrite(req, res, next);
+     if (!isAssetCorsPath(req.url)) return next();
+     applyCors(req, res);
+     if (req.method === "OPTIONS") { res.statusCode = 204; return res.end(); }
+@@ -884,10 +809,7 @@ export function assetServiceMiddleware(root: string, opts: AssetServiceOptions =
+     const method = String(req.method || "GET").toUpperCase();
+     try {
+       if (!isMediaHash(hash)) return sendJson(res, 400, { ok: false, error: "bad-hash" });
+-      const scopedStore = () => {
+-        const context = assetContextOf(req);
+-        return context ? authorizedAssetStore(context.stores[ns], context.lease) : storeOf(ns);
+-      };
++      const scopedStore = () => storeOf(ns);
+       if (tail === undefined) {
+         if (method !== "GET" && method !== "HEAD") return sendJson(res, 405, { ok: false, error: "method" });
+         if (!(await admit(req, res, false, ns))) return;

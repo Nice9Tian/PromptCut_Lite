@@ -1,0 +1,29 @@
+diff --git a/src/editor/dock/DockPages.tsx b/src/editor/dock/DockPages.tsx
+index 8d173c3713da216b7909eee03b5d017d8aa1ff3c..64cec31fd03908df5ea06a96ff84dcfb571b8f29 100644
+--- a/src/editor/dock/DockPages.tsx
++++ b/src/editor/dock/DockPages.tsx
+@@ -9,7 +9,6 @@ import { EffectsSection } from "../left/EffectsSection";
+ import { EditSection } from "../left/EditSection";
+ import { CaptionsSection } from "../left/CaptionsSection";
+ import { AiPanel } from "../right/AiPanel";
+-import { OnlineAgentPage } from "../right/OnlineAgentPage";
+ import { ScriptPage } from "../right/chat/ScriptPage";
+ import { AgentAttentionTracker } from "./agentAttention";
+ import { DockPageContext } from "./dockSide";
+@@ -28,15 +27,7 @@ const EffectsPage = memo(EffectsSection);
+ const EditPage = memo(EditSection);
+ const CaptionsPage = memo(CaptionsSection);
+ const ScriptPageMemo = memo(ScriptPage);
+-const ONLINE_BUILD = typeof import.meta.env !== "undefined" && import.meta.env.VITE_PC_ONLINE === "1";
+-/**
+- * 在线浏览器模式的 Agent 页:AI 助手的本机版要本机编辑器进程(模型配置、对话记录、工具执行都走它的 `/api/*`),在线页面按契约第 2 节
+- * 不挂 AiPanel,换成「云端」接入方式的 AI 栏(`OnlineAgentPage`,云端 Agent 服务契约 9.5;不分身份、不分档,`product/platforms.md`「AI 栏」)。
+- */
+-function OnlineAgentSwitch(props: { tabId: string; active: boolean; mcpConnected: boolean }) {
+-  return <OnlineAgentPage tabId={props.tabId} active={props.active} />;
+-}
+-const AgentPage = memo(ONLINE_BUILD ? OnlineAgentSwitch : AiPanel);
++const AgentPage = memo(AiPanel);
+ 
+ const goImport = () => activateRailItem("library", { expand: true });
+ 

@@ -1,0 +1,50 @@
+diff --git a/src/editor/right/chat/QueueList.tsx b/src/editor/right/chat/QueueList.tsx
+index c423a7efa72823c35dcafcd7950c9f3d75ca1345..14cda70c029fa62c8f745952bd8e5acb9032dccb 100644
+--- a/src/editor/right/chat/QueueList.tsx
++++ b/src/editor/right/chat/QueueList.tsx
+@@ -2,45 +2,6 @@ import { useLayoutEffect, useRef, useState } from "react";
+ import { useQueue, remove, type QueuedItem } from "../../../ai/chatQueue";
+ import { playEnter, prefersReducedMotion } from "../../enterMotion";
+ import "./queue.css";
+-import type { ChatMessage } from "../../../ai/types";
+-import type { CloudQueueSnapshot, CloudSender } from "../../../ai/chatTypes";
+-import { accountMessageId, isIdleHead } from "../../../ai/chatTypes";
+-
+-/** Server FIFO is already accepted; local insert/edit/remove controls do not apply. */
+-export function CloudQueueList(props: { queue?: CloudQueueSnapshot | null; messages: ChatMessage[]; senders?: Record<string, CloudSender>;
+-  /** 云端的执行服务在问(`info.executorMounted`):在问时,对话空闲时排第一的那条马上就开始,不算排队;不在问时消息真在排着等,照旧列出来 */
+-  executorMounted?: boolean }) {
+-  // 对话空闲时排第一的那条马上开始,不算排队(它的气泡下写「已发出，等待云端开始处理…」,见 events.ts 的 isIdleHead)
+-  const items = props.queue?.items.filter(item => item.state === 'queued' && !(props.executorMounted && isIdleHead(props.queue, item)))
+-    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0)) ?? [];
+-  const waitingJobs = props.messages.some(m => m.role === 'assistant' && m.pending && (m.progress?.waitingJobs || m.progress?.phase === 'waiting_jobs'));
+-  const queuedLook = props.messages.find(m => m.role === 'assistant' && m.pending && ((m.progress as Record<string, any>)?.renderQueuePosition || m.progress?.phase === 'render_queued'));
+-  const renderQueuePos = (queuedLook?.progress as Record<string, any>)?.renderQueuePosition ?? 1;
+-  if (!items.length && !waitingJobs && !queuedLook) return null;
+-  return <section className="ai-queue" data-pc="cloud-queue" data-queue-revision={props.queue?.queueRevision} aria-label="云端持久队列">
+-    {queuedLook ? (
+-      <div className="ai-queue-head pc-cloud-render-queued" data-pc="cloud-queue-render-queued">
+-        云端渲染正在给别的项目用，排在第 {renderQueuePos} 位，轮到了会接着做。
+-      </div>
+-    ) : waitingJobs ? (
+-      <div className="ai-queue-head pc-cloud-waiting-jobs" data-pc="cloud-queue-waiting-jobs">
+-        上一条消息发起的后台作业（转写、镜头识别等）还在做，做完就处理你这条消息。
+-      </div>
+-    ) : (
+-      <div className="ai-queue-head">已排队 {items.length} 条 · 等待执行服务</div>
+-    )}
+-    {items.length > 0 && (
+-      <ol className="ai-queue-list">{items.map(item => {
+-        const id = accountMessageId(item.messageId), message = props.messages.find(row => row.id === id);
+-        return <li className="ai-queue-item" key={item.messageId} data-message-id={item.messageId} data-queue-position={item.position}>
+-          <span className="ai-queue-no">第 {item.position} 条</span>
+-          <span className="pc-cloud-sender">{props.senders?.[id]?.name ?? '发送者正在读取'}</span>
+-          <span className="ai-queue-text">{message?.text ?? '消息正在读取'}</span>
+-        </li>;
+-      })}</ol>
+-    )}
+-  </section>;
+-}
+ 
+ /** 离开队列的那一行淡出、收起的时长,和 queue.css 的 ai-queue-row-leave 一致 */
+ const LEAVE_MS = 160;

@@ -1,0 +1,13 @@
+diff --git a/src/start/ExtChatPanel.tsx b/src/start/ExtChatPanel.tsx
+index 27001ff0adfc39584c5d6ef83a35911568cc017f..e505917dad5a9e50afffc26182867489ebb4465b 100644
+--- a/src/start/ExtChatPanel.tsx
++++ b/src/start/ExtChatPanel.tsx
+@@ -20,7 +20,7 @@ import { useLayoutEffect, useRef, useState } from "react";
+ import type { JSX, ReactNode } from "react";
+ import type { ChatMessage } from "../ai/types";
+ import { activityText, runningTool } from "../editor/right/chat/AgentBubble";
+-import { isUserBubble, ordinals, partsOf, roundView, splitQuotes } from "../mobile/agentView";
++import { isUserBubble, ordinals, partsOf, roundView, splitQuotes } from "./agentView";
+ 
+ const MARK: Record<string, string> = { done: "✓", run: "…", todo: "·", err: "!", ask: "!" };
+ 

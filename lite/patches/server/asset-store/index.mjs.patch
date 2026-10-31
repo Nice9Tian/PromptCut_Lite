@@ -1,0 +1,16 @@
+diff --git a/server/asset-store/index.mjs b/server/asset-store/index.mjs
+index 1da89ce355bb12a316b64c428739c1fb5f228afc..61be34183c9c6a32be4f2059b2b40bb8cee37ec0 100644
+--- a/server/asset-store/index.mjs
++++ b/server/asset-store/index.mjs
+@@ -19,11 +19,6 @@ import { createFsStore, ensureLayoutSync, readLayoutSync, LAYOUT_FILE, LAYOUTS }
+ import { createMemoryStore } from './memory-store.mjs';
+ import { BLOB_CHUNK_SIZE } from './blob-store.mjs';
+ import { createAssetClient } from './client.mjs';
+-export { createProjectAssetStores, projectScopeOfRoot, projectStorageKey, PROJECT_ASSET_LAYOUT_VERSION } from './project-stores.mjs';
+-export { createAssetRevocationConsumer } from './project-revocations.mjs';
+-export { authorizeAsset, openProjectStream, createProjectAssetAccess } from './project-access.mjs';
+-export { assetContextOf, setAssetContext, authorizedAssetStore } from './project-access.mjs';
+-export { createGuestAssetQuota, guestQuotaApplies, guestIdOfUserId } from './guest-quota.mjs';
+ export { SNIFF_BYTES, sniffMediaKind, countsAsVideoFile } from './media-sniff.mjs';
+ 
+ export { BLOB_CHUNK_SIZE, createFsStore, createMemoryStore, createAssetClient, ensureLayoutSync, readLayoutSync, LAYOUT_FILE, LAYOUTS };

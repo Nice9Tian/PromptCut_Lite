@@ -1,0 +1,80 @@
+diff --git a/src/render/staleLayer.test.mjs b/src/render/staleLayer.test.mjs
+index 99ea81671feda513a27395682948fa00e4880f3a..cb53cf56e152f7b95a17151ff2699c6ab0f38fdd 100644
+--- a/src/render/staleLayer.test.mjs
++++ b/src/render/staleLayer.test.mjs
+@@ -1,14 +1,8 @@
+ /**
+- * 在线来源认出旧参数的层(stale-layer;`snapshotSource.ts` 的 `OnlineSnapshotSource.setInputs`、层表的 `inputSig`):
+- *   SL-1 改参数:旧层马上撤掉(就绪发空、取不到字节);结果在路上时不确认缺料(沙漏)、时间轴不出徽标;
+- *        等满 STALE_AWAIT_MS 还没新层才确认(图标、徽标),并叫覆盖订阅方;新层表到了照常换上
+- *   SL-2 改回原来的参数:原来那一层还在,照贴
+- *   SL-3 旧层表(没有 inputSig)照旧贴,改参数也不撤(向后兼容);页面没给项目也不比
+- *   SL-4 取原尺寸(层表 v 3 候选)同样撤;layerClipIds 不含过期的层;layerRefOf 带签名比对
+- *   SL-5 导出(`originals.ts`):给了项目时,旧输入的层算缺
++ * 认出旧参数的层(stale-layer;`snapshotSource.ts` 的 `OnlineSnapshotSource.setInputs`、层表的 `inputSig`):
+  * 跑:node --test src/render/staleLayer.test.mjs
+  */
+-import { srcUrl } from "../testing/registerTs.mjs";
++import "../testing/registerTs.mjs";
+ import { test } from "node:test";
+ import assert from "node:assert/strict";
+ import { OnlineSnapshotSource, LAYER_MAP_PREFIX, STALE_AWAIT_MS, applyReadyMessage, layerOf, layerRefOf } from "./snapshotSource.ts";
+@@ -90,7 +84,6 @@ test("SL-1 改参数:旧层马上撤、在路上时沙漏(不确认)、过了等
+   const p1 = project({ title: "world" });
+   const before = coverageCalls();
+   src.setInputs(p1);
+-  // 同步撤掉:不等下一轮轮询
+   assert.deepEqual(layerOf(index, "a", "html"), { clipId: "a", kind: "html", key: "KA1", ranges: [] }, "旧层撤掉(就绪发空)");
+   assert.deepEqual(layerOf(index, "b", "html").ranges, [[0, 59]], "没改的片段照贴");
+   await assert.rejects(src.fetchSnapshot("html", "KA1", 3), /没有这一帧/, "旧层的字节不再给");
+@@ -100,7 +93,6 @@ test("SL-1 改参数:旧层马上撤、在路上时沙漏(不确认)、过了等
+   assert.equal(src.layerClipIds().has("a"), false, "过期的层不算有产物");
+   assert.equal(src.debug().stale[0].clipId, "a");
+ 
+-  // 等满等待期:确认缺料
+   advance(STALE_AWAIT_MS + 1);
+   const mid = coverageCalls();
+   await src.tickNow();
+@@ -108,7 +100,6 @@ test("SL-1 改参数:旧层马上撤、在路上时沙漏(不确认)、过了等
+   assert.equal(src.coverage("a"), "none");
+   assert.ok(coverageCalls() > mid, "到期时叫覆盖订阅方");
+ 
+-  // 渲染节点按新输入重写层表、渲完:照常换上
+   w.layerMap([layer("a", "KA2", clipInputSig(p1, "a")), layer("b", "KB1", clipInputSig(p1, "b"))]);
+   w.manifest("KA2", 60, 7);
+   advance(10_000);
+@@ -124,7 +115,7 @@ test("SL-2 改回原来的参数:原来那一层还在就照贴", async () => {
+   const { src, index } = await setup({ p: p0, layers: (p) => [layer("a", "KA1", clipInputSig(p, "a"))] });
+   src.setInputs(project({ title: "world" }));
+   assert.deepEqual(layerOf(index, "a", "html").ranges, []);
+-  src.setInputs(project({ title: "hello" })); // 新对象、同样的输入
++  src.setInputs(project({ title: "hello" }));
+   assert.deepEqual(layerOf(index, "a", "html"), { clipId: "a", kind: "html", key: "KA1", ranges: [[0, 59]] });
+   assert.deepEqual(src.debug().stale, []);
+ });
+@@ -163,25 +154,3 @@ test("SL-4 取原尺寸(v 3 候选)同样撤;layerRefOf 带签名比对", async
+   assert.equal(layerRefOf(table, "b", { inputSig: clipInputSig(p1, "b") }), null, "旧参数的层");
+   assert.equal(layerRefOf(table, "b")?.key, "KB1", "不给签名:照旧");
+ });
+-
+-test("SL-5 导出:给了项目时旧输入的层算缺,对得上的照取", async () => {
+-  const O = await import(srcUrl("export/originals.ts"));
+-  const p0 = project();
+-  const map = { v: 3, kind: "layer-map", projectId: "p1", fps: 30, span: 60, layers: [
+-    layer("a", "KA1", clipInputSig(p0, "a"), { count: 2 }), layer("b", "KB1", clipInputSig(p0, "b"), { count: 2 }),
+-  ] };
+-  const request = async (msg) => {
+-    if (msg.key === "layers:p1") return { type: "content.item", body: map };
+-    if (msg.key === "KA1:0-1" || msg.key === "KB1:0-1") return { type: "content.item", body: { frames: [[0, H(1)], [1, H(2)]] } };
+-    return { type: "content.item", missing: true };
+-  };
+-  const deps = { request, assetBase: () => "http://x/api/asset", authHeaders: async () => ({}) };
+-  const same = await O.loadOriginalsIndex("p1", deps, { project: p0 });
+-  assert.deepEqual(same.missing, []);
+-  const edited = await O.loadOriginalsIndex("p1", deps, { project: project({ title: "world" }) });
+-  assert.deepEqual(edited.missing, ["a"], "改了参数的卡:旧层不导出,算缺");
+-  assert.equal(edited.hashAt("a", 0), null);
+-  assert.equal(edited.hashAt("b", 0), H(1));
+-  const legacy = await O.loadOriginalsIndex("p1", deps);
+-  assert.deepEqual(legacy.missing, [], "不给项目:照旧");
+-});

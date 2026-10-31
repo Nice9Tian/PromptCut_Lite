@@ -1,0 +1,54 @@
+diff --git a/src/editor/left/TranscribePanel.tsx b/src/editor/left/TranscribePanel.tsx
+index 7ebc341690a93441d490b433316db07700ae626c..a902eeb6865a8f1544df66201f13e47bf420be97 100644
+--- a/src/editor/left/TranscribePanel.tsx
++++ b/src/editor/left/TranscribePanel.tsx
+@@ -1,7 +1,6 @@
+ import { useState, useEffect, useRef } from "react";
+ import type { TranscriptSegment } from "../../kernel/project";
+ import { sttStatus, sttInstall, transcribeMedia, type SttStatus } from "../io/stt";
+-import { onlinePage, onlineUnsupported } from "../../online/pageFlag";
+ 
+ interface TranscribePanelProps {
+   mediaId: string;
+@@ -40,9 +39,7 @@ export function TranscribePanel({ mediaId, onClose }: TranscribePanelProps) {
+   // 状态
+   const [statusData, setStatusData] = useState<SttStatus | null>(null);
+   const [statusError, setStatusError] = useState<string | null>(null);
+-  // 在线浏览器模式没有语音识别(C10 契约第 10 节):不查引擎状态(那是编辑器进程的接口),只给一个置灰的按钮
+-  const online = onlinePage();
+-  const [loadingStatus, setLoadingStatus] = useState(!online);
++  const [loadingStatus, setLoadingStatus] = useState(true);
+ 
+   // 安装
+   const [installing, setInstalling] = useState(false);
+@@ -61,7 +58,7 @@ export function TranscribePanel({ mediaId, onClose }: TranscribePanelProps) {
+   const cancelRef = useRef(false);
+ 
+   useEffect(() => {
+-    if (!online) loadStatus();
++    void loadStatus();
+   }, []);
+ 
+   // 安装日志自动滚动
+@@ -152,7 +149,7 @@ export function TranscribePanel({ mediaId, onClose }: TranscribePanelProps) {
+   const engineInstalled =
+     statusData?.engines[engine as "faster-whisper" | "whisper"]?.installed ?? false;
+ 
+-  const showInstallBtn = !online && !loadingStatus && !statusError && !engineInstalled;
++  const showInstallBtn = !loadingStatus && !statusError && !engineInstalled;
+ 
+   return (
+     <div
+@@ -198,12 +195,6 @@ export function TranscribePanel({ mediaId, onClose }: TranscribePanelProps) {
+         </button>
+       </div>
+ 
+-      {online && (
+-        <button type="button" data-pc="start-transcribe-btn" className="pc-left-btn is-primary is-block mb-2" disabled title={onlineUnsupported("语音识别")}>
+-          开始转写
+-        </button>
+-      )}
+-
+       {/* 状态区 */}
+       {loadingStatus && (
+         <div className="pc-left-faint mb-1">检查引擎状态…</div>

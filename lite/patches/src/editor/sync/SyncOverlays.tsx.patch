@@ -1,0 +1,104 @@
+diff --git a/src/editor/sync/SyncOverlays.tsx b/src/editor/sync/SyncOverlays.tsx
+index d5aab85c339c32fd71843f349a0a17d9496feeaa..b6d74e3b6d22a8244644dacfc3e4d59048d50148 100644
+--- a/src/editor/sync/SyncOverlays.tsx
++++ b/src/editor/sync/SyncOverlays.tsx
+@@ -1,5 +1,5 @@
+ /**
+- * 同步相关的浮层:撤销提示条、气泡、离线对话框、阻断弹窗(c65-undo-draft.md 第 2、3、6 节,c65-ux-draft.md 第 5 节)。
++ * 同步相关的浮层:撤销提示条、气泡、离线对话框、冲突合并窗口(c65-undo-draft.md 第 2、3、6 节,c65-ux-draft.md 第 5 节)。
+  * 文案一字不差照两份稿件的文案表;稿件里待裁定的地方按 c65-design.md 第 8、9 节的裁定。
+  */
+ import { useEffect, useRef, useState } from "react";
+@@ -10,7 +10,6 @@ import {
+   discardOffline,
+   displayNames,
+   jumpToEntity,
+-  leaveBlocked,
+   me,
+   pausedSummary,
+   replayOffline,
+@@ -19,9 +18,6 @@ import {
+   type UndoNoticeView,
+ } from "./syncManager";
+ import { clipOfEntity, entityLabel, writerLabel } from "./labels";
+-import { ONLINE } from "../../online/mode";
+-import { offlineUnsent, offlineUnsentText, unsentAtRisk } from "./onlineStatus";
+-import { takeLeaveAllowance } from "./leavePrompt";
+ import { foldLine, NOTICE_FOLD_AT, undoNoticeTitle } from "../undoNotice";
+ import { ConflictMergeDialog } from "./ConflictMerge";
+ import "./sync.css";
+@@ -187,74 +183,14 @@ function OfflineDialog() {
+   );
+ }
+ 
+-const BLOCKED_TEXT = {
+-  kicked: "你已被创建者踢出该项目，无法继续编辑。想回来，找创建者撤销。",
+-  removed: "你已被移出名单，连接已断开，无法继续编辑。",
+-  deleted: "项目已被创建者删除。回开始页新建或打开别的项目。",
+-} as const;
+-
+-function BlockingDialog() {
+-  const blocked = useSync((v) => v.blocked);
+-  if (!blocked) return null;
+-  return createPortal(
+-    <div className="pc-dialog-mask" style={{ zIndex: 2000 }}>
+-      <div className="pc-dialog pc-sync-dialog" role="alertdialog" aria-modal="true" data-pc="blocked-dialog">
+-        <div className="pc-dialog-body">
+-          <div style={{ fontSize: 14, lineHeight: 1.6 }}>{BLOCKED_TEXT[blocked]}</div>
+-          {blocked === "removed" ? <div className="pc-sync-hint">找创建者把你加回名单，再重新打开。</div> : null}
+-        </div>
+-        <div className="pc-dialog-foot">
+-          <button type="button" className="pc-btn pc-btn--primary" onClick={leaveBlocked}>
+-            开始页
+-          </button>
+-        </div>
+-      </div>
+-    </div>,
+-    document.body,
+-  );
+-}
+-
+-/**
+- * 在线页面离线且有未提交的改动(C10 契约第 10 节,表 A「常驻提示」):顶栏下方常驻一行提示,按改动存没存下来说两种话
+- * (〔裁:2026-10-22 主会话〕)。只在改动只在这个页面里时挂浏览器原生的离开确认(`beforeunload`)。
+- */
+-function OfflineUnsentNotice() {
+-  const store = useSync((v) => v.offlineStore);
+-  const on = useSync((v) => offlineUnsent(v.status, v.unconfirmed));
+-  const atRisk = useSync((v) => unsentAtRisk(v.status, v.unconfirmed, v.offlineStore));
+-  useEffect(() => {
+-    if (!atRisk) return;
+-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+-      if (takeLeaveAllowance()) return; // 新版本提示条上已点过「仍要刷新」，不再问第二遍
+-      e.preventDefault();
+-      e.returnValue = ""; // 旧浏览器要设它才弹原生的离开确认
+-    };
+-    window.addEventListener("beforeunload", onBeforeUnload);
+-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+-  }, [atRisk]);
+-  if (!on) return null;
+-  return createPortal(
+-    <div className="pc-offline-unsent" role="status" data-pc="offline-unsent" data-store={store}>
+-      {offlineUnsentText(store)}
+-    </div>,
+-    document.body,
+-  );
+-}
+-
+-/**
+- * 挂在编辑器根上一次。手机版界面(`src/mobile/`)把离线对话框与冲突合并窗口换成自己的冲突合并面板(`offlineDialog: false`),
+- * 其余浮层照用这里的。离线对话框(整份「加进去 / 不要了」)只在离线批次算不出逐项差异时才会出现,平时由冲突合并窗口接手。
+- */
+ export function SyncOverlays(props: { offlineDialog?: boolean } = {}) {
+   const notice = useSync((v) => v.notice);
+   return (
+     <>
+       {notice ? <UndoNoticeBar n={notice} /> : null}
+       <Toasts />
+-      {ONLINE ? <OfflineUnsentNotice /> : null}
+       {props.offlineDialog === false ? null : <OfflineDialog />}
+       {props.offlineDialog === false ? null : <ConflictMergeDialog />}
+-      <BlockingDialog />
+     </>
+   );
+ }

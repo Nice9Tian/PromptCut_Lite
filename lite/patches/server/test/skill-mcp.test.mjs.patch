@@ -1,0 +1,24 @@
+diff --git a/server/test/skill-mcp.test.mjs b/server/test/skill-mcp.test.mjs
+index 58c3ef1f7f8b6b154e7030d2ded3db2f8c0f3c92..c3ba294eab0b321dff1574bf9e3e80573f397158 100644
+--- a/server/test/skill-mcp.test.mjs
++++ b/server/test/skill-mcp.test.mjs
+@@ -440,7 +440,7 @@ test('SM-12 SKILL 闸按调用方类型(与 vite-plugin-ai.ts 相同的判法:
+   assert.equal(gate.checkGate('get_project', typeOf('desk-A')).ok, true);
+   gate.closeGate('test');
+   // 总入口随 Agent 服务搬到 server/agent/service/instance.mjs(契约 cloud-agent-contract.md 第 2.1 节)
+-  const src = fs.readFileSync(path.join(ROOT, 'server', 'agent', 'service', 'instance.mjs'), 'utf8');
++  const src = fs.readFileSync(path.join(ROOT, 'server', 'agent', 'instance.mjs'), 'utf8');
+   assert.match(src, /gate\.checkGate\(tool, callerEntry\.registeredAt \? callerEntry\.type : 'unknown'\)/, '总入口按登记表的类型判');
+   assert.equal(/PROMPTCUT_HEADLESS/.test(fs.readFileSync(path.join(ROOT, 'server', 'skill-gate.mjs'), 'utf8')), false, '不再按「是不是无头实例」判');
+ });
+@@ -479,8 +479,8 @@ test('SM-13 无头实例、任务目录、submit_merge、三方合并归档后
+   const envScrub = new Set(['server/render-node/host.mjs', 'cloud/scripts/render-host.mjs', 'server/test/render-host.test.mjs', 'server/test/c66-integ.test.mjs', 'server/test/media-tiers.test.mjs']);
+   const headless = walk(['src', 'server', 'scripts'], skip).filter(([rel, text]) => /PROMPTCUT_HEADLESS/.test(text) && !envScrub.has(rel) && !rel.startsWith('scripts/probes/')).map(([rel]) => rel);
+   assert.deepEqual(headless, [], `PROMPTCUT_HEADLESS 还在功能代码里:${headless.join(', ')}`);
+-  const baseline = JSON.parse(fs.readFileSync(path.join(ROOT, 'server/test/c10-api-ratchet-baseline.json'), 'utf8')).paths;
+-  for (const p of ['/api/skill/jobs', '/api/skill/jobs/', '/api/skill/start']) assert.equal(baseline.includes(p), false, `在线构建的 /api 棘轮基线删去 ${p}`);
++  // removed c10-api-ratchet-baseline 1
++  // removed c10-api-ratchet-baseline 2
+ });
+ 
+ test('SM-14 对话式布局的入口不再出现:顶栏开关只有传统式 / SKILL,布局模式模块与迷你进度条删掉,没有 "chat" 布局', () => {

@@ -1,0 +1,15 @@
+diff --git a/.github/workflows/test.yml b/.github/workflows/test.yml
+index 10327037f6b740da97059f72e09bb3f531299500..9af176aa905b005fabee6be46136aa9611122deb 100644
+--- a/.github/workflows/test.yml
++++ b/.github/workflows/test.yml
+@@ -22,6 +22,10 @@ jobs:
+           node-version: '24'
+           cache: npm
+ 
++      # 根目录除了 lite/ 都是生成的，不许手改
++      - name: Check generated tree
++        run: node lite/generate.mjs --check
++
+       # 导出成片的测试要 ffmpeg 在 PATH 上
+       - name: Install ffmpeg
+         run: choco install ffmpeg -y --no-progress

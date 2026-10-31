@@ -890,6 +890,8 @@ export function createAgentInstance(env) {
           codeCacheWriter: agentId || sessionId,
           // 按实测速度设单次输出上限的速度记录:本机放在 ai.json 同目录(runners/api.mjs 的 localOutputSpeedFile)
           outputSpeedFile: 'local',
+          // 用户自己放的技能:ai.json 同目录的 skills/(runners/api.mjs 的 localSkillsDir)
+          skillsDir: 'local',
           model,
           /*
            * 深度自主:轮次上限换成设置里的「自主轮次」(ai.json 的 deepAutoRounds,

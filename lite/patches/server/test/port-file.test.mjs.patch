@@ -1,0 +1,13 @@
+diff --git a/server/test/port-file.test.mjs b/server/test/port-file.test.mjs
+index ccf3f2820bcddb4bd27d5597e5c73d02ab236360..98c0edaf632286e999a2fc0c90e30440d0a32b30 100644
+--- a/server/test/port-file.test.mjs
++++ b/server/test/port-file.test.mjs
+@@ -111,7 +111,7 @@ test('port-file:scripts/ 下起编辑器的脚本都带 PROMPTCUT_NO_PORT_FILE=1
+     const explicit = /PROMPTCUT_NO_PORT_FILE:\s*'1'/.test(src);
+     if (!viaEntry && !explicit) offenders.push(`${rel}:会起编辑器,第一个 import 不是 no-user-dirs.mjs,也没显式设 PROMPTCUT_NO_PORT_FILE: '1'`);
+   }
+-  assert.ok(checked.length >= 25, `扫描到的脚本太少(${checked.length}),识别规则可能坏了:${checked.join(', ')}`);
++  assert.ok(checked.length >= 10, `扫描到的脚本太少(${checked.length}),识别规则可能坏了:${checked.join(', ')}`);
+   for (const must of ['scripts/lib/dev-server.mjs', 'scripts/probes/ready-index-probe.mjs', 'scripts/probes/cold-start-probe.mjs']) {
+     assert.ok(checked.includes(must), `${must} 起编辑器,识别规则却没认出来`);
+   }

@@ -1,0 +1,236 @@
+diff --git a/server/test/asset-store-http.test.mjs b/server/test/asset-store-http.test.mjs
+index 5fc8498c82e62775c2dda88917cdbf8074f8a7bb..c6f072abb603791601216499fd59bfa0a3f049fc 100644
+--- a/server/test/asset-store-http.test.mjs
++++ b/server/test/asset-store-http.test.mjs
+@@ -1,5 +1,5 @@
+ /**
+- * 素材服务 HTTP 层接数据层之后的用例（契约 `docs/plan/asset-store-contract.md` 第 3、4 节，用例 H1～H6）。
++ * 素材服务 HTTP 层接数据层之后的用例（契约 `docs/plan/asset-store-contract.md` 第 3、4 节，用例 H1、H2、H4、H5）。
+  * 跑：node --test server/test/asset-store-http.test.mjs
+  *
+  * 只照契约写，不看实现。`asset-service.ts` 照 `asset-service.test.mjs` 的办法用 typescript 转译到临时目录再 import；
+@@ -117,13 +117,11 @@ const chunkCount = (size) => Math.max(1, Math.ceil(size / CHUNK));
+ const sliceOf = (buf, n) => buf.subarray(n * CHUNK, Math.min(buf.length, (n + 1) * CHUNK));
+ const randomToken = () => crypto.randomBytes(32).toString('base64url');
+ const bearer = (t) => ({ Authorization: `Bearer ${t}` });
+-const { assetTicketKit } = await import('./fake-shared-env.mjs');
+ 
+ const put = (base, hash, n, body, headers = {}) => fetch(`${base}/media/${hash}/${n}`, {
+   method: 'PUT', body, headers: { 'Content-Type': 'application/octet-stream', ...headers },
+ });
+ const complete = (base, hash, headers = {}) => fetch(`${base}/media/${hash}/complete`, { method: 'POST', headers });
+-const chunks = async (base, hash, headers = {}) => (await fetch(`${base}/media/${hash}/chunks`, { headers })).json();
+ 
+ /** 发一片，只写一部分就掐断连接：模拟上传中途断网 */
+ function putAndDrop(base, hash, n, size, part) {
+@@ -299,7 +297,7 @@ test('H2 守门：asset-service.ts 源码里没有文件系统引用、没有 .c
+ });
+ 
+ /* ------------------------------------------------------------------ *
+- * H3～H6：写入鉴权
++ * H4、H5：本机回环判据与预检
+  * ------------------------------------------------------------------ */
+ 
+ /** 一片的小素材 */
+@@ -315,115 +313,16 @@ async function expect401(p, what) {
+   assert.equal(r.headers.get('access-control-allow-origin'), '*', `${what}：401 也带跨源头`);
+ }
+ 
+-// M6a（`docs/plan/auth-contract.md` 第 8 节）：集群令牌退役，非回环来源读写都凭素材票据。原来的 H3 / H4 测
+-// 「写要令牌、读不要」，现在测「写要 rw 票据、读要票据（Bearer 或查询串只读票据）」，断言的形状（401 回包、跨源头、
+-// 先鉴权后校验、被拒不落盘）不变；令牌换成票据。
+-test('H3 isTrusted 为 false：不带票据、票据坏 → 401；rw 票据写照常；读也要票据（Bearer 或查询串只读票据）；OPTIONS 不要', async () => {
+-  const kit = await assetTicketKit();
+-  const ticket = kit.issue('rw');
+-  const srv = await serve({ opts: { store: memoryStore(), tickets: kit.tickets, isTrusted: () => false } });
+-  const { base } = srv;
+-  const { buf, hash, h } = smallAsset(301);
+-
+-  await expect401(put(base, hash, 0, buf, h), 'PUT 不带票据');
+-  const wrongs = [
+-    ['乱写的票据', bearer(randomToken())],
+-    ['票据多一个字符', bearer(`${ticket}x`)],
+-    ['票据少一个字符', bearer(ticket.slice(0, -1))],
+-    ['不带 Bearer', { Authorization: ticket }],
+-    ['Basic', { Authorization: `Basic ${Buffer.from(`u:${ticket}`).toString('base64')}` }],
+-    ['空 Bearer', { Authorization: 'Bearer ' }],
+-    ['票据放在别的头里', { 'X-Cluster-Token': ticket }],
+-  ];
+-  for (const [what, hdr] of wrongs) await expect401(put(base, hash, 0, buf, { ...h, ...hdr }), `PUT ${what}`);
+-  assert.deepEqual((await chunks(base, hash, bearer(ticket))).received, [], '被拒的写入不算收到');
+-  assert.deepEqual(await chunks(base, hash, bearer(ticket)), { size: null, chunkSize: CHUNK, received: [], complete: false }, '被拒的写入也不登记 size');
+-
+-  await expect401(complete(base, hash), 'POST complete 不带票据');
+-  for (const [what, hdr] of wrongs) await expect401(complete(base, hash, hdr), `POST complete ${what}`);
+-
+-  // 票据区分大小写（签名是按原始字节验的）
+-  const flipped = ticket.replace(/\.([^.]*)$/, (m, sig) => `.${sig.replace(/[a-zA-Z]/, (c) => (c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase()))}`);
+-  assert.notEqual(flipped, ticket);
+-  await expect401(put(base, hash, 0, buf, { ...h, ...bearer(flipped) }), '票据大小写不同');
+-
+-  // scheme 不区分大小写
+-  for (const scheme of ['bearer', 'BEARER']) {
+-    const r2 = await put(base, hash, 0, buf, { ...h, Authorization: `${scheme} ${ticket}` });
+-    assert.equal(r2.status, 200, `scheme 写成 ${scheme}`);
+-    await r2.arrayBuffer();
+-  }
+-
+-  // 票据对：照常
+-  const ok = await put(base, hash, 0, buf, { ...h, ...bearer(ticket) });
+-  assert.equal(ok.status, 200);
+-  assert.deepEqual(await ok.json(), { ok: true, hash, n: 0, bytes: buf.length });
+-  await expect401(complete(base, hash), '分片收了，收尾照样要票据');
+-  const fin = await complete(base, hash, bearer(ticket));
+-  assert.equal(fin.status, 200);
+-  assert.deepEqual(await fin.json(), { ok: true, hash, size: buf.length, complete: true, url: `/@media/${hash}` });
+-
+-  // 读：不带票据 401；Bearer 票据、查询串只读票据照常（M6a；原来是「读不要令牌」）
+-  await expect401(fetch(`${base}/media/${hash}`), 'GET 不带票据');
+-  await expect401(fetch(`${base}/media/${hash}`, { method: 'HEAD' }).then((r) => ({ status: r.status, headers: r.headers, json: async () => ({ ok: false, error: 'unauthorized' }) })), 'HEAD 不带票据');
+-  await expect401(fetch(`${base}/media/${hash}/chunks`), 'chunks 不带票据');
+-  await expect401(fetch(`${srv.origin}/@media/${hash}`), '老路由不带票据');
+-  const got = await fetch(`${base}/media/${hash}`, { headers: { Origin: 'http://192.168.1.50:8080', ...bearer(ticket) } });
+-  assert.equal(got.status, 200);
+-  assert.equal(sha256(Buffer.from(await got.arrayBuffer())), hash);
+-  assert.equal((await fetch(`${base}/media/${hash}`, { method: 'HEAD', headers: bearer(ticket) })).status, 200);
+-  const part = await fetch(`${base}/media/${hash}`, { headers: { Range: 'bytes=0-9', ...bearer(ticket) } });
+-  assert.equal(part.status, 206);
+-  await part.arrayBuffer();
+-  const readOnly = kit.issue('r');
+-  const q = await fetch(`${base}/media/${hash}?t=${encodeURIComponent(readOnly)}`, { headers: { Range: 'bytes=0-9' } });
+-  assert.equal(q.status, 206, '查询串只读票据');
+-  assert.equal(q.headers.get('cache-control'), 'no-store');
+-  assert.equal(q.headers.get('referrer-policy'), 'no-referrer');
+-  await q.arrayBuffer();
+-  await expect401(fetch(`${base}/media/${hash}?t=${encodeURIComponent(ticket)}`), '查询串只认只读票据');
+-  const st = await fetch(`${base}/media/${hash}/chunks`, { headers: bearer(readOnly) });
+-  assert.equal(st.status, 200);
+-  assert.equal((await st.json()).complete, true);
+-  const pre = await fetch(`${base}/media/${hash}/0`, { method: 'OPTIONS', headers: { Origin: 'http://192.168.1.50:8080', 'Access-Control-Request-Method': 'PUT' } });
+-  assert.equal(pre.status, 204);
+-
+-  // 只读票据写入 403；查询串用于写入 401
+-  const r403 = await put(base, hash, 0, buf, { ...h, ...bearer(readOnly) });
+-  assert.equal(r403.status, 403);
+-  assert.deepEqual(await r403.json(), { ok: false, error: 'forbidden' });
+-  await expect401(fetch(`${base}/media/${hash}/complete?t=${encodeURIComponent(readOnly)}`, { method: 'POST' }), '查询串用于写入');
+-
+-  // 入库后的幂等重传也是写：照样要票据
+-  await expect401(put(base, hash, 0, buf, h), '入库后 PUT 不带票据');
+-  await expect401(complete(base, hash), '入库后 complete 不带票据');
+-  assert.equal((await put(base, hash, 0, buf, { ...h, ...bearer(ticket) })).status, 200);
+-
+-  // 先鉴权：长度、分片号、size 都不对的未授权写也回 401，不看其它校验
+-  await expect401(put(base, hash, 0, buf.subarray(1), h), '长度不对的未授权写');
+-  await expect401(put(base, hash, 9, buf, h), '越界的未授权写');
+-  await expect401(put(base, hash, '01', buf, h), '分片号格式不对的未授权写');
+-  await expect401(put(base, hash, 0, buf, { 'X-Media-Ext': 'png' }), '缺 size 的未授权写');
+-
+-  // 请求体比一片还大的未授权写：连接被掐断或回 401，都不能落进存储
+-  const big = bytesOf(CHUNK + 5, 302);
+-  const bh = sha256(big);
+-  const r = await put(base, bh, 0, big, { 'X-Media-Size': String(big.length) }).catch((e) => e);
+-  if (!(r instanceof Error)) { assert.equal(r.status, 401); await r.arrayBuffer().catch(() => {}); }
+-  assert.deepEqual((await chunks(base, bh, bearer(ticket))).received, []);
+-});
+-
+-test('H4 tickets 为 null 且非本机：读写一律 401；本机照常；缺省 isTrusted 只认回环；集群令牌不再认；缺省核对器按 <root>/out/docservice/auth', async () => {
++test('H4 tickets 为 null 且非本机：读写一律 401；本机照常；缺省 isTrusted 只认回环；集群令牌不再认', async () => {
+   const store = memoryStore();
+   const { buf, hash, h } = smallAsset(401);
+ 
+-  const kit = await assetTicketKit();
+   const remote = await serve({ opts: { store, tickets: null, isTrusted: () => false } });
+-  for (const hdr of [{}, bearer(randomToken()), bearer(kit.issue('rw')), { Authorization: 'Bearer null' }, { Authorization: 'Bearer ' }, { Authorization: 'Bearer undefined' }]) {
++  for (const hdr of [{}, bearer(randomToken()), { Authorization: 'Bearer null' }, { Authorization: 'Bearer ' }, { Authorization: 'Bearer undefined' }]) {
+     await expect401(put(remote.base, hash, 0, buf, { ...h, ...hdr }), `非本机 PUT ${JSON.stringify(hdr).slice(0, 40)}`);
+     await expect401(complete(remote.base, hash, hdr), `非本机 complete ${JSON.stringify(hdr).slice(0, 40)}`);
+   }
+-  await expect401(fetch(`${remote.base}/media/${hash}/chunks`), '没有核对器：读也 401（M6a；原来读照常）');
++  await expect401(fetch(`${remote.base}/media/${hash}/chunks`), '没有核对器：读也 401');
+ 
+   // 本机（isTrusted 为真）：不带票据照常
+   const local = await serve({ opts: { store, tickets: null, isTrusted: () => true } });
+@@ -445,7 +344,7 @@ test('H4 tickets 为 null 且非本机：读写一律 401；本机照常；缺
+     await r.arrayBuffer();
+   }
+ 
+-  // 集群令牌不再用于素材服务（C5 的做法退役）：环境变量设了、Bearer 带了也 401（原来这里测「缺省 token 取环境变量」）
++  // 集群令牌不再用于素材服务（C5 的做法退役）：环境变量设了、Bearer 带了也 401
+   const envToken = randomToken();
+   process.env.PROMPTCUT_CLUSTER_TOKEN = envToken;
+   let s;
+@@ -453,19 +352,6 @@ test('H4 tickets 为 null 且非本机：读写一律 401；本机照常；缺
+   const y = smallAsset(420, 80);
+   await expect401(put(s.base, y.hash, 0, y.buf, { ...y.h, ...bearer(envToken) }), '集群令牌写入');
+   await expect401(fetch(`${s.base}/media/${y.hash}/chunks`, { headers: bearer(envToken) }), '集群令牌读');
+-
+-  // 缺省核对器：按 <root>/out/docservice/auth 取进程内的凭证存储（与同进程的文档服务共用）
+-  const { credentialStoreFor, forgetCredentialStore } = await import('../auth/store.mjs');
+-  const d = await serve({ opts: { store: memoryStore(), isTrusted: () => false } });
+-  const authDir = path.join(d.root, 'out', 'docservice', 'auth');
+-  const shared = credentialStoreFor(authDir);
+-  try {
+-    const dk = await assetTicketKit({ store: shared });
+-    const z = smallAsset(430, 96);
+-    await expect401(put(d.base, z.hash, 0, z.buf, z.h), '缺省核对器：不带票据');
+-    assert.equal((await put(d.base, z.hash, 0, z.buf, { ...z.h, ...bearer(dk.issue('rw')) })).status, 200, '缺省核对器认同目录凭证存储签的票据');
+-    await expect401(put(d.base, z.hash, 0, z.buf, { ...z.h, ...bearer(kit.issue('rw')) }), '别的凭证存储签的票据不认');
+-  } finally { forgetCredentialStore(authDir); }
+ });
+ 
+ test('H5 预检回的 Access-Control-Allow-Headers 含 Authorization（两个中间件与常量都是）', async () => {
+@@ -494,53 +380,3 @@ test('H5 预检回的 Access-Control-Allow-Headers 含 Authorization（两个中
+   assert.equal(res.statusCode, 204);
+   assert.ok(names(res.headers['access-control-allow-headers']).includes('authorization'));
+ });
+-
+-// M6a：令牌换成素材票据，断言不变（日志与回包里都没有票据原文）
+-test('H6 被拒、通过各试几次：日志和回包里都没有票据原文', async () => {
+-  const kit = await assetTicketKit();
+-  const token = kit.issue('rw');
+-  const seen = [];
+-  const orig = {
+-    log: console.log, info: console.info, warn: console.warn, error: console.error, debug: console.debug,
+-    out: process.stdout.write, err: process.stderr.write,
+-  };
+-  const capture = (...args) => { seen.push(args.map((a) => (typeof a === 'string' ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })())).join(' ')); };
+-  console.log = console.info = console.warn = console.error = console.debug = capture;
+-  process.stdout.write = function (chunk, ...rest) { seen.push(String(chunk)); return orig.out.call(this, chunk, ...rest); };
+-  process.stderr.write = function (chunk, ...rest) { seen.push(String(chunk)); return orig.err.call(this, chunk, ...rest); };
+-  const bodies = [];
+-  const record = async (p) => {
+-    const r = await p;
+-    const text = Buffer.from(await r.arrayBuffer()).toString('latin1');
+-    bodies.push(`${r.status} ${JSON.stringify([...r.headers])} ${text}`);
+-    return r;
+-  };
+-  try {
+-    const srv = await serve({ opts: { store: memoryStore(), tickets: kit.tickets, isTrusted: () => false } });
+-    const { base } = srv;
+-    for (let i = 0; i < 3; i++) {
+-      const { buf, hash, h } = smallAsset(600 + i, 900 + i);
+-      await record(put(base, hash, 0, buf, h));
+-      await record(put(base, hash, 0, buf, { ...h, ...bearer(`${token}${i}`) }));
+-      await record(put(base, hash, 0, buf, { ...h, Authorization: token }));
+-      await record(complete(base, hash, bearer(token.slice(1))));
+-      assert.equal((await record(put(base, hash, 0, buf, { ...h, ...bearer(token) }))).status, 200);
+-      assert.equal((await record(complete(base, hash, bearer(token)))).status, 200);
+-      await record(complete(base, hash, bearer(token)));
+-      await record(put(base, hash, 5, buf, { ...h, ...bearer(token) }));
+-      await record(put(base, hash, 0, buf.subarray(1), { ...h, ...bearer(token), 'X-Media-Size': String(buf.length + 1) }));
+-      await record(fetch(`${base}/media/${hash}`, { headers: bearer(token) }));
+-      await record(fetch(`${base}/media/${hash}/chunks`, { headers: bearer(token) }));
+-      await record(fetch(`${base}/media/${hash}?t=${encodeURIComponent(kit.issue('r'))}`));
+-      await record(fetch(`${base}/media/${hash}?t=${encodeURIComponent(token)}`));
+-    }
+-    await new Promise((r) => setTimeout(r, 50));
+-  } finally {
+-    Object.assign(console, { log: orig.log, info: orig.info, warn: orig.warn, error: orig.error, debug: orig.debug });
+-    process.stdout.write = orig.out;
+-    process.stderr.write = orig.err;
+-  }
+-  assert.ok(bodies.length >= 30);
+-  for (const b of bodies) assert.ok(!b.includes(token), `回包里出现了票据原文：${b.slice(0, 200)}`);
+-  for (const line of seen) assert.ok(!line.includes(token), `日志里出现了票据原文：${line.slice(0, 200)}`);
+-});

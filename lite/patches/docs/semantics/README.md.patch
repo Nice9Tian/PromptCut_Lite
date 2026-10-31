@@ -1,0 +1,22 @@
+diff --git a/docs/semantics/README.md b/docs/semantics/README.md
+index 38a5056b136bd65215118e1a50198af215113120..d2a2b93d44a35faf324acd84b6ff5a2539f35bcc 100644
+--- a/docs/semantics/README.md
++++ b/docs/semantics/README.md
+@@ -17,7 +17,7 @@
+ | 级 | 管什么 | 放在 |
+ |---|---|---|
+ | 一级：用户体验 | 用户怎么操作 | `user-workflow.md`、`workflow/` |
+-| 二级：产品功能 | 系统对用户和其它角色承诺什么；改了用户会看到不同的行为或能力。决定架构形状或成本的决定也算二级，例如素材字节不走文档服务、票据由谁签发由谁核对 | `product/` |
++| 二级：产品功能 | 系统对用户和其它角色承诺什么；改了用户会看到不同的行为或能力。决定架构形状或成本的决定也算二级，例如素材字节不走文档服务 | `product/` |
+ | 三级：具体机制 | 怎么做到；改了用户看不出区别。阈值、参数这类数字一律放在这一级 | `mechanism/` |
+ 
+ - `product-purpose.md`、`architecture.md` 是三级之上的总纲，改它们按二级办。
+@@ -36,7 +36,7 @@
+ | 编辑界面（`src/editor/`） | `user-workflow.md`、`workflow/editing.md` |
+ | Agent 与工具（`src/ai/`、`src/mcp/`、`server/tools/`、`server/runners/`、`server/harness/`） | `product/agent.md`、`workflow/production.md`；改实现再读 `mechanism/agent.md` |
+ | 素材导入、感知类工具（`server/vite-plugin-media.ts` 等、`python/`） | `workflow/materials.md`、`product/asset-service.md`；改实现再读 `mechanism/asset-service.md` |
+-| 文档服务、素材服务、云端、协作 | `product/document-service.md`、`product/asset-service.md`、`product/hosting.md`；改实现再读同名的 `mechanism/` |
++| 文档服务、素材服务 | `product/document-service.md`、`product/asset-service.md`；改实现再读同名的 `mechanism/` |
+ | 桌面壳、平台差异（`desktop/`） | `product/platforms.md`；改实现再读 `mechanism/platforms.md` |
+ | 产品方向或架构本身 | `product-purpose.md`、`architecture.md` |
+ | 遇到不认识的术语 | `glossary.md`，只查那一条 |

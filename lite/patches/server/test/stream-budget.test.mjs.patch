@@ -1,0 +1,48 @@
+diff --git a/server/test/stream-budget.test.mjs b/server/test/stream-budget.test.mjs
+index 142486c743e6eb68ccc7d6c7b470b3ed3dc328f1..f20f64d15188e9d9b112390c90e4d5aa35247b6c 100644
+--- a/server/test/stream-budget.test.mjs
++++ b/server/test/stream-budget.test.mjs
+@@ -13,24 +13,21 @@ import * as server from '../frame-stream.mjs';
+ import { planStreams, localPlacement, LOCAL_OVERFLOW_PX, STREAM_DECODER_BUDGET } from '../frame-stream.mjs';
+ import { STREAM_HALF_PAD, packedSize } from '../../src/render/streamEncode.ts';
+ import { planesWithinBudget, DECODER_BUDGET } from '../../src/render/streamPlayer.ts';
+-import { localPlacement as pageLocalPlacement, PAGE_STREAM_DECODER_BUDGET, PAGE_LOCAL_OVERFLOW_PX } from '../../src/online/pageStreamPlan.ts';
+ 
+ const FULL = 1920 * 2176;        // 一张 1920×1080 满屏卡的编码画幅
+ const SMALL = 704 * 864;         // 640×360 的小卡(四周各 32 像素溢出)
+ 
+-test('预算的数:像素预算是「6 张满屏卡、60 帧每秒」,条数上限 32;三处导出的条数上限是同一个数', () => {
++test('预算的数:像素预算是「6 张满屏卡、60 帧每秒」,条数上限 32;导出的条数上限是同一个数', () => {
+   assert.equal(STREAM_PIXEL_RATE_BUDGET, 6 * FULL * 60);
+   assert.equal(STREAM_PIXEL_RATE_BUDGET, 1_504_051_200);
+   assert.equal(STREAM_COUNT_BUDGET, 32);
+   assert.equal(STREAM_FREE_COUNT, 6, '原来的条数预算:6 条以内不看像素');
+   assert.equal(STREAM_DECODER_BUDGET, STREAM_COUNT_BUDGET);
+   assert.equal(DECODER_BUDGET, STREAM_COUNT_BUDGET);
+-  assert.equal(PAGE_STREAM_DECODER_BUDGET, STREAM_COUNT_BUDGET);
+   assert.equal(STREAM_DEFAULT_PIXELS, FULL);
+   // 同值的守门:黑边行数、单卡流外扩的像素数
+   assert.equal(STREAM_BUDGET_HALF_PAD, STREAM_HALF_PAD);
+   assert.equal(STREAM_BUDGET_OVERFLOW_PX, LOCAL_OVERFLOW_PX);
+-  assert.equal(STREAM_BUDGET_OVERFLOW_PX, PAGE_LOCAL_OVERFLOW_PX);
+   // 合并的函数只有一份:服务端导出的就是共用的那一个
+   assert.equal(server.groupStreams, groupStreams);
+   assert.equal(server.peakConcurrency, peakConcurrency);
+@@ -50,16 +47,14 @@ test('编码画幅:宽 × (2 × 高 + 16),与编码一侧的 packedSize 一致;
+   assert.equal(localStreamPixels(undefined, { width: 1920, height: 1080 }), FULL, '没有框 = 铺满');
+ });
+ 
+-test('单卡流矩形上界的宽高:与服务端、在线页面的 localPlacement 逐个尺寸相同', () => {
++test('单卡流矩形上界的宽高:与服务端的 localPlacement 逐个尺寸相同', () => {
+   const stages = [{ width: 1920, height: 1080 }, { width: 1280, height: 720 }, { width: 1080, height: 1920 }, { width: 640, height: 360 }];
+   const frames = [undefined, {}, { w: 640, h: 360 }, { w: 641, h: 361 }, { w: 1, h: 1 }, { w: 1900, h: 1070 }, { w: 1920, h: 1080 }, { w: 2400, h: 1300 },
+     { w: 333.3, h: 77.7 }, { w: 1857, h: 1017 }, { w: 1859, h: 1019 }, { w: 100 }, { h: 100 }, { w: 1919, h: 3 }];
+   for (const stage of stages) for (const frame of frames) {
+     const want = localPlacement({ frame }, stage).bound;
+-    const page = pageLocalPlacement({ frame }, stage).bound;
+     const got = localStreamBoundSize(frame, stage);
+     assert.deepEqual(got, { w: want.w, h: want.h }, `服务端 ${JSON.stringify(frame)} @ ${stage.width}×${stage.height}`);
+-    assert.deepEqual(got, { w: page.w, h: page.h }, `在线页面 ${JSON.stringify(frame)} @ ${stage.width}×${stage.height}`);
+   }
+ });
+ 

@@ -1,0 +1,25 @@
+diff --git a/src/ai/types.ts b/src/ai/types.ts
+index a7abcde8557b5af716cf6b07d5d3c8d882689d9b..8fd7973773d402c11047fb04adca83a272ad8221 100644
+--- a/src/ai/types.ts
++++ b/src/ai/types.ts
+@@ -238,9 +238,9 @@ export interface ChatMessage {
+   /** 纯文字部分的拼接;简洁模式和会话历史都用它 */
+   text: string;
+   /**
+-   * 云端对话里这一页刚发出、服务端的记录还没回来的那条用户消息(乐观显示,`src/ai/cloud/session.ts` 的 `stage`):
++   * 这一页刚发出、服务端的记录还没回来的那条用户消息(乐观显示):
+    * `sending` 正在发、`accepted` 云端已收下、等它开始处理、`failed` 没发出去(原因在 `error`)、
+-   * `queued` 断网时发的、排着等网络恢复后自动发出(`src/ai/cloud/outbox.ts`)。
++   * `queued` 断网时发的、排着等网络恢复后自动发出。
+    * 服务端的记录到了就换成它,这个字段跟着本地气泡一起消失。
+    */
+   sendState?: "sending" | "accepted" | "failed" | "queued";
+@@ -260,7 +260,7 @@ export interface ChatMessage {
+   usage?: unknown;
+   /** 这条回复用的模型/推理档/加速档/文本协议。旧历史里没有,报告里显示为「未记录」 */
+   runtime?: MessageRuntime;
+-  /** 云端对话(`src/ai/cloud/events.ts`):这条回复折到过的最大事件序号,重复到达的事件据此只折一次 */
++  /** 这条回复折到过的最大事件序号,重复到达的事件据此只折一次 */
+   cloudSeq?: number;
+   /** 云端对话:这一轮的改动引出的预渲染重试此刻的进展(契约 cloud-agent-contract.md 第 16 节),气泡末尾常驻一行;失败与暂不可用用出错的样式 */
+   cloudRender?: { state: string; text: string };

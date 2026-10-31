@@ -1,0 +1,63 @@
+diff --git a/src/editor/left/LibrarySection.tsx b/src/editor/left/LibrarySection.tsx
+index 45e7ae24d19d850bf9bf4623b7a63d0077b61193..8a4bac211667434865ba1e0f4520f5bbe1bd4122 100644
+--- a/src/editor/left/LibrarySection.tsx
++++ b/src/editor/left/LibrarySection.tsx
+@@ -9,10 +9,7 @@ import { KIND_GROUP, LIBRARY_GROUPS, LIBRARY_GROUP_IDS, type GroupData } from ".
+ import { GroupBrowser } from "./library/GroupBrowser";
+ import { useMediaGroup, useMediaMenu } from "./library/mediaGroups";
+ import { useCutsGroup } from "./library/cutsGroup";
+-import { IMPORT_OFFLINE_TEXT, useImportOffline } from "../sync/useImportOffline";
+-import { StorageImportButton } from "./StorageImportButton";
+ import { useReadOnly } from "../readOnly";
+-import { useUploadRejectedNotice } from "./uploadRejectedNotice";
+ 
+ /**
+  * 「素材库」分区:导入媒体 → 搜索 → 分类胶囊 → 分组(视频 / 图片 / 音频)。
+@@ -29,9 +26,6 @@ export function LibrarySection() {
+   const [openGroup, setOpenGroup] = useOpenGroup("library", LIBRARY_GROUP_IDS);
+   const [msg, flash] = useFlash();
+   const mediaInputRef = useRef<HTMLInputElement>(null);
+-  // 在线上传被限额拒掉的（游客第 4 条视频之类）：在底部提示条说清楚，多停一会儿
+-  const showRejected = useCallback((text: string) => flash(text, 8000), [flash]);
+-  useUploadRejectedNotice(showRejected);
+ 
+   // 素材三组共用一份右键菜单
+   const mediaMenu = useMediaMenu(flash);
+@@ -43,11 +37,8 @@ export function LibrarySection() {
+ 
+   const data: Record<string, GroupData> = { videos, images, music, cuts: cuts.data };
+ 
+-  // 在线浏览器断网时导入媒体置灰、提示「当前离线」(桌面版照常导入,连上后再上传;2026-10-22 用户定)
+-  const importOffline = useImportOffline();
+-  // 这个项目只给了只读权限(游客):导入是写,按钮置灰、空组里的「导入…」占位也不出
+   const ro = useReadOnly();
+-  const importMedia = useCallback(() => { if (!importOffline && !ro.locked) mediaInputRef.current?.click(); }, [importOffline, ro.locked]);
++  const importMedia = useCallback(() => { if (!ro.locked) mediaInputRef.current?.click(); }, [ro.locked]);
+ 
+   const handleMediaFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+     const files = e.target.files;
+@@ -80,21 +71,13 @@ export function LibrarySection() {
+           type="button"
+           className="pc-btn-primary is-block pc-left-primary"
+           data-pc-add="media"
+-          title={ro.locked ? ro.why : importOffline ? IMPORT_OFFLINE_TEXT : "导入素材(视频 / 音频 / 图片,按类型自动归位)"}
+-          disabled={importOffline || ro.locked}
+-          data-offline={importOffline ? "" : undefined}
++          title={ro.locked ? ro.why : "导入素材(视频 / 音频 / 图片,按类型自动归位)"}
++          disabled={ro.locked}
+           onClick={importMedia}
+         >
+           <IconImport size={16} />
+-          <span>{importOffline ? `导入媒体（${IMPORT_OFFLINE_TEXT}）` : "导入媒体"}</span>
++          <span>导入媒体</span>
+         </button>
+-        {/* 从用户自己的网盘导入:字节不经过页面,由编辑器进程直接拉(StorageImportButton) */}
+-        <StorageImportButton
+-          disabled={importOffline || ro.locked}
+-          disabledTitle={ro.locked ? ro.why : IMPORT_OFFLINE_TEXT}
+-          onImported={(kind) => setOpenGroup(KIND_GROUP[kind])}
+-          flash={flash}
+-        />
+         <SearchBox value={search} onChange={setSearch} placeholder="搜索素材…" dataPc="search" />
+       </SectionHead>
+ 

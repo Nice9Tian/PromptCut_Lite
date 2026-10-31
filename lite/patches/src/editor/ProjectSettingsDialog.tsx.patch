@@ -1,0 +1,46 @@
+diff --git a/src/editor/ProjectSettingsDialog.tsx b/src/editor/ProjectSettingsDialog.tsx
+index dc910b7271b1c1084134b486e5b74e6afc6103c7..23ea2bd34fc97a17b57b6ea8aaf8c58eeee46562 100644
+--- a/src/editor/ProjectSettingsDialog.tsx
++++ b/src/editor/ProjectSettingsDialog.tsx
+@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
+ import { useBackdropClose } from "../ui/backdropClose";
+ import { actions, useStore } from "../store/project";
+ import "./ProjectSettingsDialog.css";
+-import { CollabSection, type CollabHandle } from "./sync/CollabSection";
+ import { ReadOnlyFence } from "./ReadOnlyFence";
+ import { useReadOnly } from "./readOnly";
+ import { CREATIVITY_HINT, CREATIVITY_LABEL, CREATIVITY_LEVELS, CREATIVITY_SHORT, DEFAULT_CREATIVITY, normalizeCreativity, projectCreativity, type CreativityLevel } from "../kernel/creativity.mjs";
+@@ -75,7 +74,6 @@ export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogPr
+   /** 创造力等级的项目默认(user-workflow.md「创造力等级」):AI 栏每个对话默认取它,桌面 APP 的会话跟随它 */
+   const [creativity, setCreativity] = useState<CreativityLevel>(DEFAULT_CREATIVITY);
+   const durationInputRef = useRef<HTMLInputElement>(null);
+-  const collabRef = useRef<CollabHandle>(null);
+   // 这个项目只给了只读权限(游客):设置项照常显示,但改不了,「确定」置灰,只剩「关闭」
+   const ro = useReadOnly();
+ 
+@@ -100,8 +98,6 @@ export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogPr
+       creativity: creativity === DEFAULT_CREATIVITY ? undefined : creativity,
+     });
+     if (requestedDuration !== curDuration) actions.setDurationManual(requestedDuration);
+-    // 多用户协作:勾上并保存 = 开启,取消勾选并保存 = 关闭;这一段在忙时对话框不关
+-    if (await collabRef.current?.apply(name.trim() || "未命名")) return;
+     onClose();
+   };
+ 
+@@ -134,8 +130,6 @@ export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogPr
+   useEffect(() => {
+     if (!open) return;
+     const onKeyDown = (e: KeyboardEvent) => {
+-      // 「多用户协作」里的输入框自己处理回车(作废并重新生成要输创建者密码),不当成整个对话框的「确定」
+-      if ((e.target as HTMLElement | null)?.closest?.(".pc-collab")) return;
+       if (e.key === "Escape") {
+         e.preventDefault();
+         cancelRef.current();
+@@ -281,7 +275,6 @@ export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogPr
+             </span>
+           </div>
+           </ReadOnlyFence>
+-          <CollabSection ref={collabRef} open={open} />
+         </div>
+         <div className="pc-dialog-foot">
+           <button type="button" className="pc-btn" onClick={handleCancel}>

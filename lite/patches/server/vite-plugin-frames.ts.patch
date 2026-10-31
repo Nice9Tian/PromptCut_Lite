@@ -1,0 +1,600 @@
+diff --git a/server/vite-plugin-frames.ts b/server/vite-plugin-frames.ts
+index 8b6c811d199a516f71c4d10e34ec7382c01bdf02..2d00f9febab3925cfa6e9b908cad76858a44bad1 100644
+--- a/server/vite-plugin-frames.ts
++++ b/server/vite-plugin-frames.ts
+@@ -30,7 +30,6 @@ import { renderProject } from "./render-project.mjs";
+ import { resolvePublishVersion } from "./queue-publish.mjs";
+ import { createCardCodeIndex } from "./card-code.mjs";
+ import { cardCodeIdentityOf, onCardSourceChange, overridesRoot } from "./card-overrides.mjs";
+-import { autoRenderNodeOffReason, createAutoRenderNode } from "./auto-render-node.mjs";
+ import { foreignAssetEndpoints, selectAssetClient as selectAssetClientImpl } from "./asset-select.mjs";
+ import { setBakeRemote } from "./bake-store.mjs";
+ import { ALL as SCOPE_ALL, createPushScope } from "./push-scope.mjs";
+@@ -108,26 +107,12 @@ type DocLink = { mode: string; url: string; tried?: any[]; protocols?: () => Pro
+  *     连不上就回落本机。集群令牌不再用于数据面。
+  */
+ async function resolveDocLink(node: any): Promise<DocLink | { mode: string; tried?: any[]; url?: undefined; shared: false; detail?: string }> {
+-  if (process.env.PROMPTCUT_SHARED_CONFIG) {
+-    try {
+-      const { loadSharedConfig, sharedProtocols }: any = await import("./auth/shared-config.mjs");
+-      const entries = loadSharedConfig();
+-      const entry = entries[0];
+-      return { mode: "shared", url: entry.url, protocols: sharedProtocols(entry, { role: "render" }), shared: true, projectId: entry.projectId ?? null,
+-        contentIds: entry.contentId ? [entry.contentId] : null };
+-    } catch (error: any) {
+-      return { mode: "bad-config", shared: false, detail: String(error?.message ?? error) };
+-    }
+-  }
+   const resolved = await node.resolveDocservice();
+   return { mode: resolved?.mode, url: resolved?.url, tried: resolved?.tried, shared: false };
+ }
+ 
+-/** 凭共享项目进入的连接取素材票据;本机身份不要票据 */
+-async function ticketFor(link: DocLink, endpoint: any) {
+-  if (!link.shared) return null;
+-  const { createTicketSource }: any = await import("./auth/ticket-source.mjs");
+-  return createTicketSource(endpoint, { access: "rw" });
++async function ticketFor(_link: DocLink, _endpoint: any) {
++  return null;
+ }
+ /**
+  * 到文档服务的端点(`createDocEndpoint`,HT-a 契约 `docs/plan/http-transport-contract.md` 第 9 节)打的日志里,
+@@ -349,7 +334,6 @@ async function startQueueNode(root: string, service: FramePipeline, auto: AutoLi
+   const missing = ["createProjectClient", "createContentClient", "createLocalNode", "createDocEndpoint", "planTaskOf", "watchServiceEndpoints"]
+     .filter(name => typeof node[name] !== "function");
+   if (missing.length) return queueLog("queue.skip", { reason: "render-node-exports-missing", missing });
+-  if (hostProfile() && !auto) return startHostNode(root, service, node, origin);
+   const resolved: any = auto ? autoDocLink(auto) : await resolveDocLink(node);
+   if (resolved.mode === "bad-config") return queueLog("queue.skip", { reason: "bad-shared-config", detail: (resolved as any).detail });
+   if (!DOCSERVICE_MODES.has(resolved?.mode) || !resolved.url) {
+@@ -729,388 +713,6 @@ async function startQueueNode(root: string, service: FramePipeline, auto: AutoLi
+   if (endpoint.connected === true && !started) onOpen();
+ }
+ 
+-/**
+- * 主机一个项目的素材服务客户端(契约 render-host-contract 第 3 节「产物」:推到该项目文档服务下发的素材服务),顺序:
+- *   1. `PROMPTCUT_ASSET_URL`(显式指定,调试用);
+- *   2. 这条连接上 `service.endpoints` 里的 `asset`:按 `announcerId` 字典序取第一个的第一个地址。
+- *      只排除与本主机编辑器同 host:port 的地址 —— 主机在逻辑上是另一台设备,同一台机器上的创建者登记的
+- *      `asset:<主机名>` 也要认(PC 节点的 `foreignAssetEndpoints` 会把它当本机排掉);
+- *   3. 都没有:从文档服务地址推出同一进程的素材服务 `http(s)://<文档服务 host>/api/asset` —— 局域网模式的
+- *      文档服务挂在创建者的编辑器里,素材服务就在同一个进程(auth-contract 第 8 节末条)。
+- * 不回落到主机自己的素材服务:产物推到那里,发布方拉不到。读写都带这条连接取的素材票据。
+- */
+-function hostAssetClient({ node, endpoint, docUrl, origin, ticket, createAssetClient, owner }:
+-  { node: any; endpoint: any; docUrl: string; origin: string | null; ticket: any; createAssetClient: any; owner: string }) {
+-  let derived: string | null = null;
+-  try {
+-    const u = new URL(docUrl);
+-    derived = `${u.protocol === "wss:" || u.protocol === "https:" ? "https:" : "http:"}//${u.host}/api/asset`;
+-  } catch { /* 地址不对:只能靠登记 */ }
+-  let selfHost = "";
+-  try { selfHost = origin ? new URL(origin).host : ""; } catch { /* 没有就不排 */ }
+-  let current: any = null;
+-  let currentBase: string | null = null;
+-  const use = (base: string | null, source: "env" | "announced" | "docservice") => {
+-    if (!base || (base === currentBase && current)) return;
+-    let next: any;
+-    try { next = createAssetClient({ base, ticket }); }
+-    catch (error: any) { pushLog("push.asset-base-error", { source, base, for: owner, message: String(error?.message ?? error) }); return; }
+-    current = next;
+-    currentBase = base;
+-    pushLog("push.asset-base", { source, base, for: owner });
+-  };
+-  const envBase = String(process.env.PROMPTCUT_ASSET_URL || "").trim().replace(/\/+$/, "");
+-  let stop = () => {};
+-  if (envBase) use(envBase, "env");
+-  else {
+-    use(derived, "docservice");
+-    stop = node.watchServiceEndpoints(endpoint, ["asset"], (list: any[]) => {
+-      const urls = [...(list ?? [])]
+-        .filter((item: any) => item?.kind === "asset" && typeof item.announcerId === "string")
+-        .sort((a: any, b: any) => (a.announcerId < b.announcerId ? -1 : a.announcerId > b.announcerId ? 1 : 0))
+-        .flatMap((item: any) => (item.urls ?? []).map(String))
+-        .filter((url: string) => { try { return new URL(url).host !== selfHost; } catch { return false; } });
+-      if (urls[0]) use(urls[0].replace(/\/+$/, ""), "announced");
+-      else use(derived, "docservice");
+-    });
+-  }
+-  const client = new Proxy({}, { get: (_target, key) => { const value = current?.[key]; return typeof value === "function" ? value.bind(current) : value; } });
+-  return { client, stop: () => { try { stop(); } catch { /* 已经停了 */ } }, base: () => currentBase };
+-}
+-
+-/**
+- * M6b 独立渲染主机(`docs/plan/render-host-contract.md` 第 3 节;编排在 `render-node/host.mjs`):
+- *
+- *   - 配置:`PROMPTCUT_SHARED_CONFIG`(一项或数组,每项一个共享项目),`maxConcurrent` 见 `loadHostConfig`;
+- *   - 每项一条 `render` 连接(凭项目证明,每次重连现取挑战)、一个节点(`profile: 'host'`,
+- *     `codeVersions: [本机 frameCode]`,能力与 PC 相同,指纹照本机探测);
+- *   - 全部节点共用这个进程的 `FramePipeline`('queue' lane),并发总数由 host.mjs 的全局闸管;
+- *     执行器与产物库按项目各一份:项目快照要从那个项目的连接取,产物推到那个项目的素材服务;
+- *   - 不发布 `plan`、不认领 `plan`(filter 规则 6),不接 `/preload` 的队列发布(`active()` 恒为 false);
+- *   - 闲时门槛只有全局闸;断线重连按 G.7 接续仍持有的认领;
+- *   - 诊断 `GET /api/frames/queue`(`summary()`),退出前 `POST /api/frames/queue/release`(`release()`)。
+- *
+- * 代理模式(托管方的渲染节点,`docs/plan/hosted-render-contract.md` 第 7.1 节):设了 `PROMPTCUT_RENDER_BROKER` 时不读配置文件,
+- * 项目清单与每条连接的票据向管理进程的本机代理口要(`render-node/host.mjs` 的 `createBrokerClient`):每秒对一次账,
+- * 清单里新出现的项目当场连上、不在清单里的让掉认领后断开、标了排空的做完再断开;管理进程说暂停就不认领新任务(背压)。
+- * 这个进程里没有服务私钥,也没有任何项目的口令,只有两分钟的连接票据。节点 id 用清单给的。
+- * 清单每一项的 `streams`(这个项目此刻产不产轨道流:渲染节点开着并且「生成轨道流」开着,`hosted-render/broker.mjs`)随配置项进
+- * `host.add`,每次对账更新:不产的项目这台主机不认领它的流任务,它的执行器切清单计划时也不出自己的那一份流(`render-node/host.mjs`
+- * 文件头「按项目产不产轨道流」)。不走代理口的独立渲染主机没有这一项,不按项目管。
+- */
+-async function startHostNode(root: string, service: FramePipeline, node: any, origin: string) {
+-  const hostMod: any = await import("./render-node/host.mjs");
+-  const brokerUrl = String(process.env[hostMod.BROKER_URL_ENV] || "").trim();
+-  const broker: any = brokerUrl ? hostMod.createBrokerClient({ url: brokerUrl, key: String(process.env[hostMod.BROKER_KEY_ENV] || "") }) : null;
+-  let config: { entries: any[]; maxConcurrent: number } | null;
+-  if (broker) {
+-    try {
+-      const raw = process.env[hostMod.HOST_CONCURRENCY_ENV];
+-      config = { entries: [], maxConcurrent: raw === undefined || raw === "" ? 1 : hostMod.hostMaxConcurrent(Number(raw)) };
+-    } catch (error: any) { return queueLog("queue.skip", { reason: "bad-shared-config", profile: "host", detail: String(error?.message ?? error) }); }
+-  } else {
+-    try { config = hostMod.loadHostConfig(); }
+-    catch (error: any) { return queueLog("queue.skip", { reason: "bad-shared-config", profile: "host", detail: String(error?.message ?? error) }); }
+-  }
+-  if (!config) return queueLog("queue.skip", { reason: "no-shared-config", profile: "host" });
+-  if (services.get(root) !== service || (service as any).closed) return;
+-
+-  // 指纹:同 PC 节点,报到前借一次流预渲染间探
+-  try {
+-    const bakery = await (service as any).leaseStreamBakery();
+-    (service as any).returnStreamBakery(bakery);
+-  } catch (error: any) {
+-    return queueLog("queue.skip", { reason: "no-environment", profile: "host", message: String(error?.message ?? error) });
+-  }
+-  const envFingerprint: string | null = (service as any).envFingerprint;
+-  if (!envFingerprint) return queueLog("queue.skip", { reason: "no-environment", profile: "host" });
+-  if (services.get(root) !== service || (service as any).closed) return;
+-  // M6c X1:能力与 PC 节点同一个判据(`streams` 按实报)
+-  let capabilities = await nodeCapabilities(service);
+-  if (services.get(root) !== service || (service as any).closed) return;
+-
+-  const { sharedProtocols }: any = await import("./auth/shared-config.mjs");
+-  const { createTicketSource }: any = await import("./auth/ticket-source.mjs");
+-  const { createPrerenderExecutor }: any = await import("./prerender-executor.mjs");
+-  const { createAssetSink, layerMapOf, layerMapKeyOf }: any = await import("./artifact-transfer.mjs");
+-  const { createAssetClient }: any = await import("./asset-store/client.mjs");
+-
+-  const events: object[] = [];
+-  const note = (event: string, fields: object = {}) => {
+-    events.push({ at: Date.now(), event, ...fields });
+-    while (events.length > QUEUE_LOG) events.shift();
+-  };
+-  const log = (event: string, fields: object = {}) => { note(event, fields); if (!/^executor\.render$/.test(event)) queueLog(event, fields); };
+-
+-  /*
+-   * c66-host-cards:主机加入共享项目时经内容库 `card-source` 拉下用户卡与改过的卡,装进它自己的改动层,别人改了卡按
+-   * `content.watch` 当场同步(C6.6 设计稿第 5 节;`vite-plugin-cards.ts` 的 `createHostCardSync`,只读)。装上之后
+-   * 卡片代码身份跟着变(`cardCode(root)`),要这张卡的任务下一拍就能认领。没有改动层(没设数据目录)时不同步:
+-   * 那样会直接改仓库里的卡片文件。`PROMPTCUT_CARD_SYNC=0` 关掉。
+-   */
+-  const cardSyncOn = process.env.PROMPTCUT_CARD_SYNC !== "0" && !!overridesRoot();
+-  const cardSyncDir = path.join(process.env.PROMPTCUT_DATA_DIR || path.join(root, ".pc-work"), "host-cards");
+-  const { createHostCardSync }: any = cardSyncOn ? await import("./vite-plugin-cards") : {};
+-  if (!cardSyncOn) queueLog("queue.card-sync-skip", { profile: "host", reason: process.env.PROMPTCUT_CARD_SYNC === "0" ? "disabled" : "no-overrides" });
+-  // 托管方的渲染节点:能力位集中在 `render-node/host.mjs` 的 `hostedRenderCapabilities`(不同步卡的工作进程不报 userCards)
+-  if (broker) capabilities = hostMod.hostedRenderCapabilities(capabilities, { cardSync: cardSyncOn });
+-  /*
+-   * 托管方渲染服务的用户卡隔离(`docs/plan/hosted-render-contract.md` 第 7.5 节),管理进程经两个环境变量告诉工作进程自己是哪一种:
+-   *   - 常驻工作进程(`PROMPTCUT_HOSTED_WORKER=resident`,不同步卡)且 `PROMPTCUT_HOSTED_HOLD_CARDS=1`:内容库里有 `card-source` 的项目
+-   *     它连着、看着队列,但一个任务也不认领(`card-presence.mjs`),把「这个项目要隔离、有几个任务等着」随诊断报上去;
+-   *   - 隔离工作进程(`PROMPTCUT_HOSTED_WORKER=isolated`,开着卡片同步):装卡之前过同步文件预检(`source-gate.mjs`);
+-   *     卡片同步对完第一次账、卡片代码身份稳定之前不认领(不然清单计划会在卡还没装上时被切分)。
+-   * 没有这两个变量(桌面版、普通的独立渲染主机)时下面三个量都是空的,接线与原来逐项相同。
+-   */
+-  const { buildExtensions }: any = broker ? await import("./vite-plugin-hosted-gate") : { buildExtensions: {} };
+-  const hostedKind: string | null = broker ? (buildExtensions.sourceGate?.hostedWorkerKind?.() ?? null) : null;
+-  const holdCards = hostedKind === "resident" && !cardSyncOn && process.env.PROMPTCUT_HOSTED_HOLD_CARDS === "1";
+-  const createCardPresence: any = holdCards ? buildExtensions.hostedRender?.createCardPresence : undefined;
+-  const checkSyncedSource: any = hostedKind === "isolated" ? (buildExtensions.sourceGate?.checkSyncedSource ?? (() => ({ ok: true, errors: [] }))) : undefined;
+-  const hostedGateStatus: any = hostedKind ? buildExtensions.hostedRender?.hostedGateStatus : undefined;
+-  if (hostedKind) queueLog("queue.hosted-worker", { kind: hostedKind, cardSync: cardSyncOn, holdCards });
+-
+-  const override = String(process.env[TEST_CODE_VERSION_ENV] || "").trim() || null;
+-  let codeVersion: string = override ?? frameCode(root);
+-  const hostName = String(os.hostname() || "host").replace(/[^A-Za-z0-9._:-]/g, "-");
+-  let editorPort = "";
+-  try { editorPort = new URL(origin).port; } catch { /* 没有端口就不带 */ }
+-  const nodeIdBase = `host:${hostName}${editorPort ? `:${editorPort}` : ""}`;
+-
+-  /** 每项的连接记录:诊断用(连不上的次数、素材基址),退出时关 */
+-  const wired: { projectId: string | null; endpoint: any; assets: any; ticket: any; connectFailed: number; opens: number; cards: any; presence?: any; cardsSynced?: boolean; closed?: boolean }[] = [];
+-  const { ticketProtocols }: any = broker ? await import("./auth/client.mjs") : {};
+-  const host = hostMod.createRenderHost({
+-    entries: config.entries,
+-    dynamic: !!broker,
+-    maxConcurrent: config.maxConcurrent,
+-    envFingerprint,
+-    codeVersion,
+-    capabilities,
+-    cardSourceVersions: cardCode(root).view,
+-    now: Date.now,
+-    nodeIdOf: (entry: any, index: number) => (typeof entry?.nodeId === "string" && entry.nodeId ? entry.nodeId : `${nodeIdBase}/p${index}`).slice(0, 128),
+-    connect: (entry: any, index: number, live: { streams: () => boolean | null }) => {
+-      const rec: any = { projectId: entry.projectId ?? null, endpoint: null, assets: null, ticket: null, connectFailed: 0, opens: 0, cards: null, closed: false };
+-      // 代理模式:每次建新会话向管理进程要一张连接票据(与桌面版「页面每次交一张 render 票据」同一做法)
+-      const protocols = broker
+-        ? async () => ticketProtocols(await broker.ticket(entry.projectId))
+-        : sharedProtocols(entry, { role: "render" });
+-      // 连不上时每次退避都会打一行:按事件节流(`sessionLogger`),免得刷屏
+-      const sessionLog = sessionLogger((event: string, fields: object) => queueLog(`docservice.${event}`, fields), { extra: { project: index, projectId: rec.projectId } });
+-      rec.endpoint = node.createDocEndpoint({ url: entry.url, protocols, log: (event: string, fields: object) => {
+-        if (event === "session.connect-failed") rec.connectFailed++;
+-        if (event === "session.open") rec.opens++;
+-        sessionLog(event, fields);
+-      } });
+-      const projects = node.createProjectClient(rec.endpoint);
+-      const content = node.createContentClient(rec.endpoint);
+-      rec.ticket = createTicketSource(rec.endpoint, { access: "rw" });
+-      rec.assets = hostAssetClient({ node, endpoint: rec.endpoint, docUrl: entry.url, origin, ticket: rec.ticket, createAssetClient, owner: `host:p${index}` });
+-      const sink = createAssetSink({ pipeline: service, client: rec.assets.client, content, log });
+-      /*
+-       * C10 契约第 18 节第 9 条:主机认领在线页面的清单计划、预渲染重试计划时,按这条连接的内容库写这一版的层表(`layers:<项目文档 id>`,
+-       * 在线页面按它找清单)。主机没有推送队列,管线自己的 publishLayerMap 写不出去。
+-       */
+-      const publishLayerMap = (entry: any) => {
+-        const key = layerMapKeyOf(entry?.project?.id);
+-        if (!key || (service as any).pushQueue) return;
+-        // M7 D12:层表 v 3 的候选按切分实际出键(管线 recordSplitCandidates 记的);执行器在切分完成后才调这里
+-        const body = layerMapOf(entry, { picked: (clipId: string) => (service as any).prerenderPicked(entry, clipId), fingerprint: (service as any).envFingerprint,
+-          candidatesOf: (control: any) => (service as any).splitCandidatesFor?.(control?.contentKey) ?? null,
+-          // 轨道流:这一版的流与它们的候选(主机缺省不产流,这时是空对象,层表不带 `streams`)
+-          ...((service as any).layerMapStreamOptions?.(entry) ?? {}) });
+-        void content.put("snapshot-manifest", key, body).then(
+-          () => log("host.layer-map", { project: index, key: key.slice(0, 24), layers: body.layers.length }),
+-          (error: any) => log("host.layer-map-failed", { project: index, message: String(error?.message ?? error) }),
+-        );
+-      };
+-      // 托管方的渲染节点:这个项目此刻产不产轨道流(现读;管理进程的清单变了,一拍之内跟上)。别的主机不按项目管,不给
+-      const streamsEnabled = broker ? () => live.streams() === true : null;
+-      const executor = createPrerenderExecutor({ pipeline: service, projects, prepareProject: renderProject, log, codeStamp: () => cardCode(root).epoch, publishLayerMap, streamsEnabled });
+-      if (createHostCardSync && rec.projectId) {
+-        try {
+-          rec.cards = createHostCardSync({
+-            root, dataDir: cardSyncDir, projectId: rec.projectId, url: entry.url, endpoint: rec.endpoint,
+-            before: () => cardCode(root).touch(),
+-            ...(checkSyncedSource ? { precheck: (rel: string, source: string) => checkSyncedSource(rel, source, { rootHas: (p: string) => fs.existsSync(path.join(root, p)) }) } : {}),
+-            log: (event: string, fields: object = {}) => {
+-              note(event, { project: index, ...fields });
+-              if (/installed|rejected|backup-failed|error|skip|put-failed/.test(event)) queueLog(event, { project: index, projectId: rec.projectId, ...fields });
+-            },
+-          });
+-        } catch (error: any) {
+-          queueLog("queue.card-sync-failed", { project: index, projectId: rec.projectId, message: String(error?.message ?? error) });
+-        }
+-      }
+-      // 常驻工作进程:这个项目带没带卡片代码(只列键,不取正文)
+-      if (createCardPresence && rec.projectId) {
+-        rec.presence = createCardPresence({ endpoint: rec.endpoint, content, log: (event: string, fields: object = {}) => queueLog(event, { project: index, projectId: rec.projectId, ...fields }) });
+-      }
+-      // 隔离工作进程:每次建新会话后等卡片同步对完账(列表里的卡都装上或被拒)才放开认领
+-      if (hostedKind === "isolated" && rec.cards) {
+-        rec.cardsSynced = false;
+-        const settle = () => {
+-          rec.cardsSynced = false;
+-          // 卡片同步自己的「连上」处理先排进队(它在本处理之前注册),这里晚一拍再等它的队列走空
+-          setTimeout(() => { void rec.cards.idle().then(() => { if (!rec.closed) { rec.cardsSynced = true; queueLog("queue.cards-synced", { project: index, projectId: rec.projectId }); } }, () => {}); }, 200);
+-        };
+-        rec.endpoint.onOpen(settle);
+-        if (rec.endpoint.connected === true) settle();
+-      }
+-      const hold = rec.presence ? () => rec.presence.hold()
+-        : hostedKind === "isolated" ? () => !(rec.cards ? rec.cardsSynced === true : true) || !cardCode(root).settled()
+-        : null;
+-      const cardsInfo = rec.presence ? () => rec.presence.status()
+-        : hostedKind === "isolated" ? () => ({ state: rec.cardsSynced ? "synced" : "syncing", count: Object.keys(rec.cards?.status?.()?.records ?? {}).length })
+-        : null;
+-      wired[index] = rec;
+-      const close = () => {
+-        if (rec.closed) return;
+-        rec.closed = true;
+-        try { rec.presence?.close(); } catch { /* 已关 */ }
+-        try { rec.cards?.close(); } catch { /* 已关 */ }
+-        try { rec.assets.stop(); } catch { /* 已停 */ }
+-        try { rec.endpoint.close(); } catch { /* 已关 */ }
+-        log("queue.project-closed", { profile: "host", project: index, projectId: rec.projectId });
+-      };
+-      return { endpoint: rec.endpoint, executor, sink, close, ...(hold ? { hold } : {}), ...(cardsInfo ? { cards: cardsInfo } : {}) };
+-    },
+-    onEvent: (event: any) => {
+-      if (event?.type && event.type !== "publish-result") note(`node.${event.type}`, { project: event.index, id: event.id, ...(event.error ? { error: event.error } : {}) });
+-      taskEventLog(event, { project: event?.index ?? null, projectId: event?.projectId ?? null });
+-    },
+-  });
+-
+-  // J.6 的素材回退(读别的机器上的素材):各项目的素材服务都当回退基址;票据按基址挑,用那台素材服务所属项目的
+-  // (票据只在签发它的素材服务上有效;同一台服务上有几个项目时用配置里靠前的那个,按哈希寻址,任一项目的有效票据都能读)
+-  /** 还开着的连接记录(运行中摘掉的项目留着空位,序号不复用) */
+-  const live = () => wired.filter(rec => rec && !rec.closed);
+-  let fallbackKey = "";
+-  const refreshFallback = () => {
+-    const bases = [...new Set(live().map(rec => rec.assets.base()).filter((b: string | null): b is string => !!b))];
+-    const key = JSON.stringify(bases);
+-    if (key === fallbackKey) return;
+-    fallbackKey = key;
+-    note("queue.media-fallback", { bases: setMediaFallbackBases(bases).length });
+-  };
+-  refreshFallback();
+-  setMediaFallbackTicket((base: string) => hostMod.fallbackTicketFor(live().map(rec => ({ base: () => rec.assets.base(), ticket: () => rec.ticket() })))(base));
+-  /*
+-   * 托管方的渲染节点(代理模式):云端 Agent 的 `bake_card` 经管理进程转到这里出图(`hosted-render/look.mjs`)。卡片快照先写进这个工作进程
+-   * 自己的素材库,再推一份到项目的素材服务(`bake-store.mjs` 的远程;成员与别的渲染节点按 `/api/asset/px/<哈希>` 从那里取)。
+-   * 托管端各项目共用同一台素材服务、按内容哈希寻址,所以用此刻连着的任一个项目的客户端(渲染服务的身份,写 `px`)。
+-   * 桌面版与普通的独立渲染主机不走这里(它们没有 Agent 的查询)。
+-   */
+-  if (broker) {
+-    setBakeRemote(() => {
+-      const rec = live().find(r => !!r.assets.base());
+-      return rec ? { get base() { return rec.assets.base(); }, put: (ns: string, bytes: Buffer, o?: any) => rec.assets.client.put(ns, bytes, o) } : null;
+-    });
+-  }
+-
+-  let closed = false;
+-  let released = false;
+-  host.start();
+-  log("queue.started", { profile: "host", broker: !!broker, projects: config.entries.map((e: any) => e.projectId), maxConcurrent: host.maxConcurrent,
+-    envFingerprint, codeVersion: codeVersion.slice(0, 12), codeVersionOverride: override !== null, capabilities });
+-
+-  // 代理模式:每秒向管理进程对一次账(增删项目、成员在线与否、暂停),顺带把自己的诊断交过去
+-  let brokerBusy = false;
+-  let brokerAt = 0;
+-  let brokerError = "";
+-  const syncBroker = async () => {
+-    if (!broker || brokerBusy || closed || Date.now() - brokerAt < 1000) return;
+-    brokerBusy = true;
+-    brokerAt = Date.now();
+-    try {
+-      const listing = await broker.projects();
+-      if (closed) return;
+-      // `streams` 一律给布尔:清单里没有这一项(或不是 true)按不产算
+-      const diff = hostMod.reconcileHostProjects(host, listing, (item: any) => ({ url: listing.docUrl, projectId: item.projectId, members: item.members === true, nodeId: item.nodeId, streams: item.streams === true }));
+-      if (diff.added.length || diff.removed.length || diff.drained.length) log("queue.broker-sync", { profile: "host", ...diff, paused: listing.paused === true });
+-      brokerError = "";
+-      void broker.report({ pid: process.pid, queue: summary() });
+-    } catch (error: any) {
+-      const message = String(error?.code ?? error?.message ?? error);
+-      if (message !== brokerError) { brokerError = message; log("queue.broker-error", { profile: "host", message }); }
+-    } finally {
+-      brokerBusy = false;
+-    }
+-  };
+-
+-  const timer = setInterval(() => {
+-    if (closed) return;
+-    void syncBroker();
+-    try {
+-      if (override === null) {
+-        const now = frameCode(root);
+-        if (now !== codeVersion) {
+-          codeVersion = now;
+-          host.setCodeVersion(now);
+-          log("queue.code-changed", { profile: "host", codeVersion: codeVersion.slice(0, 12) });
+-        }
+-      }
+-      refreshFallback();
+-      for (const rec of live()) rec.presence?.tick();
+-      host.tick();
+-    } catch (error: any) {
+-      note("queue.tick-error", { message: String(error?.message ?? error) });
+-    }
+-  }, QUEUE_TICK_MS);
+-  timer.unref?.();
+-
+-  const summary = () => ({
+-    profile: "host",
+-    nodes: host.nodes().map((n: any) => { const rec = wired[n.index]; return { ...n, opens: rec?.opens ?? 0, connectFailed: rec?.connectFailed ?? 0, ...sessionDiag(rec?.endpoint), assetBase: rec?.assets.base() ?? null }; }),
+-    codeVersion, envFingerprint, maxConcurrent: host.maxConcurrent, ...(hostedKind ? { worker: hostedKind, limit: host.limit } : {}), paused: host.paused === true, quotaPausedUntil: host.quotaPausedUntil ?? null, capabilities,
+-    // c66-host-cards:每个项目的卡片同步(记账:仓库相对路径 → 装到的 cardRev)与卡片代码身份的状态
+-    cardSync: live().map((rec) => hostCardSyncSummary(rec.projectId, rec.cards)),
+-    cardCode: { epoch: cardCode(root).epoch, settled: cardCode(root).settled() },
+-    // 托管方的工作进程:这台预渲染 Vite 上页面请求闸与出口代理拦了多少(`hosted-render/vite-gate.mjs`)
+-    ...(hostedGateStatus ? { pageGate: hostedGateStatus() } : {}),
+-  });
+-  const closeAll = async () => {
+-    clearInterval(timer);
+-    if (broker) setBakeRemote(null);
+-    for (const rec of live()) { rec.closed = true; try { rec.cards?.close(); } catch { /* 已关 */ } rec.assets.stop(); try { rec.endpoint.close(); } catch { /* 已关 */ } }
+-  };
+-  const handle: QueueNode = {
+-    active: () => false,
+-    publish: async () => false,
+-    describe: () => ({ ...summary(), busy: host.busy(), running: host.running(), events: events.slice(-QUEUE_LOG) }),
+-    summary,
+-    async release() {
+-      if (released || closed) return 0;
+-      released = true;
+-      closed = true;
+-      const count = host.shutdown("shutdown");
+-      log("queue.release", { profile: "host", released: count });
+-      // task.release 已经交给各条连接;留一点时间让它们发出去,再等执行收尾、关连接
+-      await new Promise(resolve => setTimeout(resolve, 300));
+-      await Promise.race([host.settled(), new Promise(resolve => setTimeout(resolve, 5000))]);
+-      await closeAll();
+-      return count;
+-    },
+-    async close() {
+-      if (!released) { released = true; try { host.shutdown("closing"); } catch { /* 已停 */ } }
+-      if (closed && live().length === 0) return;
+-      closed = true;
+-      await Promise.race([host.settled(), new Promise(resolve => setTimeout(resolve, 5000))]);
+-      await closeAll();
+-    },
+-  };
+-  queueNodes.set(root, handle);
+-}
+-/** 主机诊断里一个项目的卡片同步:连没连上、记账(仓库相对路径 → cardRev)、最近几条通知(装上、被拒) */
+-function hostCardSyncSummary(projectId: string | null, cards: any) {
+-  if (!cards) return { projectId, enabled: false };
+-  let st: any = {};
+-  try { st = cards.status() ?? {}; } catch { st = {}; }
+-  const records = Object.fromEntries(Object.entries(st.records ?? {}).map(([rel, rec]: [string, any]) => [rel, rec?.rev ?? null]));
+-  const notices = (Array.isArray(st.notices) ? st.notices : []).slice(-10).map((n: any) => ({ type: n?.type ?? null, key: n?.key ?? null, rev: n?.rev ?? null, at: n?.at ?? null, ...(n?.error ? { error: String(n.error).slice(0, 200) } : {}) }));
+-  return { projectId, enabled: true, connected: st.connected === true, opens: st.opens ?? 0, records, notices };
+-}
+ function requestSignal(req: any, res: any) {
+   const controller = new AbortController();
+   const abort = () => controller.abort();
+@@ -1194,105 +796,6 @@ export function frameService(root: string, origin: string) {
+   }
+   return service;
+ }
+-/* ======================================================================== *
+- * 桌面应用自动成为共享项目的渲染节点(语义 product/platforms.md「渲染节点」;状态机在 `auto-render-node.mjs`)
+- * ======================================================================== */
+-
+-const autoLog = (event: string, fields: object = {}) => {
+-  try { console.info("[queue-node]", event, JSON.stringify(fields)); } catch { console.info("[queue-node]", event); }
+-};
+-/** 每个帧库根一份 */
+-const autoNodes = new Map<string, ReturnType<typeof createAutoRenderNode>>();
+-/** 补推已有层的节拍:页面交接之后 preload 才算完计划的 entry 也要补 */
+-const AUTO_BACKFILL_TICK_MS = 5_000;
+-
+-/**
+- * 向页面要一张 render 连接票据:经编辑器进程(`PROMPTCUT_EDITOR_URL` 的 `/api/render-node/ticket-request`,编辑器再经 HMR 问页面)。
+- * 要不到就抛(页面没了、页面签不出):会话层退避后再调,页面回来就续上。
+- */
+-async function requestPageTicket(projectId: string): Promise<string> {
+-  const editor = String(process.env.PROMPTCUT_EDITOR_URL || "").replace(/\/+$/, "");
+-  if (!editor) throw new Error("没有编辑器进程可问");
+-  const r = await fetch(`${editor}/api/render-node/ticket-request`, { method: "POST", headers: { "Content-Type": "application/json" },
+-    body: JSON.stringify({ projectId }), signal: AbortSignal.timeout(15_000) });
+-  const data: any = await r.json().catch(() => null);
+-  if (!r.ok || typeof data?.ticket !== "string") throw new Error(`编辑器没要到连接票据:${data?.code ?? r.status}`);
+-  return data.ticket;
+-}
+-
+-/**
+- * 补推页面交接之前就已经在本机帧库里的层(用户在交接之前就打开过这个项目、渲过):推送队列只在帧**写进**帧库时进队,
+- * 交接之后 preload 命中的已有帧不会再写,不补就永远到不了素材服务、层表也不写。
+- * 只补这个项目的(`entry.project.id === contentId`;页面还没交 contentId 时不补,交来之后下一拍再补),每个 entry 补一次:
+- * 写一次层表(`publishLayerMap`),每张卡已有的快照帧按段进推送队列(`enqueueSnapshotPush`,队列自己去重,素材服务已有的块跳过)。
+- * 轨道流不补:在线页面不用轨道流(product/platforms.md「在线浏览器模式」)。
+- */
+-async function backfillPush(service: FramePipeline, auto: AutoLink, done: Set<string>) {
+-  const pipeline: any = service;
+-  if (!pipeline.pushQueue || !auto.alive()) return 0;
+-  // 只推绑定项目的:页面还没交项目文档 id 时不补(不知道哪一版属于它),交来之后先把扣着的段再判一次
+-  if (!auto.contentId) return 0;
+-  try { pipeline.pushQueue.rescope?.(); } catch { /* 判不了的继续扣着 */ }
+-  const live = new Set([...(pipeline.generations?.values?.() ?? [])].filter((g: any) => !g?.controller?.signal?.aborted).map((g: any) => g.key));
+-  let queued = 0;
+-  for (const entry of [...(pipeline.entries?.values?.() ?? [])]) {
+-    if (!auto.alive() || !pipeline.pushQueue) break;
+-    if (done.has(entry.key) || !live.has(entry.key) || !Array.isArray(entry.cardPlan) || !entry.cardPlan.length) continue;
+-    if (entry.project?.id !== auto.contentId) continue;
+-    done.add(entry.key);
+-    try { pipeline.publishLayerMap(entry); } catch { /* 层表写不了 */ }
+-    autoLog("render-node.backfill", { projectId: auto.projectId, entryKey: String(entry.key).slice(0, 12), controls: entry.cardPlan.length, frames: 0, segments: 0 });
+-  }
+-  return queued;
+-}
+-
+-/** 撤掉自动渲染节点:让掉认领、停节点、停推送队列、清素材回退,在跑的交给本机自己产 */
+-async function stopAutoNode(root: string, service: FramePipeline, reason: string) {
+-  const q = queueNodes.get(root);
+-  queueNodes.delete(root);
+-  // 让掉认领、停节点:`release()` 最后要等手里在跑的那一批做完才关连接(可能要一阵),不挡下面停推送队列;最多等 AUTO_RELEASE_WAIT_MS
+-  const releasing: Promise<number | "pending"> = q ? q.release().catch(() => 0) : Promise.resolve(0);
+-  const teardown = pushTeardowns.get(root);
+-  pushTeardowns.delete(root);
+-  if (teardown) { try { await teardown(); } catch { /* 已停 */ } }
+-  setMediaFallbackTicket(null);
+-  setMediaFallbackBases([]);
+-  let rerun = 0;
+-  try { rerun = (service as any).leaveQueueMode?.() ?? 0; } catch { /* 管线已关 */ }
+-  const released = await Promise.race([releasing, new Promise<"pending">((r) => { const t = setTimeout(() => r("pending"), AUTO_RELEASE_WAIT_MS); t.unref?.(); })]);
+-  autoLog("render-node.teardown", { reason, released, rerun, push: !!teardown, node: !!q });
+-}
+-/** 撤掉时等节点收尾(在跑的那一批做完、关连接)最多这么久;过了照样回,节点做完自己关 */
+-const AUTO_RELEASE_WAIT_MS = 10_000;
+-
+-function autoNodeFor(root: string, origin: string) {
+-  let ctl = autoNodes.get(root);
+-  if (ctl) return ctl;
+-  ctl = createAutoRenderNode({
+-    start: async (link: any) => {
+-      const auto = link as AutoLink;
+-      const service = frameService(root, origin);
+-      await startArtifactPush(root, service, auto);
+-      if (auto.alive()) await startQueueNode(root, service, auto);
+-      const done = new Set<string>();
+-      const tick = () => { if (auto.alive()) void backfillPush(service, auto, done).catch((e: any) => autoLog("render-node.backfill-failed", { message: String(e?.message ?? e) })); };
+-      tick();
+-      const timer = setInterval(tick, AUTO_BACKFILL_TICK_MS);
+-      timer.unref?.();
+-      autoLog("render-node.started", { projectId: auto.projectId, push: pushTeardowns.has(root), node: queueNodes.has(root) });
+-      return { service, timer };
+-    },
+-    stop: async (handle: any, reason: string) => {
+-      clearInterval(handle.timer);
+-      await stopAutoNode(root, handle.service, reason);
+-    },
+-    requestTicket: requestPageTicket,
+-    log: autoLog,
+-  });
+-  autoNodes.set(root, ctl);
+-  return ctl;
+-}
+-
+ /** 原样搬到 `render-project.mjs`(契约 J.5),这里转出,调用方(`vision/render.ts`、脚本)不用改 */
+ export { renderProject };
+ export function framesPlugin(): Plugin {
+@@ -1322,8 +825,7 @@ export function framesPlugin(): Plugin {
+       const s = services.get(root); services.delete(root);
+       const teardown = pushTeardowns.get(root); pushTeardowns.delete(root);
+       const queueNode = queueNodes.get(root); queueNodes.delete(root);
+-      const auto = autoNodes.get(root); autoNodes.delete(root);
+-      void (async () => { await auto?.unbind({ reason: "server-close" }).catch(() => {}); await queueNode?.close(); await teardown?.(); await s?.close(); })();
++      void (async () => { await queueNode?.close(); await teardown?.(); await s?.close(); })();
+       if (isPrerender) void closeStorage(libraryRoot(root)).catch(() => {});
+     });
+     /*
+@@ -1399,44 +901,13 @@ export function framesPlugin(): Plugin {
+        *   POST /api/frames/render-node/unbind   { projectId?, reason? }  撤掉(撤完才回)
+        *   GET  /api/frames/render-node          状态(不含票据)
+        */
+-      if (queuePath === "/render-node" || queuePath === "/render-node/unbind") {
+-        if (!isPrerender) return proxyToPrerender(req, res);
+-        const off = autoRenderNodeOffReason(process.env);
+-        if (req.method === "GET" && queuePath === "/render-node") {
+-          return json(200, { ok: true, enabled: off === null, off, ...(autoNodes.get(root)?.status() ?? { bound: false }) });
+-        }
+-        if (req.method !== "POST") return next();
+-        let raw = "";
+-        req.on("data", (c: Buffer) => { raw += c; if (raw.length > 16 * 1024) req.destroy(); });
+-        req.on("end", async () => {
+-          let input: any;
+-          try { input = JSON.parse(raw || "{}"); } catch { return json(400, { ok: false, error: "请求体不是 JSON" }); }
+-          if (queuePath === "/render-node/unbind") {
+-            const ctl = autoNodes.get(root);
+-            if (!ctl) return json(200, { ok: true, action: "none" });
+-            const r = await ctl.unbind({ projectId: typeof input?.projectId === "string" ? input.projectId : null, reason: typeof input?.reason === "string" ? input.reason.slice(0, 40) : "unbind" });
+-            return json(200, r);
+-          }
+-          if (off) return json(200, { ok: true, enabled: false, reason: off });
+-          // `agent` 模式不预渲染,也就不当渲染节点
+-          if (!servesPrerender) return json(200, { ok: true, enabled: false, reason: `prerender-mode-${prerenderMode}` });
+-          try {
+-            const r = autoNodeFor(root, origin).bind(input, { ticket: input?.ticket });
+-            return json(200, { enabled: true, ...r });
+-          } catch (e: any) {
+-            return json(400, { ok: false, error: e?.message || String(e) });
+-          }
+-        });
+-        return;
+-      }
+       if ((req.method === "GET" && queuePath === "/queue") || (req.method === "POST" && queuePath === "/queue/release")) {
+         if (!isPrerender) return proxyToPrerender(req, res);
+         frameService(root, origin);
+         const queueNode = queueNodes.get(root);
+         if (req.method === "GET") {
+           return json(200, queueNode ? queueNode.summary()
+-            : { nodes: [], codeVersion: null, envFingerprint: null, maxConcurrent: null, starting: queueNodeSwitch(), profile: hostProfile() ? "host" : "pc",
+-              auto: autoNodes.get(root)?.status() ?? { bound: false } });
++            : { nodes: [], codeVersion: null, envFingerprint: null, maxConcurrent: null, starting: queueNodeSwitch(), profile: "pc" });
+         }
+         req.resume();
+         if (!queueNode) return json(200, { ok: true, released: 0 });

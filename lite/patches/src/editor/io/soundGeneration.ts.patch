@@ -1,0 +1,35 @@
+diff --git a/src/editor/io/soundGeneration.ts b/src/editor/io/soundGeneration.ts
+index 9586687ad6ed4087f6617335f2804d6cd581f301..a3319f8a8b77da2e3653637885c2ae4f49f71f07 100644
+--- a/src/editor/io/soundGeneration.ts
++++ b/src/editor/io/soundGeneration.ts
+@@ -6,7 +6,6 @@ import { soundEffectReuseKey, validateSoundEffectRecipe, SOUND_EFFECT_LIMITS, NO
+ import { createSoundGenerationManager, type SoundGenerationJob, SOUND_JOB_LIMITS } from "../../audio/soundGeneration";
+ import { renderSoundEffectWavInWorker } from "../../audio/soundGenerationWorkerClient";
+ import { hasGeneratedAudio, uploadGeneratedAudio } from "./generatedAudioUpload";
+-import { decideClipSound, decideRecipeSound } from "./onlineSoundJudge";
+ import { soundEffectReuseDigest } from "../../audio/soundGeneration";
+ import { isViewOnly } from "./viewOnly";
+ import { planSoundGeneration, type GenerateSoundOptions } from "../../audio/soundRequest";
+@@ -16,12 +15,7 @@ export type { GenerateSoundOptions };
+ let renderWav: typeof renderSoundEffectWavInWorker = renderSoundEffectWavInWorker;
+ /** 单测换合成实现(真实页面里恒是 Worker 那一份) */
+ export function setSoundEffectRenderer(next: typeof renderSoundEffectWavInWorker | null): void { renderWav = next ?? renderSoundEffectWavInWorker; }
+-// 在线页面:判轻才在浏览器里合成(`onlineSoundJudge.ts`;桌面运行环境恒合成)
+-const manager = createSoundGenerationManager({ upload: uploadGeneratedAudio, renderWav: async (recipe, options) => {
+-  const decision = await decideRecipeSound(recipe, options?.signal);
+-  if (!decision.synth) throw new Error(decision.message);
+-  return renderWav(recipe, options);
+-} });
++const manager = createSoundGenerationManager({ upload: uploadGeneratedAudio, renderWav: (recipe, options) => renderWav(recipe, options) });
+ 
+ export function soundPresets() {
+   return {
+@@ -109,8 +103,6 @@ export async function restoreSoundEffectAsset(clipId: string, options: { signal?
+         || JSON.stringify(findClip(now.project, clipId)?.clip) !== expectedClip) throw new Error("片段或项目已变化，旧的声音生成结果不会覆盖当前内容");
+   };
+   try {
+-    const decision = await decideClipSound(p, hit.clip, controller.signal);
+-    if (!decision.synth) throw new Error(decision.message);
+     check();
+     const recipe = validateSoundEffectRecipe(structuredClone(link.recipe));
+     const wav = await renderWav(recipe, { signal: controller.signal, progress: (fraction) => options.onProgress?.(fraction * 0.8) });

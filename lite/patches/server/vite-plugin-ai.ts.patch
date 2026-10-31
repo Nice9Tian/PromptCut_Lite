@@ -1,0 +1,22 @@
+diff --git a/server/vite-plugin-ai.ts b/server/vite-plugin-ai.ts
+index 381094e7ffcf9c9d5798317d1fbf87a93b3de015..9fb85ae2b72285ce2eb8fcf246e9d92b7d83e593 100644
+--- a/server/vite-plugin-ai.ts
++++ b/server/vite-plugin-ai.ts
+@@ -6,7 +6,7 @@ import os from 'node:os';
+ import { spawn } from 'node:child_process';
+ import { overLimit } from './http-guard.mjs';
+ import { stagePortsOf } from './stage-ports.mjs';
+-import { createAgentInstance } from './agent/service/instance.mjs';
++import { createAgentInstance } from './agent/instance.mjs';
+ /*
+  * 必须静态 import:vite 打包配置时,别的插件静态引入的 prerender-client.mjs 被打进同一个包里,
+  * 状态(预渲染的地址、就绪没有)在那一份上。这里要是换成 import(new URL(...)) 动态加载,拿到的是
+@@ -77,7 +77,7 @@ export default function vitePluginAi(): Plugin {
+       });
+ 
+       /*
+-       * Agent 服务的实现在 server/agent/service/instance.mjs(契约 docs/plan/cloud-agent-contract.md 第 2.1 节):
++       * Agent 服务的实现在 server/agent/instance.mjs(契约 docs/plan/cloud-agent-contract.md 第 2.1 节):
+        * 页面通道、项目副本、工具调用入口、对话、多 Agent 与桌面会话的接口都在那里,这里把它的路由原样挂到编辑器进程上。
+        * 留在本文件的是只属于桌面的接口:驱动清单、安装与登录、诊断、机器码、配置、额度面板,以及上面的 port.json。
+        */

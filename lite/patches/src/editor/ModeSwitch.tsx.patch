@@ -1,0 +1,30 @@
+diff --git a/src/editor/ModeSwitch.tsx b/src/editor/ModeSwitch.tsx
+index bc4219ee9d3d0e2c839e68d70e56385b215e86d7..7b58bc902861c431fa7d19b3ab2397953b658c40 100644
+--- a/src/editor/ModeSwitch.tsx
++++ b/src/editor/ModeSwitch.tsx
+@@ -1,7 +1,6 @@
+ import { useEffect, useState } from "react";
+ import type { JSX } from "react";
+ import { closeSkillMode, subscribeSkill } from "../skill/skillMode";
+-import { onlinePage, onlineUnsupported } from "../online/pageFlag";
+ import "./ModeSwitch.css";
+ 
+ /**
+@@ -81,7 +80,6 @@ export function ModeSwitch(props: { onOpenSkill: () => void; onEnterVibe?: () =>
+       return vibeOff ? "这里还接不到氛围式那一屏" : item.hint;
+     }
+     if (item.id === "skill") {
+-      if (!on && onlinePage()) return onlineUnsupported("SKILL 模式");
+       return on
+         ? "当前为 SKILL 模式。点这里看接进来的桌面 APP 会话;点「传统式」退出"
+         : "打开 SKILL 对话框:登记到 Claude Code / Codex,进入 SKILL";
+@@ -106,8 +104,7 @@ export function ModeSwitch(props: { onOpenSkill: () => void; onEnterVibe?: () =>
+             data-pc={`mode-${item.id}`}
+             className={`pc-modeswitch-item${on ? " is-on" : ""}`}
+             aria-pressed={on}
+-            // 在线浏览器模式:SKILL 要本机的桌面 APP 与编辑器进程(C10 契约第 10 节),置灰
+-            disabled={busy || (item.id === "skill" && !on && onlinePage()) || (item.id === "vibe" && vibeOff)}
++            disabled={busy || (item.id === "vibe" && vibeOff)}
+             title={titleOf(item, on)}
+             onClick={() => void pick(item.id)}
+           >

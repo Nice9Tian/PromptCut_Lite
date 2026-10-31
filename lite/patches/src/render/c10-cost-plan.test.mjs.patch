@@ -1,0 +1,65 @@
+diff --git a/src/render/c10-cost-plan.test.mjs b/src/render/c10-cost-plan.test.mjs
+index 136d3c1b55a33dfd8fe5af9a29b19b72a82b7cca..166fc61e45ebab4926890408bf42fe91f9ae4689 100644
+--- a/src/render/c10-cost-plan.test.mjs
++++ b/src/render/c10-cost-plan.test.mjs
+@@ -1,15 +1,5 @@
+ /**
+- * C10 其余第 3 节(界限搜索的完整规则;原「低内存档」,2026-10-22 改为「只有一个舞台时按界限搜索判」与「最低一档」两样)
+- * 接进分派与导出:用例 CP-01～CP-06(CP-03 随预渲染重试发布方撤销删掉,见下)。
+- *
+- *   CP-01 planPipelines 的 searchLight:集合里的卡每个位置都判轻(不受预算挤出),其余(含没有身份的)每个位置都判重
+- *   CP-02 planDispatch:按界限搜索判时判定表按它的结果;搜索完成前全部判重、searchJudged 为 false;不是最低一档时显示用的表就是判定的表,
+- *         最低一档显示用的表一直全部判重
+- *   CP-03 预渲染重试只对判重又缺产物的层:判轻的卡不发
+- *   CP-04 导出:按判定的表只核对、只取判重卡的预渲染原尺寸,判轻的卡(层表里有也)本机渲
+- *   CP-05 桌面不受影响:两样开关都关时判定表就是显示表,planPipelines 不给新选项时结果与原来逐字段相同
+- *   CP-06 searchLight 与 allHeavy 同时给:allHeavy 优先(显示用)
+- *
++ * 界限搜索接进分派:
+  * 跑:node --experimental-test-module-mocks --test src/render/c10-cost-plan.test.mjs
+  */
+ import { srcUrl } from "../testing/registerTs.mjs";
+@@ -42,7 +32,6 @@ test("CP-01 searchLight:判轻的卡在每个位置都判轻(同时 40 张也不
+ test("CP-02 planDispatch:判定表按搜索结果;搜索完成前全部判重、searchJudged=false;最低一档显示表一直全部判重", async () => {
+   mock.module(srcUrl("editor/stageBridge.ts"), { exports: { frontStage: () => null, backStage: () => null } });
+   mock.module(srcUrl("editor/costIdentity.ts"), { exports: { clipIdentityOf: () => ({ identityKeys: { a: "ka", b: "kb", c: "kc" }, frameModes: { a: "direct", b: "direct", c: "direct" } }) } });
+-  // 夹具里的卡要在注册表里有定义:两边都没有定义的「未知卡片」不进分派表(2026-09-29 起,舞台不画它们)
+   (await import(srcUrl("kernel/registry.ts"))).registerCards(["a", "b", "c"].map((id) => ({ id: `card-${id}`, name: id, defaults: {}, controls: [], frameMode: "direct", Component: () => null })));
+   const d = await import(srcUrl("editor/planDispatch.ts"));
+   d.resetPlanDispatch();
+@@ -75,35 +64,6 @@ test("CP-02 planDispatch:判定表按搜索结果;搜索完成前全部判重、
+   d.resetPlanDispatch();
+ });
+ 
+-/*
+- * CP-03(预渲染重试只对判重又缺产物的层)删了:`lowMemoryBackfill.ts` 随「为弱设备预渲染任务」撤销(2026-10-07 用户定,在线页面发布的任务
+- * 一律普通优先级),只有一个舞台的页面与别的页面一样发清单计划,清单就是判定的表里判重的片段(`Preview.tsx` 的 `heavyCardClips`)。
+- */
+-
+-const O = await import(srcUrl("export/originals.ts"));
+-
+-test("CP-04 导出:按判定的表只核对、只取判重卡的预渲染原尺寸;判轻的卡层表里有也本机渲", async () => {
+-  const H = "a".repeat(64);
+-  const map = { kind: "layer-map", projectId: "proj", fps: 30, v: 2, span: 4, layers: [
+-    { clipId: "heavyCard", kind: "html", key: "k-h", resultKey: "rk-h", firstFrame: 0, count: 4, contentKey: "ck-h", envFingerprint: "0123456789abcdef" },
+-    { clipId: "lightCard", kind: "html", key: "k-l", resultKey: "rk-l", firstFrame: 0, count: 4, contentKey: "ck-l", envFingerprint: "0123456789abcdef" },
+-  ] };
+-  const request = async (msg) => {
+-    if (msg.key === "layers:proj") return { type: "content.item", body: map };
+-    if (msg.key === "rk-h:0-3") return { type: "content.item", body: { frames: [[0, H], [1, H], [2, H], [3, H]] } };
+-    return { type: "content.item", missing: true }; // 判轻的卡原尺寸缺
+-  };
+-  const deps = { request, assetBase: () => "http://x/api/asset", authHeaders: async () => ({}) };
+-  const normal = await O.loadOriginalsIndex("proj", deps);
+-  assert.deepEqual(normal.missing, ["lightCard"], "不给判定的表:层表里的都算重卡,缺了要等");
+-  const low = await O.loadOriginalsIndex("proj", deps, { onlyClips: ["heavyCard"] });
+-  assert.deepEqual(low.missing, [], "按判定的表:判轻的卡不核对");
+-  assert.equal(low.hashAt("heavyCard", 2), H);
+-  assert.equal(low.hashAt("lightCard", 2), undefined, "判轻的卡不取原尺寸(本机渲)");
+-  const noMap = await O.loadOriginalsIndex(null, deps, { fallbackHeavy: ["heavyCard", "lightCard"], onlyClips: ["heavyCard"] });
+-  assert.deepEqual(noMap.missing, ["heavyCard"]);
+-});
+-
+ test("CP-05 桌面不受影响:不给新选项时 planPipelines 的结果与原来逐字段相同(同一份输入跑两遍、对照 allHeavy 以外的路径)", () => {
+   const clips = [{ id: "a", start: 0, end: 4 }, { id: "b", start: 1, end: 3 }, { id: "c", start: 2, end: 6 }];
+   const costs = [

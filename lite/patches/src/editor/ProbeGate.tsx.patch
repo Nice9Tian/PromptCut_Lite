@@ -1,0 +1,22 @@
+diff --git a/src/editor/ProbeGate.tsx b/src/editor/ProbeGate.tsx
+index f70e66b74c96a1da917780e8820234bd17481a84..0f71b4f36875668eb39ccb7314aea4aea6a4f52d 100644
+--- a/src/editor/ProbeGate.tsx
++++ b/src/editor/ProbeGate.tsx
+@@ -6,8 +6,6 @@ import { onProbeProgress, probeProgress, requeueProbeRun, syncProbeRun, type Pro
+ import { whenStageReady } from "./stageBridge";
+ import { cardsStamp, onCardRunStatesChanged, onCardsUpdated } from "../kernel/registry";
+ import { whenStagesHaveCards } from "./stageCards";
+-import { ONLINE } from "../online/mode";
+-import { singleStageTier } from "../online/onlineTier";
+ import "./ProbeGate.css";
+ 
+ /**
+@@ -31,7 +29,7 @@ export function ProbeGate() {
+   // 在线页面开了两个舞台就照常测（C10 契约第 3 节：打开项目在加载遮罩下测完；后台舞台握不上手、退回单舞台时探针等不到后台舞台，遮罩不出现）；
+   // 舞台闸门停在第一级（精简模式、低配模式）只开一个舞台、不跑 ProbeGate，轻重由界限搜索判（`costSearch.ts`）
+   const staged = previewMode() === "stage";
+-  const enabled = staged && !(ONLINE && singleStageTier());
++  const enabled = staged;
+   const [p, setP] = useState<ProbeProgress>(probeProgress);
+ 
+   useEffect(() => {

@@ -1,0 +1,22 @@
+diff --git a/server/test/asset-announce.test.mjs b/server/test/asset-announce.test.mjs
+index aeca26ed441d033547462b44772d6efdf73ec6fe..e4ef14b28bcaa2d284783c3e97084509eb401e00 100644
+--- a/server/test/asset-announce.test.mjs
++++ b/server/test/asset-announce.test.mjs
+@@ -12,7 +12,6 @@ import assert from 'node:assert/strict';
+ import { test } from 'node:test';
+ import { createDocService } from '../docservice/service.mjs';
+ import { endpointsModule } from '../docservice/modules/endpoints.mjs';
+-import { createClusterAuth } from '../docservice/auth.mjs';
+ import { wsClient, byType, waitFor, randomToken } from './fake-ws-kit.mjs';
+ 
+ let mod = null;
+@@ -219,8 +218,7 @@ test('N3 urls 为空不登记（打一行 log）；stop() 先发 service.withdra
+ test('N4 对真文档服务（端口 0，挂服务地址登记模块）：登记后另一条连接 service.watch { kinds: [asset] } 收到这份地址', async (t) => {
+   const { startAssetAnnounce } = need();
+   const token = randomToken();
+-  const auth = createClusterAuth({ token });
+-  const service = createDocService({ log: () => {}, autoTick: false, authenticate: (req) => auth.authenticate(req), modules: [endpointsModule()] });
++  const service = createDocService({ log: () => {}, autoTick: false, modules: [endpointsModule()] });
+   const { port } = await service.listen(0, '127.0.0.1');
+   const url = `ws://127.0.0.1:${port}`;
+   const watcher = wsClient(url, ['promptcut.v1', `promptcut.token.${token}`]);

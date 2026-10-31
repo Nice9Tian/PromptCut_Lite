@@ -1,0 +1,59 @@
+diff --git a/src/start/ChatView.tsx b/src/start/ChatView.tsx
+index cc63fe4e499be3f7b8859095656ad40685171b14..18451e22a8ea3ede299ce77b86509076e8d13874 100644
+--- a/src/start/ChatView.tsx
++++ b/src/start/ChatView.tsx
+@@ -8,7 +8,7 @@
+  * 调用方按 `vibeAgent.ts` 的 `VibeAgent` 给 —— 在线浏览器是云端 Agent(`useVibeCloud.ts`),桌面版是本机的
+  * CLI / API Agent(`useVibeLocal.ts`,和编辑界面 AI 栏同一套)。这一页对两种一视同仁,不认具体是哪一种。
+  *   - 一轮回复按 `product/agent.md`「汇报」拆:气泡里只放 Agent 说的「在做什么」,做过的操作列在「Agent 操作」那一块
+- *     (拆法与手机版共用 `src/mobile/agentView.ts` 的 `roundView`);
++ *     (`src/start/agentView.ts` 的 `roundView`);
+  *   - 自己的消息云端还没收下之前写明发送状态,没发出去写原因;共有对话里别人发的标上是谁;
+  *   - 对话是空的时候只有一条示例句(`workflow/production.md`「用户发送指令」),点它填进输入框;
+  *   - 发不了(只读成员、创建者看别人的私有对话、开关关着)时输入框置灰,下面那一行写为什么。
+@@ -17,11 +17,9 @@ import { useEffect, useRef, useState } from "react";
+ import type { JSX } from "react";
+ import { LiveMarkdown } from "../ai/Markdown";
+ import type { ChatMessage } from "../ai/types";
+-import { OUTBOX_RESEND_EVENT, OUTBOX_TEXT } from "../ai/outbox";
+ import { activityText, outcomeText, runningTool } from "../editor/right/chat/AgentBubble";
+ import { START_PRESET } from "../editor/right/chat/StartHero";
+-import { CloudAgentConsentDialog } from "../editor/right/CloudAgentConsentDialog";
+-import { isUserBubble, ordinals, partsOf, roundView, splitQuotes } from "../mobile/agentView";
++import { isUserBubble, ordinals, partsOf, roundView, splitQuotes } from "./agentView";
+ import { selectionPresenceStatus } from "../editor/sync/selectionPresence";
+ import { ChatSidePanel } from "./ChatSidePanel";
+ import { Composer } from "./Composer";
+@@ -46,7 +44,6 @@ function AgentAvatar(): JSX.Element {
+ function MyMessage(props: { m: ChatMessage; sender: string | null }): JSX.Element {
+   const { m } = props;
+   const { quotes, rest } = splitQuotes(m.text);
+-  const failed = m.sendState === "failed";
+   return (
+     <div className="ps-msg is-me" data-pc="start-chat-msg" data-from="me" data-send={m.sendState}>
+       <div className="ps-me-col">
+@@ -55,15 +52,7 @@ function MyMessage(props: { m: ChatMessage; sender: string | null }): JSX.Elemen
+           {quotes.map((q) => `@${q.label} `).join("")}
+           {rest}
+         </div>
+-        {m.sendState === "sending" && <span className="ps-msg-state">发送中…</span>}
+-        {m.sendState === "accepted" && <span className="ps-msg-state">已发出，等待云端开始处理…</span>}
+-        {m.sendState === "queued" && <span className="ps-msg-state">{OUTBOX_TEXT.queued}</span>}
+         {m.error && <span className="ps-msg-state is-err" data-pc="start-chat-send-error">{m.error}</span>}
+-        {failed && m.resendable && (
+-          <button type="button" className="ps-link" onClick={() => window.dispatchEvent(new CustomEvent(OUTBOX_RESEND_EVENT, { detail: { id: m.id } }))}>
+-            {OUTBOX_TEXT.resend}
+-          </button>
+-        )}
+       </div>
+     </div>
+   );
+@@ -293,8 +282,6 @@ export function ChatView(props: {
+           />
+         )}
+       </div>
+-      <CloudAgentConsentDialog open={vibe.consent.open} pending={vibe.consent.pending} error={vibe.consent.error}
+-        onAccept={vibe.consent.accept} onReject={vibe.consent.reject} />
+     </main>
+   );
+ }

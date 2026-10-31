@@ -1,0 +1,21 @@
+diff --git a/src/editor/timeline/ClipView.tsx b/src/editor/timeline/ClipView.tsx
+index 2ca27e916f785133031d6d48a8e9b2afa47bc106..cfa857be6c71c45e3c425749bb0fc29f223d2dd1 100644
+--- a/src/editor/timeline/ClipView.tsx
++++ b/src/editor/timeline/ClipView.tsx
+@@ -8,7 +8,6 @@ import { actions, useStore, getState } from "../../store/project";
+ import { cardRunStatesGen, getCard, knownCardName, onCardRunStatesChanged, onSyncedUserCardsChanged, syncedCardView, syncedUserCardsGen } from "../../kernel/registry";
+ import { clipSubtitleOf, paramsCardView } from "../left/paramsView";
+ import { clipCardLabel } from "./localPcBadge";
+-import { onlinePage, onlineUnsupported } from "../../online/pageFlag";
+ import { snapTime, isOccupied, getGap, xOfTime, formatTime, ROW_SIZE_H } from "./utils";
+ import { BAND_H, OVERLAY_KIND_NAME, overlayGlyph, overlaysOfClip, planClipLayout, type OverlayItem } from "./overlays";
+ import { OverlayBand, OverlayPill } from "./OverlayBand";
+@@ -505,8 +504,6 @@ export function ClipView({ clip, track }: { clip: TrackClip; track: Track }) {
+               return [{
+                 label: media.transcript ? `查看字幕(${media.transcript.segments.length} 段)` : "转写字幕",
+                 action: () => requestCaptions(media.id),
+-                // 在线浏览器模式没有语音识别(C10 契约第 10 节):只能转写的置灰,已有字幕的照常查看
+-                ...(!media.transcript && onlinePage() ? { disabled: true, title: onlineUnsupported("语音识别") } : {}),
+               }];
+             })(),
+             {

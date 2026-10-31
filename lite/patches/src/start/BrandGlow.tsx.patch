@@ -1,0 +1,13 @@
+diff --git a/src/start/BrandGlow.tsx b/src/start/BrandGlow.tsx
+index aea1d6a25285e1a0c75dd9451dae8610f66b4089..69cbab8d267b561dd6c6688056772f7a75c23895 100644
+--- a/src/start/BrandGlow.tsx
++++ b/src/start/BrandGlow.tsx
+@@ -1,7 +1,7 @@
+ /*
+  * 官网首页那层背景光，用渲染器做一遍。
+  *
+- * 官网首页的背景是 `body` 上两团固定的径向光，原文在 VisuHive 仓库
++ * 官网首页的背景是 `body` 上两团固定的径向光，原文在官网仓库
+  * `site/assets/home.css`：
+  *
+  *   background:

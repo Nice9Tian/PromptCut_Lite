@@ -1,0 +1,23 @@
+diff --git a/src/editor/left/CardAudioForm.tsx b/src/editor/left/CardAudioForm.tsx
+index 025dfbef3ca0e4581fd1181eb4808fa67fe8c2e7..55cd82a59caeec881ff838e45ad5c1fc6d68cf36 100644
+--- a/src/editor/left/CardAudioForm.tsx
++++ b/src/editor/left/CardAudioForm.tsx
+@@ -5,8 +5,6 @@ import { getCard } from "../../kernel/registry";
+ import { persistentCardAudio } from "../../audio/cardAudio";
+ import { actions, useStore } from "../../store/project";
+ import { cancelCardAudioGeneration, generateCardAudio } from "../io/cardAudioGeneration";
+-import { onlinePage } from "../../online/pageFlag";
+-import { clipSoundRunnable } from "../io/onlineSoundJudge";
+ 
+ /** 卡内声音依附同一片段。生成不是分离音轨；失败不把旧声音或画面替掉。 */
+ export function CardAudioForm({ clip }: { clip: TrackClip }) {
+@@ -15,8 +13,7 @@ export function CardAudioForm({ clip }: { clip: TrackClip }) {
+   const active = useRef(false);
+   if (!clipHasEmbeddedAudio(project, clip, getCard)) return null;
+   const locked = project.tracks.find(track => track.clips.some(c => c.id === clip.id))?.locked;
+-  // 在线页面(`product/platforms.md`「卡片声音的平台边界」):本页能运行的有声卡可以在浏览器里合成(判轻的);跑不了的照旧只用同步来的声音
+-  const online = onlinePage(), synthHere = !online || clipSoundRunnable(project, clip);
++  const online = false, synthHere = true;
+   let ready = false, status = "尚未生成卡片声音";
+   try { persistentCardAudio(project, clip); ready = true; status = "声音已保存，预览和导出共用同一份 WAV"; }
+   catch (cause) { status = cause instanceof Error ? cause.message : String(cause); }

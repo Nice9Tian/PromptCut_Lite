@@ -1,0 +1,13 @@
+diff --git a/server/test/agent-c65.test.mjs b/server/test/agent-c65.test.mjs
+index d3f03bf2689f78dc8dc5a6ea960cb354a400a04e..044e72bb4b95ad4fbeea3adf93ca2143f649c14d 100644
+--- a/server/test/agent-c65.test.mjs
++++ b/server/test/agent-c65.test.mjs
+@@ -15,7 +15,7 @@ import http from 'node:http';
+ import { test } from 'node:test';
+ import { fileURLToPath } from 'node:url';
+ import { createServer as createVite } from 'vite';
+-import { createHandshakeAuth, LOCAL_PRINCIPAL } from '../auth/handshake.mjs';
++import { createHandshakeAuth, LOCAL_PRINCIPAL } from '../docservice/auth.mjs';
+ import { createSharedDocService } from '../docservice/shared-service.mjs';
+ import { applyOps } from '../docservice/json-ops.mjs';
+ import { createAgentLink, AgentReplica } from '../agent/doc-link.mjs';

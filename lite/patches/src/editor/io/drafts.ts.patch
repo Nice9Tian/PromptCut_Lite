@@ -1,0 +1,19 @@
+diff --git a/src/editor/io/drafts.ts b/src/editor/io/drafts.ts
+index bafadae6930641c1b0a7b734ca4bb4f630b5940b..7a42c9a71a20d44f5b09583c98ddf06e531d99cd 100644
+--- a/src/editor/io/drafts.ts
++++ b/src/editor/io/drafts.ts
+@@ -3,7 +3,6 @@ import { acquireDraftLock, releaseDraftLock } from "./procLock";
+ import { isViewOnly, viewOnlyReason, viewOnlyText } from "./viewOnly";
+ import { actions } from "../../store/project";
+ import type { Project } from "../../kernel/project";
+-import { onGoneConversion } from "../sync/recoveryAssociation";
+ 
+ /** 本地草稿:服务端 `.pc-projects/` 目录里的一个 .proc 文件 */
+ export interface DraftInfo {
+@@ -103,5 +102,4 @@ export function ensureActiveDraftId(): string {
+ export function getActiveDraftId(): string | null {
+   return activeDraftId;
+ }
+-// 过期的云端项目转成本地项目之后,原来那份草稿保留:转出来的项目不再属于它,保存时另开一份
+-onGoneConversion(() => setActiveDraftId(null));
++

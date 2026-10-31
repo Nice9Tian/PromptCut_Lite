@@ -1,0 +1,351 @@
+diff --git a/src/ExportView.tsx b/src/ExportView.tsx
+index 6388777aa42750ffc232e96641f2ab8f38aac7bc..c1dd3ba1ba9807ba032064aa227147797321010e 100644
+--- a/src/ExportView.tsx
++++ b/src/ExportView.tsx
+@@ -7,8 +7,7 @@ import type { Timeline } from "./kernel/types";
+ import { flattenOverlay, type Project } from "./kernel/project";
+ import { flatPlanProject, withFlatNodes } from "./kernel/cutFlatten.mjs";
+ import { themeStyle } from "./themes";
+-import { allCards, getCard, setSyncedUserCards, unknownCardClipIds, userCardSources, type SyncedUserCard } from "./kernel/registry";
+-import { setExportSyncedMount } from "./render/placeholderHost";
++import { allCards, getCard, unknownCardClipIds, userCardSources } from "./kernel/registry";
+ import { cardSourceVersion } from "./render/cardSourceVersion.mjs";
+ import { builtinCardSourceFiles } from "./render/cardSourceFiles.mjs";
+ import { projectCardGraph } from "./kernel/cardGraph.mjs";
+@@ -24,18 +23,8 @@ import { frameWorkStatus, waitForFrameWork } from "./kernel/frameReady";
+ import { demoTimeline } from "./demo";
+ import { createGlHost, type GlHost } from "./render/gl/glHost";
+ import { grabCanvasPixels } from "./render/gl/canvasGrab";
+-import { cardExecGate, markIsolatedStageDocument, noteMediaPolicy } from "./online/isolation/execGate";
+-import { stageGuardBooted } from "./online/isolation/stageGuard";
+-import { waitReal } from "./export/realClock";
+-import { pageCssText, pasteLayer, sceneToSvg } from "./export/frameCompositor";
+-import { withTicket } from "./export/ticketRenewal";
+-import type { FrameLayer } from "./export/exportLayers";
+ import "./cards";
+ 
+-/** 导出页初始化:等舞台自检、等项目装好的时限(真毫秒) */
+-const EXPORT_GATE_WAIT_MS = 10_000;
+-const EXPORT_LOAD_WAIT_MS = 30_000;
+-
+ // 只要进了导出视图就把页面时钟量化到导出帧(见 exportClock.ts),必须早于任何卡片挂载
+ if (new URLSearchParams(location.search).has("export")) installExportClock();
+ // 素材装载器也必须早于任何卡片挂载:推进动画的过程中一律不给素材赋 URL(原 scripts/frame-media.mjs,现 server/bakery/frame-media.mjs)
+@@ -51,24 +40,6 @@ function stripMedia(p: Project): Project {
+   return { ...p, media: [], tracks: p.tracks.map((tr) => ({ ...tr, clips: tr.clips.filter((c) => !c.mediaId) })) };
+ }
+ 
+-function mediaFrameUrl(el: HTMLVideoElement | HTMLImageElement, scratch: HTMLCanvasElement, quality = 0.95): string | null {
+-  const isVideo = el.tagName === "VIDEO";
+-  const w = isVideo ? (el as HTMLVideoElement).videoWidth : (el as HTMLImageElement).naturalWidth;
+-  const h = isVideo ? (el as HTMLVideoElement).videoHeight : (el as HTMLImageElement).naturalHeight;
+-  if (!w || !h) return null;
+-  scratch.width = w;
+-  scratch.height = h;
+-  const g = scratch.getContext("2d");
+-  if (!g) return null;
+-  g.clearRect(0, 0, w, h);
+-  try {
+-    g.drawImage(el, 0, 0, w, h);
+-    return isVideo ? scratch.toDataURL("image/jpeg", quality) : scratch.toDataURL("image/png");
+-  } catch {
+-    return null;
+-  }
+-}
+-
+ /**
+  * 导出视图(?export=1)。导出脚本的每帧顺序:
+  *   1. page.evaluate(window.__pcSetT(sec))  → 写 __pcExportMs、setT 触发 React 重渲染
+@@ -85,14 +56,6 @@ export default function ExportView() {
+   const [project, setProject] = useState<Project | null>(null);
+   const [playToken, setPlayToken] = useState(1);
+   const [frameClipIds, setFrameClipIds] = useState<Set<string> | null>(null);
+-  const stageRuntimeRef = useRef<{ setBundles: (bundles: readonly unknown[]) => Promise<unknown>; dispose: () => void } | null>(null);
+-  const scratchCanvasRef = useRef<HTMLCanvasElement | null>(null);
+-  const rasterCanvasRef = useRef<HTMLCanvasElement | null>(null);
+-  const cachedCssRef = useRef<string | null>(null);
+-  const projectRef = useRef<Project | null>(null);
+-  const timelineRef = useRef<Timeline | null>(null);
+-  projectRef.current = project;
+-  timelineRef.current = timeline;
+   const renderProject = useMemo(() => !project || !frameClipIds ? project : ({ ...project,
+     tracks: project.tracks.map(tr => ({ ...tr, clips: tr.clips.filter(c => (!c.cardId && !c.nodeId) || frameClipIds.has(c.id)) })),
+   }), [project, frameClipIds]);
+@@ -341,11 +304,6 @@ export default function ExportView() {
+        * 起 Chrome + goto + 字体首次布局加起来是固定的几秒钟,每渲一次都重付一遍太贵。
+        * 走的是 install 自己,和重新加载页面同一条路径,不会两套行为。
+        */
+-      /** 在线逐帧导出:编辑页面把同步来的用户卡的表交给导出页,让它们的包裹层挂出来、好换成预渲染原尺寸(`placeholderHost.exportSyncedMountFor`) */
+-      (window as unknown as { __pcSetSyncedUserCards?: (entries: SyncedUserCard[]) => void }).__pcSetSyncedUserCards = (entries) => {
+-        setSyncedUserCards(entries);
+-        setExportSyncedMount(true);
+-      };
+       window.__pcLoadProject = async (raw: unknown, options?: { deferCards?: boolean }) => {
+         window.__pcReady = false;
+         const next = raw && Array.isArray((raw as Project).tracks)
+@@ -358,265 +316,6 @@ export default function ExportView() {
+     });
+   }, []);
+ 
+-  useEffect(() => {
+-    const stageRaf = (): Promise<void> => {
+-      const begin = (window as unknown as { __pcBrowserBeginFrame?: () => number }).__pcBrowserBeginFrame;
+-      if (typeof begin === "function") {
+-        begin();
+-        return new Promise((resolve) => setTimeout(resolve, 0));
+-      }
+-      const raf = (window as unknown as { __pcRealRaf?: (cb: FrameRequestCallback) => number }).__pcRealRaf ?? window.requestAnimationFrame.bind(window);
+-      return new Promise((resolve) => {
+-        let done = false;
+-        const finish = () => { if (!done) { done = true; resolve(); } };
+-        raf(() => finish());
+-        setTimeout(finish, 250);
+-      });
+-    };
+-
+-    const stageSettle = async () => {
+-      await window.__bfSettle?.();
+-    };
+-
+-    const stageStepTo = async (frame: number, fps: number) => {
+-      const sec = frame / fps;
+-      window.__pcHideFrameMedia?.();
+-      window.__pcSetT!(sec, sec);
+-      await stageSettle();
+-      await stageRaf();
+-      await stageSettle();
+-      window.__pcSyncAnims?.();
+-      await stageSettle();
+-      const probe = window.__pcStaticProbe?.();
+-      if (probe?.finished) {
+-        for (let pass = 0; pass < 2; pass++) {
+-          await stageRaf();
+-          await stageSettle();
+-          window.__pcSyncAnims?.();
+-          await stageSettle();
+-        }
+-      }
+-      await window.__pcFrameReady?.();
+-      await document.fonts.ready;
+-      await stageRaf();
+-      await stageRaf();
+-      await stageSettle();
+-      window.__pcSyncAnims?.();
+-    };
+-
+-    const stageWarmUp = async (startFrame: number, fps: number) => {
+-      const sec = startFrame / fps;
+-      window.__pcSetFrameWindow?.(null, sec, sec);
+-      for (let i = 0; i < 3; i++) {
+-        await stageStepTo(startFrame, fps);
+-        await stageRaf();
+-      }
+-      window.__pcRestartCards?.();
+-      window.__pcResetAnims?.();
+-      await stageStepTo(startFrame, fps);
+-      await stageRaf();
+-      window.__pcResetAnims?.();
+-    };
+-
+-    const renderFrameToBitmap = async (
+-      frame: number,
+-      fps: number,
+-      layers?: FrameLayer[],
+-      freshTicket?: string | null,
+-      background = "#000",
+-    ): Promise<{ bitmap: ImageBitmap; stats: Record<string, number> }> => {
+-      const stats = { stepMs: 0, snapshotMs: 0, mediaMs: 0, rasterMs: 0, mediaFrames: 0, ticketSwaps: 0 };
+-      let t0 = performance.now();
+-      await stageStepTo(frame, fps);
+-      stats.stepMs = performance.now() - t0;
+-
+-      t0 = performance.now();
+-      const snap = window.__pcCreateSnapshot!();
+-      if (snap.lossy) throw new Error("这一帧有读不出像素的画布,导不出来");
+-      const tpl = document.createElement("template");
+-      tpl.innerHTML = snap.html;
+-      stats.snapshotMs = performance.now() - t0;
+-
+-      if (layers && layers.length > 0) {
+-        const wraps = new Map<string, HTMLElement>();
+-        for (const wrap of tpl.content.querySelectorAll<HTMLElement>("[data-pc-clip]")) {
+-          if (wrap.hasAttribute("data-pc-media")) continue;
+-          const id = wrap.getAttribute("data-pc-clip")!;
+-          if (!wraps.has(id)) wraps.set(id, wrap);
+-        }
+-        for (const layer of layers) {
+-          const wrap = wraps.get(layer.clipId);
+-          if (wrap && pasteLayer(wrap, layer)) {
+-            // pasted layer
+-          }
+-        }
+-      }
+-
+-      t0 = performance.now();
+-      const live = [...document.querySelectorAll<HTMLVideoElement | HTMLImageElement>("[data-pc-scene] video[data-pc-media-src], [data-pc-scene] img[data-pc-media-src]")];
+-      const holes = [...tpl.content.querySelectorAll<HTMLElement>("video[data-pc-media-src], img[data-pc-media-src]")];
+-      if (live.length) {
+-        for (const el of live) if (!el.crossOrigin) el.crossOrigin = "anonymous";
+-        if (freshTicket) {
+-          for (const el of live) {
+-            const src = el.getAttribute("data-pc-media-src") ?? "";
+-            const next = withTicket(src, freshTicket);
+-            if (next !== src) {
+-              el.setAttribute("data-pc-media-src", next);
+-              stats.ticketSwaps++;
+-            }
+-          }
+-        }
+-        await window.__pcPrepareFrameMedia?.();
+-        scratchCanvasRef.current ??= document.createElement("canvas");
+-        holes.forEach((hole, i) => {
+-          const el = live[i];
+-          if (!el || !tpl.content.contains(hole)) return;
+-          const shown = el.style.visibility !== "hidden" && hole.getAttribute("data-pc-media-hidden") !== "true";
+-          const url = shown ? mediaFrameUrl(el, scratchCanvasRef.current!) : null;
+-          const img = document.createElement("img");
+-          for (const attr of [...hole.attributes]) {
+-            if (attr.name !== "src" && !attr.name.startsWith("data-pc-media")) img.setAttribute(attr.name, attr.value);
+-          }
+-          img.style.visibility = url ? "visible" : "hidden";
+-          if (url) {
+-            img.setAttribute("src", url);
+-            stats.mediaFrames++;
+-          }
+-          hole.replaceWith(img);
+-        });
+-        window.__pcHideFrameMedia?.();
+-      }
+-      stats.mediaMs = performance.now() - t0;
+-
+-      t0 = performance.now();
+-      cachedCssRef.current ??= pageCssText(document);
+-      const p = projectRef.current;
+-      const width = p?.width ?? timelineRef.current?.width ?? 1920;
+-      const height = p?.height ?? timelineRef.current?.height ?? 1080;
+-      const svg = sceneToSvg(tpl.content.childNodes, width, height, cachedCssRef.current);
+-      const img = new Image();
+-      img.decoding = "sync";
+-      img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+-      await img.decode();
+-      rasterCanvasRef.current ??= document.createElement("canvas");
+-      rasterCanvasRef.current.width = width;
+-      rasterCanvasRef.current.height = height;
+-      const ctx = rasterCanvasRef.current.getContext("2d", { alpha: false, willReadFrequently: true })!;
+-      ctx.fillStyle = background ?? "#000";
+-      ctx.fillRect(0, 0, width, height);
+-      ctx.drawImage(img, 0, 0, width, height);
+-      const bitmap = await createImageBitmap(rasterCanvasRef.current);
+-      stats.rasterMs = performance.now() - t0;
+-
+-      return { bitmap, stats };
+-    };
+-
+-    const onMessage = async (ev: MessageEvent) => {
+-      const data = ev.data;
+-      if (!data || typeof data !== "object") return;
+-      if (data.type === "pc-export-ping") {
+-        if (window.__pcReady) {
+-          try {
+-            (ev.source as any)?.postMessage({ type: "pc-export-ready" }, "*");
+-          } catch { /* ignore */ }
+-        }
+-        return;
+-      }
+-      if (typeof data.id !== "number") return;
+-      const id = data.id;
+-      const reply = (res: Record<string, unknown>, transfer?: Transferable[]) => {
+-        try {
+-          if (transfer && transfer.length) {
+-            (ev.source as any)?.postMessage({ id, ...res }, "*", transfer);
+-          } else {
+-            (ev.source as any)?.postMessage({ id, ...res }, "*");
+-          }
+-        } catch { /* ignore */ }
+-      };
+-      const replyErr = (err: unknown) => {
+-        const msg = err instanceof Error ? err.message : String(err);
+-        reply({ error: msg });
+-      };
+-
+-      if (data.type === "pc-export-init") {
+-        try {
+-          markIsolatedStageDocument();
+-          noteMediaPolicy({ ticket: null, cardExec: true });
+-          // 等舞台自检出结果,最多 10 秒(真时间:导出页的 performance.now / Date.now 被导出时钟钉住,`export/realClock.ts`)。
+-          // 只有装了舞台加固的文档(在线构建的 stage.html)才会有自检结果;桌面运行环境、开发服务器上的导出页没有自检,闸门一直是 checking,不等
+-          if (stageGuardBooted() && cardExecGate().reason === "checking") {
+-            await waitReal(() => cardExecGate().reason !== "checking", EXPORT_GATE_WAIT_MS);
+-          }
+-          if (data.syncedCards && Array.isArray(data.syncedCards)) {
+-            setSyncedUserCards(data.syncedCards);
+-            setExportSyncedMount(true);
+-          }
+-          if (data.cardSources && Array.isArray(data.cardSources.entries) && data.cardSources.entries.length > 0) {
+-            const { bundleCards } = await import("./online/cardRuntime/transpile.browser");
+-            const read = (key: string) => data.cardSources?.files?.[key] ?? null;
+-            const bundleResults = await bundleCards({ entries: data.cardSources.entries, read });
+-            const list = bundleResults.filter((b): b is Extract<typeof b, { ok: true }> => b.ok).map((b) => b.bundle);
+-            const mod = "stage" + "Runtime";
+-            const m = (await import(`./online/cardRuntime/${mod}.ts`)) as {
+-              createStageCardRuntime: (opts?: Record<string, unknown>) => {
+-                setBundles: (bundles: readonly unknown[]) => Promise<unknown>;
+-                dispose: () => void;
+-              };
+-            };
+-            stageRuntimeRef.current ??= m.createStageCardRuntime({
+-              longSide: () => Math.max(data.project?.width ?? 1920, data.project?.height ?? 1080),
+-            });
+-            await stageRuntimeRef.current.setBundles(list);
+-          }
+-          await window.__pcLoadProject!(data.project);
+-          if (!(await waitReal(() => !!window.__pcReady && typeof window.__pcSetT === "function", EXPORT_LOAD_WAIT_MS))) {
+-            throw new Error("导出舞台装配项目超时");
+-          }
+-          reply({ type: "pc-export-init-result", ok: true });
+-        } catch (e) {
+-          replyErr(e);
+-        }
+-        return;
+-      }
+-
+-      if (data.type === "pc-export-warmup") {
+-        try {
+-          const { startFrame, fps } = data;
+-          await stageWarmUp(startFrame, fps);
+-          reply({ type: "pc-export-warmup-result", ok: true });
+-        } catch (e) {
+-          replyErr(e);
+-        }
+-        return;
+-      }
+-
+-      if (data.type === "pc-export-render-frame") {
+-        try {
+-          const { frame, fps, layers, freshTicket, background } = data;
+-          const { bitmap, stats } = await renderFrameToBitmap(frame, fps, layers, freshTicket, background);
+-          reply({ type: "pc-export-frame-result", frame, bitmap, stats }, [bitmap]);
+-        } catch (e) {
+-          replyErr(e);
+-        }
+-        return;
+-      }
+-
+-      if (data.type === "pc-export-close") {
+-        try {
+-          stageRuntimeRef.current?.dispose();
+-          stageRuntimeRef.current = null;
+-        } catch { /* ignore */ }
+-      }
+-    };
+-
+-    window.addEventListener("message", onMessage);
+-    return () => {
+-      window.removeEventListener("message", onMessage);
+-      stageRuntimeRef.current?.dispose();
+-      stageRuntimeRef.current = null;
+-    };
+-  }, []);
+ 
+   if (!timeline) return null;
+ 

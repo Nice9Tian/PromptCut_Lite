@@ -1,0 +1,35 @@
+diff --git a/CONTRIBUTING.en.md b/CONTRIBUTING.en.md
+index 9fa5f883e5138070411899354b42f713613ff9a5..2a849cc5b5b1310ee1cc45f91293800b70128b3f 100644
+--- a/CONTRIBUTING.en.md
++++ b/CONTRIBUTING.en.md
+@@ -1,4 +1,4 @@
+-# Contributing to PromptCut Community
++# Contributing to PromptCut Lite
+ 
+ Issues and pull requests are welcome. This file covers three things: **semantics come first**, **which areas accept PRs right now**, and **what to run before you submit**.
+ 
+@@ -16,7 +16,7 @@ If your change requires the semantics themselves to change, **open an issue and
+ 
+ ## Which areas accept PRs right now
+ 
+-The community edition and the closed commercial edition are two editions of one codebase, and upstream merges community changes back. In areas where **the file contents are identical on both sides**, your PR merges back cleanly. In areas where the local/cloud seam has not been pulled apart yet, merging back takes manual porting, so for now those take issues but not PRs.
++The Lite edition is cut from the [community edition](https://github.com/Nice9Tian/PromptCut_Community), without LAN and mobile. In areas where **the file contents are identical on both sides**, your PR merges back cleanly. In areas that were cut, merging back takes manual porting, so for now those take issues but not PRs.
+ 
+ | Area | Status |
+ |---|---|
+@@ -26,10 +26,13 @@ The community edition and the closed commercial edition are two editions of one
+ | `src/mcp/`, `src/voice/` | PRs welcome |
+ | `server/bakery/`, `server/harness/`, `server/runners/`, `server/vision/`, `server/voice/`, `server/render-queue/` | PRs welcome |
+ | `python/`, `scripts/`, `docs/` | PRs welcome |
+-| `src/editor/` (including `sync/` and `right/`), `src/start/`, `src/ai/` | PRs welcome |
+-| `src/online/`, `src/mobile/`, `server/auth/`, `server/lan/` (LAN sharing and the phone UI) | PRs welcome |
++| `src/editor/` (except the two below) | PRs welcome |
++| `src/editor/sync/`, `src/editor/right/` | On hold: upstream is pulling the local/cloud seam apart; the two sides still differ here |
++| `src/start/`, `src/ai/` | Same as above |
+ | `desktop/` | PRs welcome, but only Windows x64 is verified |
+ 
++To work in an "on hold" area, open an issue first and we'll tell you where that seam stands.
++
+ ## What to run before you submit
+ 
+ ```bash
