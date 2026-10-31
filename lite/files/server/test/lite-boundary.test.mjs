@@ -1,7 +1,7 @@
 /**
  * Lite 版的边界：只有本地，没有局域网、手机、账号、云端。
  *
- * 这几条守的是「裁掉的东西没有回来」。Lite 从社区版裁出来，同步社区版的改动时最容易把裁掉的路径带回来，
+ * 这几条守的是「裁掉的东西没有回来」。Lite 由脚本从社区版生成，社区版新加的文件默认留下，最容易把裁掉的路径带回来，
  * 或者让编辑器又绑到局域网网卡上。
  */
 import test from 'node:test';
@@ -27,7 +27,7 @@ test('LT-1 局域网、手机、在线、账号这几层都不在', () => {
 test('LT-2 代码里没有我们的线上地址，也没有去找云端模块的入口', () => {
   const hits = [];
   for (const rel of tracked()) {
-    if (!/\.(ts|tsx|mjs|cjs|js|json|rs|toml|html|css)$/.test(rel) || rel === 'server/test/lite-boundary.test.mjs') continue;
+    if (!/\.(ts|tsx|mjs|cjs|js|json|rs|toml|html|css)$/.test(rel) || rel === 'server/test/lite-boundary.test.mjs' || rel.startsWith('lite/')) continue;
     let text;
     try { text = fs.readFileSync(path.join(ROOT, rel), 'utf8'); } catch { continue; }
     if (/visuhive\.com|#promptcut-cloud|PROMPTCUT_CLOUD_DIR|\/hosted\/shared/.test(text)) hits.push(rel);
