@@ -1,5 +1,5 @@
 diff --git a/src/start/DetailEdit.tsx b/src/start/DetailEdit.tsx
-index 6f5a114578f34c291862372f5b306cfadbda3ad4..43e4b8873faa0d5b2ec6da4e928b8c116dc601c9 100644
+index 394047aad9d8ac307e29f604fde0289b5f2ea6d8..a82edb3978798caf345f079797dda32187ad9c1b 100644
 --- a/src/start/DetailEdit.tsx
 +++ b/src/start/DetailEdit.tsx
 @@ -17,14 +17,14 @@

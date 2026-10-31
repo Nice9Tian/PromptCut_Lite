@@ -1,5 +1,5 @@
 diff --git a/src/start/ChatSidePanel.tsx b/src/start/ChatSidePanel.tsx
-index 35d4bee147e4fe2cada67ac163d5516bc49e7184..0d3a062cc6b18fb4074f18c5d5cba2757bfb5d04 100644
+index 695dfe855fbf34e5810c495f380dbe0c70868c3f..64f0e01c165472c9f9438b1538762baa2e30d936 100644
 --- a/src/start/ChatSidePanel.tsx
 +++ b/src/start/ChatSidePanel.tsx
 @@ -19,7 +19,7 @@ import type { ChatMessage } from "../ai/types";
