@@ -1,8 +1,8 @@
 diff --git a/server/test/asset-announce.test.mjs b/server/test/asset-announce.test.mjs
-index aeca26ed441d033547462b44772d6efdf73ec6fe..e4ef14b28bcaa2d284783c3e97084509eb401e00 100644
+index c6a9f5ae8da6239b6e10b6f0a0f24e60abf1930a..fb0307392d9d1b1a52085a5ca015b4722d28ab24 100644
 --- a/server/test/asset-announce.test.mjs
 +++ b/server/test/asset-announce.test.mjs
-@@ -12,7 +12,6 @@ import assert from 'node:assert/strict';
+@@ -15,7 +15,6 @@ import assert from 'node:assert/strict';
  import { test } from 'node:test';
  import { createDocService } from '../docservice/service.mjs';
  import { endpointsModule } from '../docservice/modules/endpoints.mjs';
@@ -10,8 +10,8 @@ index aeca26ed441d033547462b44772d6efdf73ec6fe..e4ef14b28bcaa2d284783c3e97084509
  import { wsClient, byType, waitFor, randomToken } from './fake-ws-kit.mjs';
  
  let mod = null;
-@@ -219,8 +218,7 @@ test('N3 urls 为空不登记（打一行 log）；stop() 先发 service.withdra
- test('N4 对真文档服务（端口 0，挂服务地址登记模块）：登记后另一条连接 service.watch { kinds: [asset] } 收到这份地址', async (t) => {
+@@ -222,8 +221,7 @@ test('N3 empty urls are not registered (logs one line); stop() sends service.wit
+ test('N4 against the real document service (port 0, with the service address registration module mounted): after registration, another connection doing service.watch { kinds: [asset] } receives this address', async (t) => {
    const { startAssetAnnounce } = need();
    const token = randomToken();
 -  const auth = createClusterAuth({ token });

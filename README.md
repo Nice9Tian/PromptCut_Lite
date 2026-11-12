@@ -1,78 +1,132 @@
-# PromptCut Lite
+<p align="center">
+  <img src="docs/assets/logo.svg" width="88" height="88" alt="PromptCut logo">
+</p>
 
-PromptCut 是一个 AI 视频剪辑工作台：用自然语言指挥 Agent 完成剪辑，也可以自己动手剪辑、调整参数，两者可以并行。
+<h1 align="center">PromptCut Lite</h1>
 
-**本仓库是 Lite 版**：面向单机单用户的本地桌面环境（桌面应用与本机桌面浏览器）。不含账号、云端项目、多人协作、局域网和手机版。全部功能都在本机跑，不需要注册、不连任何服务器。要局域网协作和手机，用[社区版](https://github.com/Nice9Tian/PromptCut_Community)。
+<p align="center">
+  <strong>Tell an AI agent how to cut your video, then take over by hand whenever you like.</strong>
+</p>
 
-许可证 [MIT](LICENSE)。
+<p align="center">
+  <a href="README.md"><img src="https://img.shields.io/badge/English-00A3A3?style=for-the-badge" alt="English"></a>
+  <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/简体中文-3a3f4b?style=for-the-badge" alt="简体中文"></a>
+  <a href="README.ja.md"><img src="https://img.shields.io/badge/日本語-3a3f4b?style=for-the-badge" alt="日本語"></a>
+</p>
 
-> English: see [README.en.md](README.en.md).
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-6F69FC" alt="MIT license"></a>
+  <a href="https://github.com/Nice9Tian/PromptCut_Lite/actions/workflows/test.yml"><img src="https://github.com/Nice9Tian/PromptCut_Lite/actions/workflows/test.yml/badge.svg" alt="Test status"></a>
+  <img src="https://img.shields.io/badge/node-%E2%89%A5%2022-00A3A3" alt="Node.js 22 or newer">
+  <img src="https://img.shields.io/badge/desktop-Windows%20x64-3a3f4b" alt="Desktop app: Windows x64">
+  <a href="CONTRIBUTING.en.md"><img src="https://img.shields.io/badge/PRs-welcome-00A3A3" alt="PRs welcome"></a>
+</p>
 
-## 能做什么
+<p align="center">
+  <a href="#ways-to-work">Ways to work</a> ·
+  <a href="#what-it-does">What it does</a> ·
+  <a href="#getting-started">Getting started</a> ·
+  <a href="#documentation">Documentation</a> ·
+  <a href="CONTRIBUTING.en.md">Contributing</a>
+</p>
 
-- **AI 指挥剪辑**：接本机的 CLI / API Agent，用一句话让它排时间轴、加卡片、调参数；也作为 MCP 服务器被别的 Agent 调用。
-- **手动剪辑**：时间轴、多轨、剪辑段嵌套、参数面板、预览。
-- **卡片**：动效/图表/字幕等以 React 组件实现的"卡片"，自带一套内置库，可以自己写。
-- **渲染与出片**：预渲染生成快照、本机 Chrome 逐帧渲染、ffmpeg 合成成片。
-- **素材**：本地导入、从网页链接抓取（yt-dlp）、镜头切换识别、主体检测、运动追踪、语音转文字。
-- **桌面版**：Tauri v2 外壳，把 Node、Chrome for Testing、ffmpeg、内置 Python 打成一个 Windows 安装包。
+<p align="center">
+  <img src="docs/assets/vibe-en.webp" width="900" alt="PromptCut in Vibe mode: projects on the left, the chat with the agent in the middle, the rendered picture on the right">
+</p>
 
-## 跑起来
+PromptCut is an AI video-editing workbench: you direct an agent in plain language, and you can also cut and tune parameters by hand — both at the same time, on the same project.
 
-需要 Node.js ≥ 22（推荐 24.x）。导出成片还需要 ffmpeg 在 PATH 上（Windows：`winget install --id Gyan.FFmpeg -e`）。
+**This is the Lite edition**: single user, single machine, local desktop only (the desktop app and a local desktop browser). It has no accounts, no cloud projects, no multi-user collaboration, no LAN and no mobile build. Everything here runs on your own machine; there is nothing to sign up for and no server to talk to. For LAN collaboration and phones, use the [community edition](https://github.com/Nice9Tian/PromptCut_Community).
+
+## Ways to work
+
+You can switch between these on the same project at any time, and nothing is lost.
+
+| Mode | How it works |
+|---|---|
+| **Vibe mode** | No editor in the way. Say one sentence on the start page and the agent builds the project. Follow it on the chat page, watch the picture and the before/after changes in the side panel, and open detail editing when you want to adjust the timeline yourself. |
+| **Classic mode** | The full editor: media library, preview, timeline and the AI panel side by side, for you and the agent to work on together. |
+| **SKILL mode** | Desktop app only. An agent running in your desktop connects over MCP while the editor stays closed and PromptCut runs in the background. Open the editor whenever you want to step in. |
+
+<p align="center">
+  <img src="docs/assets/classic-en.webp" width="900" alt="PromptCut in Classic mode: media library on the left, preview in the middle, AI panel on the right, timeline below">
+</p>
+
+## What it does
+
+| | |
+|---|---|
+| **Vibe mode** | Describe the video you want and get a first cut, without opening the editor. Keep directing it in chat, and adjust the timeline in detail editing. |
+| **Agent-directed editing** | Talks to a local CLI or API agent that lays out the timeline, adds cards and tunes parameters. It also acts as an MCP server other agents can call. |
+| **Manual editing** | Timeline, multiple tracks, nested cuts, parameter panels and preview. |
+| **Cards** | Motion graphics, charts, captions and more, implemented as React components. A built-in library ships with the app, and you can write your own. |
+| **Rendering and output** | Prerendered snapshots, frame-by-frame rendering in a local Chrome, and a final video composed with ffmpeg. |
+| **Media** | Local import, fetching from web links (yt-dlp), shot-boundary detection, subject detection, point tracking and speech-to-text. |
+| **Languages** | The interface comes in English, Simplified Chinese and Japanese. It follows your system language the first time and can be switched from the language menu at any time; your open project stays where it was. |
+| **Desktop app** | A Tauri v2 shell that packages Node, Chrome for Testing, ffmpeg and a bundled Python into a single Windows installer. |
+
+## Getting started
+
+You need Node.js ≥ 22 (24.x recommended). Exporting a final video also needs ffmpeg on `PATH` (on Windows: `winget install --id Gyan.FFmpeg -e`).
 
 ```bash
 npm ci
-npm run dev        # 本机编辑器，http://127.0.0.1:5190
+npm run dev        # local editor at http://127.0.0.1:5190
 ```
 
-| 命令 | 做什么 |
+| Command | What it does |
 |---|---|
-| `npm run dev` | 起本机编辑器（Vite dev server，后端逻辑在它的插件中间件里） |
-| `npm test` | 全量单测 |
-| `npm run build` | 先类型检查再构建 |
-| `npx tsc -b` | 只做类型检查 |
+| `npm run dev` | Starts the local editor. The backend lives in this Vite dev server's plugin middleware, so the dev server is the app, not just a bundler. |
+| `npm test` | Full unit-test suite |
+| `npm run build` | Type-checks, then builds |
+| `npx tsc -b` | Type-check only |
 
-Python 侧（语音转文字、镜头识别、主体检测、追踪、素材收集）的依赖和模型权重按需装，没装会在 `status` 里如实报告，见 [python/README.md](python/README.md)。桌面版的构建见 [desktop/README.md](desktop/README.md)。
+The Python side (speech-to-text, shot detection, subject detection, tracking, media collection) installs its dependencies and model weights on demand and reports honestly in `status` when something is missing. See [python/README.md](python/README.md). To build the desktop app, see [desktop/README.md](desktop/README.md).
 
-## 文档
+## Documentation
 
-| 想了解 | 看这里 |
+The documentation is written in Chinese. `docs/semantics/` is the project's **contract**: where the semantics and the code disagree, the semantics win. Before changing code, use the table in [docs/semantics/README.md](docs/semantics/README.md) to find which documents govern your change.
+
+| Topic | Where |
 |---|---|
-| 产品为什么存在、要达到什么 | [docs/semantics/product-purpose.md](docs/semantics/product-purpose.md) |
-| 系统由哪几部分组成 | [docs/semantics/architecture.md](docs/semantics/architecture.md)，产品功能在 [product/](docs/semantics/product/)，具体机制在 [mechanism/](docs/semantics/mechanism/) |
-| 用户怎么用 | [docs/semantics/user-workflow.md](docs/semantics/user-workflow.md)，细节在 [workflow/](docs/semantics/workflow/) |
-| 术语 | [docs/semantics/glossary.md](docs/semantics/glossary.md) |
-| 为什么这样设计 | [docs/rationale/](docs/rationale/) |
-| 排障、对账等操作知识 | [docs/guides/](docs/guides/) |
-| 怎么参与 | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Why the product exists, what it aims at | [docs/semantics/product-purpose.md](docs/semantics/product-purpose.md) |
+| What the system is made of | [docs/semantics/architecture.md](docs/semantics/architecture.md); product-level promises in [product/](docs/semantics/product/), mechanisms in [mechanism/](docs/semantics/mechanism/) |
+| How people use it | [docs/semantics/user-workflow.md](docs/semantics/user-workflow.md), details in [workflow/](docs/semantics/workflow/) |
+| Glossary | [docs/semantics/glossary.md](docs/semantics/glossary.md) |
+| Design rationale | [docs/rationale/](docs/rationale/) |
+| Troubleshooting and operational know-how | [docs/guides/](docs/guides/) |
+| How to contribute | [CONTRIBUTING.en.md](CONTRIBUTING.en.md) |
 
-`docs/semantics/` 是这个项目的**契约**：语义与代码冲突时以语义为准。改代码前先按 [docs/semantics/README.md](docs/semantics/README.md) 的表找出该读哪几份。
+<details>
+<summary><strong>References that point outside this repository</strong></summary>
 
-### 关于指向本仓库之外的引用
+Comments and semantics documents occasionally cite things this repository does not contain. There are two kinds:
 
-代码注释和语义文档里偶尔会引用本仓库里没有的东西，有两类：
+- **Upstream internal documents**: `docs/plan/…` (plans and contracts), `docs/reports/…` (acceptance reports), and `docs/local.md` (per-machine notes, never committed to any repository by design, see `docs/semantics/guide_files/constraints.md`).
+- **Commercial-edition-only code**: paths such as `src/online/…`, `src/account/…`, `server/account/…`, `server/hosted/…`, and compile-time constants like `ONLINE_BUILD` that are always false here.
 
-- **上游的内部文档**：`docs/plan/…`（计划与契约）、`docs/reports/…`（验收报告），以及 `docs/local.md`（本机环境记录，按设计从来不入任何仓库，见 `docs/semantics/guide_files/constraints.md`）。
-- **商业版独有的代码**：`src/online/…`、`src/account/…`、`server/account/…`、`server/hosted/…` 这些路径，以及 `ONLINE_BUILD` 这类在 Lite 版里恒为假的编译期常量。
+Both kinds are kept deliberately: they record where a decision came from, and the comment itself already states the conclusion, so not being able to open the cited file does not stop you understanding the code. These citations will be rewritten in both editions once upstream has pulled the local/cloud seam apart (see the area table in [CONTRIBUTING.en.md](CONTRIBUTING.en.md)). Fixing them only here would make the same file differ between the two editions, which is exactly what we are trying to avoid.
 
-两类引用都故意保留着，因为它们说明了某个决定的出处，而注释本身已经把结论写清楚了——读不到被引用的文件，不影响你理解这段代码。等上游把本地与云端的接缝拆开（见 [CONTRIBUTING.md](CONTRIBUTING.md) 的区域表），这些引用会在两个版本里一起改掉；现在只在社区版这边改，会让两边的同一个文件内容不一致，正是要避免的事。
+</details>
 
-## 给 coding agent 的入口
+<details>
+<summary><strong>For coding agents</strong></summary>
 
-本仓库**不放** `AGENTS.md` 和 `CLAUDE.md`：这两个文件会被各家工具无条件注入上下文，把本项目的协作习惯塞进别人的 Agent。需要的话自己在工作副本里建一份，内容照抄下面这段就够，别提交（`.gitignore` 已挡掉）：
+This repository deliberately ships no `AGENTS.md` or `CLAUDE.md`: tools inject those files into context unconditionally, which would push this project's working habits into other people's agents. If you want one, create it in your working copy with the text below and do not commit it (`.gitignore` already covers it):
 
 ````markdown
 # PromptCut
 
-AI 视频剪辑工作台。改这个仓库之前先知道这几件事：
+An AI video-editing workbench. Before changing this repository, know these things:
 
-- 语义库在 `docs/semantics/`：产品承诺在 `product/`，实现机制在 `mechanism/`，用户流程在 `workflow/`。语义与代码冲突时以语义为准。
-- 硬约束在 `docs/semantics/guide_files/constraints.md`，必须守。其中分层是 kernel ← render ← editor / mcp / ai，下层不引用上层，守门测试会拦。
-- 怎么验证、什么改动必跑哪一项，在 `docs/semantics/guide_files/verification.md`。
-- 按改动范围该读哪几份语义，见 `docs/semantics/README.md`。
+- The semantics live in `docs/semantics/`: product promises in `product/`, mechanisms in `mechanism/`, user flows in `workflow/`. Where semantics and code disagree, the semantics win.
+- The hard constraints are in `docs/semantics/guide_files/constraints.md` and must be followed. Layering is kernel ← render ← editor / mcp / ai; lower layers never import upper ones, and a gatekeeper test enforces it.
+- How to verify, and which check each kind of change must run, is in `docs/semantics/guide_files/verification.md`.
+- Which semantics to read for a given change is in `docs/semantics/README.md`.
 ````
 
-## 名字
+</details>
 
-代码按 MIT 授权，**"PromptCut" 这个名字和相关标识不在授权范围内**。可以自由 fork、修改、再分发，但请不要用 "PromptCut" 命名你的分发版本，以免用户把它当成本项目的官方版本。
+## License and name
+
+The code is licensed under [MIT](LICENSE), but **the name "PromptCut" and the associated marks are not part of that license**. You are free to fork, modify and redistribute. Please do not call your distribution "PromptCut", so that users do not mistake it for an official release.

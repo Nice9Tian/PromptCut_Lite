@@ -1,29 +1,29 @@
 diff --git a/src/editor/cardScope.ts b/src/editor/cardScope.ts
-index d177959073e904317dd9f43eb8008e246a551372..7f6cb0f77b1187f239c1b391682bcc9d552c33a0 100644
+index 678d8dfc4433def92c38ce65a33d72e620e02aaf..d23831fd07dc076e75f8c128168ca174b7d8bc2c 100644
 --- a/src/editor/cardScope.ts
 +++ b/src/editor/cardScope.ts
 @@ -1,5 +1,4 @@
  import type { CardDef } from "../kernel/types";
--import { onlinePage } from "../online/pageFlag.ts"; // 带扩展名:本模块的单测不装解析钩子,直接 import
+-import { onlinePage } from "../online/pageFlag.ts";
+ import { tr } from "../i18n/index.ts"; // With extension: this module's unit tests do not install the resolve hook and import it directly
  
  /**
-  * 卡片库对 Agent 暴露多少 —— 三档,以及每一档能不能关掉。
-@@ -89,13 +88,8 @@ export function writeVisibility(v: CardVisibility): void {
- /** 服务端那张归属表。改动不频繁,读进来缓存着;建卡和改档位之后失效 */
+@@ -95,13 +94,8 @@ export function writeVisibility(v: CardVisibility): void {
+ /** The server-side ownership table. It changes rarely, so it is read in and cached; invalidated after a card is built or a tier is changed */
  let scopeCache: Record<string, ScopeEntry> | null = null;
  
--/** 在线构建的编译期常量(写法与用意见 `src/online/pageFlag.ts` 的「在线构建剪枝」):在线构建里剪掉 /api/cards/scopes */
+-/** Compile-time constant of the online build (usage and intent in "online build pruning" of `src/online/pageFlag.ts`): /api/cards/scopes is pruned in the online build */
 -const ONLINE_BUILD = typeof import.meta.env !== "undefined" && import.meta.env.VITE_PC_ONLINE === "1";
 -
  export async function loadScopes(force = false): Promise<Record<string, ScopeEntry>> {
    if (scopeCache && !force) return scopeCache;
--  // 在线浏览器模式没有编辑器进程,也就没有定制卡的归属表(用户卡在在线页面一期不渲染,契约第 1 节)
+-  // Online browser mode has no editor process, so there is no ownership table for custom cards (user cards are not rendered on online pages in phase one, contract section 1)
 -  if (ONLINE_BUILD || onlinePage()) return (scopeCache = {});
    try {
      const r = await fetch("/api/cards/scopes").then((x) => x.json());
      scopeCache = r?.ok ? (r.scopes ?? {}) : {};
-@@ -117,7 +111,6 @@ export function invalidateScopes(): void {
-  * 而 isCardVisible 恰恰是整个「定制卡跨项目泄露」的唯一修复点,最该有测试的就是它。
+@@ -126,7 +120,6 @@ export function invalidateScopes(): void {
+  * is the one that most needs tests.
   */
  export async function setCardScope(cardId: string, scope: CardScope, projectId?: string | null): Promise<void> {
 -  if (ONLINE_BUILD || onlinePage()) return;

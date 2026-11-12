@@ -1,5 +1,5 @@
 diff --git a/src/Editor.tsx b/src/Editor.tsx
-index 5ab5244758be022413c295cac5895c41824a966b..0a9dd398d74a0d868362fcbcf0afaa5f60e83855 100644
+index d7a783a63d16eea4968f63a609282b6e30a81ec0..ba4a47395753cf94891b596e4c054d3f18330f7f 100644
 --- a/src/Editor.tsx
 +++ b/src/Editor.tsx
 @@ -19,9 +19,8 @@ import { DependencyPrompt } from "./editor/DependencyPrompt";
@@ -11,27 +11,30 @@ index 5ab5244758be022413c295cac5895c41824a966b..0a9dd398d74a0d868362fcbcf0afaa5f
 -import { isJoinPage, resumeShared, startSync } from "./editor/sync/syncManager";
 +import { startSync } from "./editor/sync/syncManager";
  import { undoRedoKey } from "./editor/undoKeys";
+ import { tr } from "./i18n/index.ts";
  
- /** 拖杆宽度(px),和 ResizeHandle 里的 w-2 对应 */
-@@ -148,14 +147,12 @@ export default function Editor() {
+@@ -162,17 +161,14 @@ export default function Editor() {
    }, []);
  
    useEffect(() => {
--    // C6.5:页面用 WebSocket 接本机文档服务并挂上 store(src/editor/sync/syncManager.ts);无头实例、只读查看、连不上时不接
--    // 刷新前这个标签页开着共享项目(`?editor` 直接进编辑器的页面):接上本机之后回到那个共享项目
+-    // C6.5: the page connects to the local document service over WebSocket and attaches the store
++    // The page connects to the local document service over WebSocket and attaches the store
+     // (src/editor/sync/syncManager.ts); not connected for headless instances, read-only viewing, or when it cannot connect
+-    // If this tab had a shared project open before the refresh (a page that goes straight into the editor with `?editor`): after connecting to the local machine, go back to that shared project
 -    void startSync().then(() => resumeShared());
-+    // 页面用 WebSocket 接本机文档服务并挂上 store(src/editor/sync/syncManager.ts);无头实例、只读查看、连不上时不接
 +    void startSync();
      const p = getState().project;
-     // 自动化页面(?headless=1,探针与测试开的页面)不塞演示卡:测的是它们自己放进去的内容。
--    // ?join= 加入已有本机项目的页面也不塞:内容以文档服务为准,塞了就成了往别人的项目里加 10 张卡
+     // Automation pages (?headless=1, pages opened by probes and tests) get no demo cards: what is
+     // tested is the content they put in themselves.
+-    // Pages that join an existing local project with ?join= get none either: the content is whatever
+-    // the document service says, and adding them would mean adding 10 cards to someone else's project
      const headless = new URLSearchParams(location.search).has("headless");
 -    if (!headless && !isJoinPage() && p.tracks.every((t) => t.clips.length === 0)) {
 +    if (!headless && p.tracks.every((t) => t.clips.length === 0)) {
        for (const c of [...magicuiDemoClips, ...nativeDemoClips]) {
          actions.addCardClip(c.cardId, c.start, { duration: c.end - c.start, params: c.params });
        }
-@@ -185,7 +182,6 @@ export default function Editor() {
+@@ -204,7 +200,6 @@ export default function Editor() {
      <div data-pc="editor" className="h-full min-h-0 flex flex-col" style={{ backgroundColor: "var(--ui-bg)", color: "var(--ui-fg)" }}>
        <MediaMigrationDialog />
        <MissingMaterialsDialog />

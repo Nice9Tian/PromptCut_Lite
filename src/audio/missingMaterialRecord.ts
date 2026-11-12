@@ -1,8 +1,11 @@
 import type { MediaAsset, Project } from "../kernel/project";
 
 /**
- * 「确认缺失」记录的判定与显示名(纯函数,不引随软件分发的那段人声文件,Node 单测与 `src/editor/io` 的后台检查直接用)。
- * 带人声地址与时长的那一半在 `missingMaterial.ts`,它把这里的几个函数原样再导出。
+ * The judgment and display name of the "confirmed missing" record (pure functions that do not import
+ * the voice recording shipped with the software, used directly by Node unit tests and the background
+ * check in `src/editor/io`).
+ * The half that carries the voice address and duration is in `missingMaterial.ts`, which re-exports
+ * the functions here unchanged.
  */
 
 /** Only a serialized recovery confirmation may activate the proxy; read/decode errors stay ordinary errors. */
@@ -25,18 +28,37 @@ export function confirmedMissingAudio(media: MediaAsset | undefined, project?: P
   return confirmedMissing(source) && source!.kind === "video" && source!.missingMaterial!.audio === true;
 }
 
-/** 素材库里给缺失素材名字加的标记(`src/editor/io/mediaUpload.ts`);占位上只显示原来的名字 */
-const MISSING_NAME_MARK = "(缺失) ";
+/**
+ * Marker in front of a missing media item's name in the media library (src/editor/io/mediaUpload.ts).
+ * It is project data, so it never follows the interface language: new names get the English one,
+ * names in older projects still carry the Chinese one, and both are recognised. Placeholders drawn
+ * in the picture show only the original name.
+ */
+export const MISSING_NAME_MARK = "(missing) ";
+// i18n-allow: the marker older projects carry
+const LEGACY_MISSING_NAME_MARK = "(缺失) ";
+
+export function hasMissingMark(name: string): boolean {
+  return name.startsWith(MISSING_NAME_MARK) || name.startsWith(LEGACY_MISSING_NAME_MARK);
+}
+
+/** The name without its marker */
+export function withoutMissingMark(name: string): string {
+  for (const mark of [MISSING_NAME_MARK, LEGACY_MISSING_NAME_MARK]) if (name.startsWith(mark)) return name.slice(mark.length);
+  return name;
+}
 
 export function missingMaterialLabel(media: MediaAsset): string {
   const original = media.missingMaterial?.original;
   const name = original?.name || original?.hash || media.name || media.id;
-  return name.startsWith(MISSING_NAME_MARK) && name.length > MISSING_NAME_MARK.length ? name.slice(MISSING_NAME_MARK.length) : name;
+  return withoutMissingMark(name) || name;
 }
 
 /**
- * 导出前「素材原尺寸到齐没有」那道拦截用的项目视图:去掉认定过「确认缺失」的素材。
- * 这些素材不会再到齐,导出时它们的片段照原位置出占位,不该把整次导出拦在「等待上传方」。
+ * The project view used by the pre-export check "have the original-size assets all arrived": with
+ * the assets already marked "confirmed missing" removed.
+ * These assets will never arrive, and their clips are output as placeholders in their original
+ * positions during export, so they should not hold the whole export at "waiting for the uploader".
  */
 export function withoutConfirmedMissing<T extends { media: MediaAsset[] }>(project: T): T {
   if (!Array.isArray(project?.media)) return project;

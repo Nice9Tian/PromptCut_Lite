@@ -1,8 +1,8 @@
 diff --git a/src/editor/sync/BackupsDialog.tsx b/src/editor/sync/BackupsDialog.tsx
-index e299c1a230048d27484bb891d896ab930e28d3e7..237dc1fa84a1a7f2e21362c2a441a31e374230c9 100644
+index c8a5cad4ba287701d718a8fe595b212c4c5a7052..f0d415ec7612fa02dbb6383cf2fe9c5221340fd9 100644
 --- a/src/editor/sync/BackupsDialog.tsx
 +++ b/src/editor/sync/BackupsDialog.tsx
-@@ -10,9 +10,8 @@ import { createPortal } from "react-dom";
+@@ -13,9 +13,8 @@ import { createPortal } from "react-dom";
  import { applyOps, entityValuePath, getAt, parsePath, type PathOp } from "../../kernel/diffProject";
  import type { Project } from "../../kernel/project";
  import { actions, getState } from "../../store/project";
@@ -11,9 +11,9 @@ index e299c1a230048d27484bb891d896ab930e28d3e7..237dc1fa84a1a7f2e21362c2a441a31e
  import { entityLabel, writerLabel } from "./labels";
 -import { ONLINE } from "../../online/mode";
  import "./sync.css";
+ import { tr } from "../../i18n/index.ts";
  
- interface Summary {
-@@ -69,7 +68,7 @@ export function restoreInto(project: Project, entity: string, value: unknown): {
+@@ -73,7 +72,7 @@ export function restoreInto(project: Project, entity: string, value: unknown): {
    return { ok: false, detail: r.detail };
  }
  
@@ -22,15 +22,15 @@ index e299c1a230048d27484bb891d896ab930e28d3e7..237dc1fa84a1a7f2e21362c2a441a31e
    const [items, setItems] = useState<Summary[] | null>(null);
    const [err, setErr] = useState("");
  
-@@ -77,7 +76,6 @@ function DesktopBackupsDialog({ open, onClose }: { open: boolean; onClose: () =>
+@@ -81,7 +80,6 @@ function DesktopBackupsDialog({ open, onClose }: { open: boolean; onClose: () =>
      if (!open) return;
      setItems(null);
      setErr("");
--    if (ONLINE) return setItems([]); // 在线页面没有本地备份(入口已置灰,C10a)
+-    if (ONLINE) return setItems([]); // Online pages have no local backups (the entry is greyed out, C10a)
      fetch("/api/project-backups", { cache: "no-store" })
        .then((r) => r.json())
        .then((j) => setItems(Array.isArray(j.backups) ? j.backups : []))
-@@ -90,7 +88,6 @@ function DesktopBackupsDialog({ open, onClose }: { open: boolean; onClose: () =>
+@@ -94,7 +92,6 @@ function DesktopBackupsDialog({ open, onClose }: { open: boolean; onClose: () =>
    const rows: Row[] = (items ?? []).flatMap((b) => (b.kind === "overwritten" && b.entity ? [{ backup: b, entity: b.entity }] : b.entities.map((entity) => ({ backup: b, entity }))));
  
    const restore = async (row: Row) => {
@@ -38,18 +38,20 @@ index e299c1a230048d27484bb891d896ab930e28d3e7..237dc1fa84a1a7f2e21362c2a441a31e
      try {
        const r = await fetch(`/api/project-backups/${encodeURIComponent(row.backup.id)}`, { cache: "no-store" });
        if (!r.ok) throw new Error(String(r.status));
-@@ -149,53 +146,3 @@ function DesktopBackupsDialog({ open, onClose }: { open: boolean; onClose: () =>
+@@ -153,55 +150,3 @@ function DesktopBackupsDialog({ open, onClose }: { open: boolean; onClose: () =>
      document.body,
    );
  }
 -
 -/**
-- * 在线页面的「本地备份」(C10 契约第 10 节、第 18 节第 4 条):本页内存里的全部备份(`onlineBackups.ts`),
-- * 逐个「下载备份」(JSON 文件)。不写浏览器存储、不能「恢复」(没有本机草稿目录可读),关页面即丢。
-- * 同步面板里的「备份」小部件与「项目」菜单「本地备份…」打开的都是它。
+- * "Local backups" for an online page (C10 contract, section 10 and section 18 item 4): all backups held in
+- * this page's memory (`onlineBackups.ts`), each with a "Download backup" button (a JSON file). It does not
+- * write to browser storage and cannot "Restore" (there is no local draft directory to read), and the
+- * backups are lost when the page closes. The "Backups" widget in the sync panel and the "Local backups..."
+- * item in the Project menu both open this.
 - */
 -function OnlineBackupsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
--  useSync((v) => v.onlineBackups); // 份数变了就重画
+-  useSync((v) => v.onlineBackups); // Redraw when the number of backups changes
 -  if (!open) return null;
 -  const store = onlineBackups();
 -  const items = store.list();
@@ -57,21 +59,21 @@ index e299c1a230048d27484bb891d896ab930e28d3e7..237dc1fa84a1a7f2e21362c2a441a31e
 -  return createPortal(
 -    <div className="pc-dialog-mask">
 -      <div className="pc-dialog pc-sync-dialog pc-sync-dialog--wide" role="dialog" aria-modal="true" data-pc="backups-dialog">
--        <div className="pc-dialog-title">本地备份</div>
+-        <div className="pc-dialog-title">{tr("Local backups")}</div>
 -        <div className="pc-dialog-body">
--          <div className="pc-sync-hint">被别人覆盖之前你那一版、离线时丢弃的修改都先留在本页。在线页面不在浏览器里保存它们：关闭页面就没了，需要的话逐个下载。</div>
--          {!items.length ? <div className="pc-sync-hint">（本页还没有备份）</div> : null}
+-          <div className="pc-sync-hint">{tr("Your version from before someone else overwrote it, and changes discarded while offline, are kept on this page for now. The online page does not save them in the browser: they are gone once you close the page, so download them one by one if you need them.")}</div>
+-          {!items.length ? <div className="pc-sync-hint">{tr("(no backups on this page yet)")}</div> : null}
 -          <div className="pc-backups">
 -            {items.map((it) => {
 -              const b = it.backup;
--              const what = b.kind === "overwritten" ? entityLabel(b.entity, project) : `${b.batch.length} 步离线时的修改`;
--              const who = b.kind === "overwritten" ? `被 ${writerLabel(b.by, me(), displayNames())} 覆盖` : "离线时丢弃";
+-              const what = b.kind === "overwritten" ? entityLabel(b.entity, project) : tr("{0} offline edit steps", b.batch.length);
+-              const who = b.kind === "overwritten" ? tr("Overwritten by {0}", writerLabel(b.by, me(), displayNames())) : tr("Discarded while offline");
 -              return (
 -                <div className="pc-backup-row" key={it.index} data-pc="backup-row">
 -                  <span>{what}</span>
 -                  <small>{fmtTime(b.at)} · {who} · {it.projectName}</small>
 -                  <button type="button" className="pc-dialog-opt" data-pc="backup-download" title={it.filename} onClick={() => store.download(it.index)}>
--                    下载备份
+-                    {tr("Download backup")}
 -                  </button>
 -                </div>
 -              );
@@ -80,7 +82,7 @@ index e299c1a230048d27484bb891d896ab930e28d3e7..237dc1fa84a1a7f2e21362c2a441a31e
 -        </div>
 -        <div className="pc-dialog-foot">
 -          <button type="button" className="pc-btn" onClick={onClose}>
--            关闭
+-            {tr("Close")}
 -          </button>
 -        </div>
 -      </div>

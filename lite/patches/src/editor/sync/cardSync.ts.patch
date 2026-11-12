@@ -1,29 +1,30 @@
 diff --git a/src/editor/sync/cardSync.ts b/src/editor/sync/cardSync.ts
-index bc9a04ef38f08b87b150a480571e943eadca25ab..183b643d3eb6285428ecbdf73cc7912fde189ff6 100644
+index cba540fb8b8b292ca7a924c98aeedac0acaa3bb7..c489b1c83f39a3d7ca93f003c982692009e12fc1 100644
 --- a/src/editor/sync/cardSync.ts
 +++ b/src/editor/sync/cardSync.ts
-@@ -18,8 +18,6 @@
- import type { Project } from "../../kernel/project";
+@@ -29,8 +29,6 @@ import type { Project } from "../../kernel/project";
  import { usedCardIds, peekScopes } from "../cardScope";
+ import { tr } from "../../i18n/index.ts";
  
 -const ONLINE_BUILD = typeof import.meta.env !== "undefined" && import.meta.env.VITE_PC_ONLINE === "1";
 -
  export interface CardSyncHooks {
    /**
-    * 给一张 page 角色的连接票据(共享项目才会被要);拿不到就抛。
-@@ -112,7 +110,6 @@ export function bindCardSync(b: Binding, project: Project, h: CardSyncHooks): vo
- /** 项目变了:用到的卡有变化才再报一次(只在共享项目里有意义) */
+    * Gets a connection ticket with the page role (only requested for shared projects); throws if it cannot be obtained.
+@@ -126,8 +124,6 @@ export function bindCardSync(b: Binding, project: Project, h: CardSyncHooks): vo
+ 
+ /** The project changed: report again only if the cards it uses changed (only meaningful in a shared project) */
  export function noteProjectForCardSync(project: Project): void {
-   // 在线页面不绑(`syncManager.ts`),current 恒为空;在线构建里连同 /api/cards/sync/bind 剪掉(M8 遗留 L24,写法见 `src/online/pageFlag.ts`)
+-  // Online pages do not bind (`syncManager.ts`), so current is always empty; in the online build it is pruned together with /api/cards/sync/bind (M8 leftover L24, see `src/online/pageFlag.ts` for how it is written)
 -  if (ONLINE_BUILD) return;
    const b = current;
    if (!b || b.kind !== "shared") return;
    const ids = projectCardIds(project, b.projectId);
-@@ -186,7 +183,6 @@ function onNotice(d: Record<string, unknown>) {
-  * 在线构建里没有编辑器进程,回不支持(在线页面里不会出现卡片的冲突项:卡片源码同步只在桌面版跑)。
+@@ -203,7 +199,6 @@ function onNotice(d: Record<string, unknown>) {
+  * online pages: card source sync only runs in the desktop app).
   */
  export async function takeMineCard(key: string, source: string): Promise<{ ok: boolean; error?: string }> {
--  if (ONLINE_BUILD) return { ok: false, error: "在线页面不能改卡片源码" };
+-  if (ONLINE_BUILD) return { ok: false, error: tr("The online page cannot edit card source") };
    const j = await post("/api/cards/sync/take-mine", { key, source });
-   return j?.ok ? { ok: true } : { ok: false, error: typeof j?.error === "string" ? j.error : "编辑器进程没有回应" };
+   return j?.ok ? { ok: true } : { ok: false, error: typeof j?.error === "string" ? j.error : tr("The editor process did not respond") };
  }

@@ -1,12 +1,13 @@
 diff --git a/src/editor/sync/mergeTable.ts b/src/editor/sync/mergeTable.ts
-index f38f74c95aa5387f8752569f29ef310c480cbbb2..c10c7a7a6b6feeec76b1ec95be5622b73935adb3 100644
+index a678e027286311fe0a96caa6870c118440971f0a..6d4c5961150eaddf6815e2e164024a5e8981bb5b 100644
 --- a/src/editor/sync/mergeTable.ts
 +++ b/src/editor/sync/mergeTable.ts
-@@ -9,7 +9,88 @@
-  * 纯逻辑,连接与存储都由调用方注入(单测用假件)。
+@@ -13,7 +13,89 @@
+  * Pure logic; the connection and storage are injected by the caller (unit tests use fakes).
   */
  import { mergeIntoTable, removeFromTable, type MergeThing } from "./mergeItems";
 -import { cacheKey, type KvStore } from "./offlineCache";
++import { tr } from "../../i18n/index.ts";
 +export interface KvStore {
 +  get(key: string): Promise<unknown>;
 +  put(key: string, value: unknown): Promise<void>;
@@ -30,7 +31,7 @@ index f38f74c95aa5387f8752569f29ef310c480cbbb2..c10c7a7a6b6feeec76b1ec95be5622b7
 +      if (!d.objectStoreNames?.contains?.(OFFLINE_DB.store)) d.createObjectStore(OFFLINE_DB.store, { keyPath: "key" });
 +    };
 +    req.onsuccess = () => resolve(req.result);
-+    req.onerror = () => { opening = null; reject(req.error ?? new Error("IndexedDB 打不开")); };
++    req.onerror = () => { opening = null; reject(req.error ?? new Error(tr("IndexedDB can't be opened"))); };
 +  });
 +  const run = async <T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest | void): Promise<T> => {
 +    const d = await db();
@@ -40,8 +41,8 @@ index f38f74c95aa5387f8752569f29ef310c480cbbb2..c10c7a7a6b6feeec76b1ec95be5622b7
 +      let result: T;
 +      if (req) req.onsuccess = () => { result = req.result as T; };
 +      tx.oncomplete = () => resolve(result);
-+      tx.onerror = () => reject(tx.error ?? new Error("IndexedDB 写入失败"));
-+      tx.onabort = () => reject(tx.error ?? new Error("IndexedDB 写入被中止"));
++      tx.onerror = () => reject(tx.error ?? new Error(tr("IndexedDB write failed")));
++      tx.onabort = () => reject(tx.error ?? new Error(tr("IndexedDB write aborted")));
 +    });
 +  };
 +  return {
@@ -81,8 +82,8 @@ index f38f74c95aa5387f8752569f29ef310c480cbbb2..c10c7a7a6b6feeec76b1ec95be5622b7
 +export function defaultStore(): KvStore {
 +  if (sharedStore) return sharedStore;
 +  const g = globalThis as { indexedDB?: IdbFactory; localStorage?: StorageLike };
-+  try { if (g.indexedDB) return (sharedStore = idbStore(g.indexedDB)); } catch { /* 下一种 */ }
-+  try { if (g.localStorage) return (sharedStore = storageStore(g.localStorage)); } catch { /* 下一种 */ }
++  try { if (g.indexedDB) return (sharedStore = idbStore(g.indexedDB)); } catch { /* Next */ }
++  try { if (g.localStorage) return (sharedStore = storageStore(g.localStorage)); } catch { /* Next */ }
 +  return (sharedStore = memoryStore());
 +}
 +

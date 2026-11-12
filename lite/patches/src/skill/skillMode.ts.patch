@@ -1,20 +1,20 @@
 diff --git a/src/skill/skillMode.ts b/src/skill/skillMode.ts
-index b58bfd47d741055ca0914ebb63d3cc88c7487593..2edf1c9b7066af282b975c04d37b507213312120 100644
+index 65e096a522e569b82010aedaaa7f3c083980bddb..681a2f6bac4bd92589af5a02c03f34ec5186bff9 100644
 --- a/src/skill/skillMode.ts
 +++ b/src/skill/skillMode.ts
-@@ -11,7 +11,6 @@
-  * 为什么是轮询不是 SSE:壳那边本来就在轮询同一个文件(Rust 里没有网页那套事件流),
-  * 前端再单独搞一套推送只会让两边看到的时刻对不上。一秒一次的 JSON 请求便宜得很。
+@@ -15,7 +15,6 @@
+  * stream machinery), and adding a separate push mechanism in the frontend would only cause desynced
+  * timestamps between both sides. A JSON request once per second is dirt cheap.
   */
 -import { onlinePage } from "../online/pageFlag";
+ import { tr } from "../i18n/index.ts";
  
  export interface SkillState {
-   active: boolean;
-@@ -52,8 +51,6 @@ function notifyShell(active: boolean) {
+@@ -59,8 +58,6 @@ function notifyShell(active: boolean) {
  }
  
  async function poll() {
--  // 在线浏览器模式没有 SKILL 模式(要本机编辑器进程):不问
+-  // Online browser mode has no SKILL mode (requires local editor process): do not query
 -  if (onlinePage()) return;
    try {
      const res = await fetch("/api/skill-mode");

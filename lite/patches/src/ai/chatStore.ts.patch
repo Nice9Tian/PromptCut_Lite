@@ -1,5 +1,5 @@
 diff --git a/src/ai/chatStore.ts b/src/ai/chatStore.ts
-index f5381f9858df4cdcf0c4ad0e0ce61fdc1a564b1f..be6964674d157317afa3224314dddf61e114b185 100644
+index cc3afb67e6ccbbd6a37b2f8afde2fb195017cc12..f612a3f632947eac6801b414c64f852bea23fb07 100644
 --- a/src/ai/chatStore.ts
 +++ b/src/ai/chatStore.ts
 @@ -1,5 +1,4 @@
@@ -10,9 +10,9 @@ index f5381f9858df4cdcf0c4ad0e0ce61fdc1a564b1f..be6964674d157317afa3224314dddf61
    id: string;
 @@ -30,7 +29,6 @@ export function newChatId(): string {
  
- /** 获取会话概要列表（按更新时间倒序） */
+ /** Get session summary list (in descending order of update time) */
  export async function listChats(q?: string): Promise<ChatSummary[]> {
--  if (onlinePage()) return []; // 在线浏览器模式没有本机对话记录
+-  if (onlinePage()) return []; // Online browser mode has no local chat history
    try {
      const url = q ? `/api/chats/list?q=${encodeURIComponent(q)}` : "/api/chats/list";
      const res = await fetch(url);

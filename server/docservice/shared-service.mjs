@@ -1,15 +1,15 @@
 /**
- * 本机文档服务的统一组装入口。
+ * Unified assembly entry point for the local document service.
  *
- * 在本机 `local` 空间挂载：
- * - 服务地址登记（`endpoints`）
- * - 项目版本与操作流（`project`）
- * - 内容库（`content`）
- * - 成本记录（`costs`）
- * - 在场状态（`presence`）
- * - 待合并表（`merge` / `pending-merge`）
- * - 工具调用事件（`events`）
- * - 渲染任务队列（`render-queue`）
+ * Mounts in the local `local` space:
+ * - Service address registry (`endpoints`)
+ * - Project versions and operation stream (`project`)
+ * - Content store (`content`)
+ * - Cost records (`costs`)
+ * - Presence state (`presence`)
+ * - Pending merge table (`merge` / `pending-merge`)
+ * - Tool call events (`events`)
+ * - Render task queue (`render-queue`)
  */
 import path from 'node:path';
 import { createDocService } from './service.mjs';

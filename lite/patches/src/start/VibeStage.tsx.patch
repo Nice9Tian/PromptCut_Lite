@@ -1,13 +1,18 @@
 diff --git a/src/start/VibeStage.tsx b/src/start/VibeStage.tsx
-index ca0962da3c530f28867d83421f1c75b5d762d4f9..82738973287978c73e74285719e17a08b8239716 100644
+index d810fd7f06c75820a30cf695cc1430bdee9bfa0d..2f2feb7f9e89e4ae9e2077f1563cffbbaf0aa69f 100644
 --- a/src/start/VibeStage.tsx
 +++ b/src/start/VibeStage.tsx
-@@ -3,7 +3,7 @@
+@@ -2,10 +2,9 @@
+  * The real picture in Vibe mode: used both by the "Picture" cell of the right side panel and by the stage
+  * above "Detail editing".
   *
-  * 就是编辑界面的预览(`src/editor/Preview.tsx`,手机版用的那一种只出画面的样子 `variant="mobile"`)加它的测量遮罩
-  * (`ProbeGate`,打开项目时把卡片测一遍;成本记录全命中时一帧都不出现)—— 和手机版编辑界面挂的同一套
-- * (`src/mobile/MobileEditor.tsx`)。播放、跳转走 store 的同一套动作,所以「画面」和「详细编辑」看的是同一个播放头。
-+ * 播放、跳转走 store 的同一套动作,所以「画面」和「详细编辑」看的是同一个播放头。
+- * It is the editor's preview (`src/editor/Preview.tsx`, the picture-only form the mobile app uses,
+- * `variant="mobile"`) plus its measurement overlay (`ProbeGate`, which measures the cards when a project
+- * opens; when the cost records all hit, it does not appear for even one frame): the same set that the
+- * mobile app's editor mounts (`src/mobile/MobileEditor.tsx`). Playback and seeking go through the same
++ * It is the editor's preview (`src/editor/Preview.tsx`, the picture-only form `variant="mobile"`) plus
++ * its measurement overlay (`ProbeGate`, which measures the cards when a project opens; when the cost
++ * records all hit, it does not appear for even one frame). Playback and seeking go through the same
+  * actions of the store, so "Picture" and "Detail editing" watch the same playhead.
   *
-  * 同一时刻只挂一个(舞台是 iframe,挂两份就是两套舞台):「详细编辑」展开时拓展栏那一格换成一行字。
-  * 项目还没连上(store 里不是云端项目)时不挂,调用方给空态。
+  * Only one is mounted at any moment (the stage is an iframe, so mounting two copies means two stages):

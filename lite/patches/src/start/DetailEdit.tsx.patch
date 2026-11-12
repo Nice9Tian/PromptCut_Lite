@@ -1,21 +1,21 @@
 diff --git a/src/start/DetailEdit.tsx b/src/start/DetailEdit.tsx
-index 394047aad9d8ac307e29f604fde0289b5f2ea6d8..a82edb3978798caf345f079797dda32187ad9c1b 100644
+index e68e7b7a85d8a8a6fd8859c21edbc4a7bedde1fd..7bcac39f5e6bf4fbd23517e8337cffa08d340f95 100644
 --- a/src/start/DetailEdit.tsx
 +++ b/src/start/DetailEdit.tsx
-@@ -17,14 +17,14 @@
-  *
-  * 2026-10-23 先做的那一版是自己画的只读轨道(拖不动、改不了),和上面那句语义对不上,同日换成了真时间轴。
-  * 真时间轴的右键菜单在这一页多一项「引用到输入框」(`TimelineView` 的 `quoteClip`,只这一页传),
-- * 写法和编辑器「引用到 AI」同一个(`@卡片 名字(片段 id)`,`src/mobile/agentView.ts` 的 `quoteToken`),Agent 认得。
-+ * 写法和编辑器「引用到 AI」同一个(`@卡片 名字(片段 id)`,`src/start/agentView.ts` 的 `quoteToken`),Agent 认得。
+@@ -27,14 +27,14 @@
+  * which did not match the semantics above, so the same day it was replaced with the real timeline.
+  * The real timeline's right-click menu has one extra item on this page, "Quote into input box"
+  * (`quoteClip` of `TimelineView`, passed on this page only), written the same way as the editor's
+- * "Quote to AI" (`@card name (clip id)`, `quoteToken` in `src/mobile/agentView.ts`), which the Agent understands.
++ * "Quote to AI" (`@card name (clip id)`, `quoteToken` in `src/start/agentView.ts`), which the Agent understands.
   */
  import { useLayoutEffect, useRef, useState } from "react";
  import type { JSX } from "react";
  import { actions, useStore } from "../store/project";
  import { TimelineView } from "../editor/timeline";
  import { ResizeHandle } from "../editor/ResizeHandle";
--import { quoteToken } from "../mobile/agentView";
-+import { quoteToken } from "./agentView";
+-import { OVERLAY_QUOTE_KIND, quoteToken } from "../mobile/agentView";
++import { OVERLAY_QUOTE_KIND, quoteToken } from "./agentView";
  import { overlayQuoteId } from "../editor/timeline/overlayActions";
  import { VibeStage } from "./VibeStage";
- 
+ import { tr } from "../i18n/index.ts";

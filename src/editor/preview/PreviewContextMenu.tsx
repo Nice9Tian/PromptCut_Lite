@@ -1,12 +1,13 @@
 /**
- * 预览画布上的右键上下文菜单。
- * 包含「引用到 AI」和「删除」等针对单张卡片的操作。
- * 挂载在 window 顶层，点击外部时自动关闭。
+ * Right-click context menu on the preview canvas.
+ * Contains per-card actions such as "Reference in AI" and "Delete".
+ * Mounted at the top level of the window, and closes automatically when clicking outside.
  */
 import React, { useEffect, useRef } from "react";
 import { actions } from "../../store/project";
 import { getCard } from "../../kernel/registry";
 import { useReadOnly } from "../readOnly";
+import { tr } from "../../i18n/index.ts";
 
 interface Props {
   x: number;
@@ -18,13 +19,13 @@ interface Props {
 
 export function PreviewContextMenu({ x, y, clipId, cardId, onClose }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
-  // 这个项目只给了只读权限(游客):删除是写;「引用到 AI」要往只读的输入框里放东西,也置灰
+  // This project only grants read-only permission (guest): delete is a write; "Reference in AI" puts something into the read-only input box, so it is also greyed out
   const ro = useReadOnly();
 
   useEffect(() => {
     const handleDown = (e: MouseEvent) => {
       if (rootRef.current && rootRef.current.contains(e.target as Node)) {
-        return; // 点在菜单内部不关闭
+        return; // A click inside the menu doesn't close it
       }
       onClose();
     };
@@ -84,7 +85,7 @@ export function PreviewContextMenu({ x, y, clipId, cardId, onClose }: Props) {
         onMouseEnter={(e) => (e.currentTarget.style.background = "var(--ui-float, #3a3a3a)")}
         onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
       >
-        引用到 AI
+        {tr("Quote to AI")}
       </div>
       <div
         className="pc-menu-item"
@@ -95,7 +96,7 @@ export function PreviewContextMenu({ x, y, clipId, cardId, onClose }: Props) {
         onMouseEnter={(e) => (e.currentTarget.style.background = "var(--ui-float, #3a3a3a)")}
         onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
       >
-        删除
+        {tr("Delete")}
       </div>
     </div>
   );

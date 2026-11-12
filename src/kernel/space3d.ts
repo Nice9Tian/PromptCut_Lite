@@ -1,42 +1,56 @@
 /**
- * 三维空间的唯一换算口。CSS 那半边和 three.js 那半边都从这里取数,不许各算各的。
+ * The single conversion point for 3D space. The CSS half and the three.js half both take their numbers
+ * from here; each is not allowed to compute its own.
  *
- * # 为什么必须只有一处
+ * # Why there must be only one place
  *
- * `layout.ts` 要算 CSS 的 `perspective` 和 `transform`,将来 B 层要算 three.js 的相机。
- * 两边算的是同一件事。分开写的话,只要有一处改了没同步,画面就**悄悄错位** ——
- * 不报错、不崩,只是"看着不太对",而这种问题最难查。所以数只在这里出,那两边都是调用方。
+ * `layout.ts` has to compute CSS `perspective` and `transform`, and later layer B has to compute the
+ * three.js camera. Both sides compute the same thing. If they were written separately, as soon as one
+ * place changed without the other being synced, the picture would **silently drift out of place**:
+ * no error, no crash, just "doesn't look quite right", and that kind of problem is the hardest to
+ * track down. So the numbers come out only here, and both sides are callers.
  *
- * # 尺度约定
+ * # Scale convention
  *
- * **1 世界单位 = 1 舞台像素**,屏幕平面是 `z = 0`。
- * 这条必须钉死:一旦世界单位和像素脱钩,开 3D 模式的瞬间整个画面会突然缩放,
- * 而用户只是想让一张卡歪一点。
+ * **1 world unit = 1 stage pixel**, and the screen plane is `z = 0`.
+ * This must be pinned down: once world units and pixels are decoupled, the moment 3D mode is turned
+ * on the whole picture would suddenly rescale, when the user only wanted a card tilted a bit.
  *
- * # d 不是自由参数
+ * # d is not a free parameter
  *
- * 钉死尺度之后,相机距离和视场角就锁在一起:
+ * Once the scale is pinned down, camera distance and field of view are locked together:
  *
  *     d = H / (2 · tan(fov/2))
  *
- * 所以**只暴露 fov,d 由它推**,不要反过来让人填 d。理由有两条:
+ * So **only fov is exposed, and d is derived from it**; do not turn it around and make people fill in
+ * d. There are two reasons:
  *
- * 1. 竖屏项目 H 是 1920,同一个 d 的透视强度跟着变;fov 是"透视有多强"的直接表达,
- *    跨画幅稳定。
- * 2. d 的直觉会骗人。`d = 100` 看着像个合理的相机距离,实际对应 **fov 159°**,是鱼眼。
+ * 1. In a portrait project H is 1920, and the perspective strength of the same d changes with it; fov
+ *    is a direct expression of "how strong the perspective is" and is stable across aspect ratios.
+ * 2. Intuition about d is misleading. `d = 100` looks like a reasonable camera distance but actually
+ *    corresponds to **fov 159°**, which is a fisheye.
  *
- * # 坐标系
+ * # Coordinate system
  *
- * 舞台是屏幕坐标(原点左上、y 向下),three.js 是右手系(原点居中、y 向上)。
- * 转换时 **y 要翻**,`z` 的正方向是**朝观众**(和 CSS 的 `translateZ(+)` 一致)。
- * 相机放在 `+z`:three.js 默认相机朝 −z 看,放 +d 才是自然朝向,也才和 CSS 对齐。
- * 写成 −d 的话要么相机背对屏幕、要么 z 的正负和 CSS 相反,两种都是"看着不对但说不清"的 bug。
+ * The stage uses screen coordinates (origin at top left, y pointing down), while three.js is
+ * right-handed (origin centered, y pointing up).
+ * When converting, **y must be flipped**, and the positive direction of `z` is **toward the viewer**
+ * (consistent with CSS `translateZ(+)`).
+ * The camera is placed at `+z`: the three.js default camera looks toward −z, so placing it at +d is
+ * the natural orientation, and also the one aligned with CSS.
+ * Writing −d would either put the camera with its back to the screen or make the sign of z opposite
+ * to CSS; both are "looks wrong but hard to say why" bugs.
  */
 
-/** 透视强度的默认值。40° 稳重;50° 明显;30° 接近正交 */
+import { resolveFrameSize } from "./frameSize.mjs";
+
+/** Default perspective strength. 40° is steady; 50° is pronounced; 30° is close to orthographic */
 export const DEFAULT_FOV_DEG = 40;
 
-/** fov 的合理区间。太小没有透视感,太大变鱼眼(159° 那个数就是 d=100 换算出来的) */
+/**
+ * Reasonable range for fov. Too small and there is no sense of perspective, too large and it turns
+ * fisheye (the 159° figure is what d=100 converts to)
+ */
 export const MIN_FOV_DEG = 5;
 export const MAX_FOV_DEG = 120;
 
@@ -46,13 +60,13 @@ export interface StageSize {
 }
 
 export interface Camera3D {
-  /** 视场角(度),垂直方向 */
+  /** Field of view (degrees), vertical */
   fovDeg: number;
-  /** 相机到 z=0 平面的距离,单位 = 舞台像素。同时就是 CSS 的 perspective 值 */
+  /** Camera distance to the z=0 plane, unit = stage pixels. Also the CSS perspective value */
   distance: number;
-  /** 宽高比,给 three.js 的 PerspectiveCamera 用 */
+  /** Aspect ratio, for three.js's PerspectiveCamera */
   aspect: number;
-  /** 相机位置(世界坐标)。永远在 +z */
+  /** Camera position (world coordinates). Always on +z */
   position: [number, number, number];
   near: number;
   far: number;
@@ -65,12 +79,12 @@ export function clampFov(fovDeg: number | undefined): number {
 }
 
 /**
- * 由 fov 和画幅推出相机。
+ * Derive the camera from fov and aspect ratio.
  *
- * `distance` 同时是 CSS 的 `perspective` 值 —— CSS 的 `perspective: N px` 在数学上
- * 就是"观察者距 z=0 平面 N 像素",和这里的 d 是同一个量、同一个单位。
- * 所以 A 层(DOM + CSS 3D)和 B 层(three.js)天然对齐,不需要任何标定。
- * three.js 自己的 CSS3DRenderer 就是这么干的。
+ * `distance` is also the CSS `perspective` value: CSS `perspective: N px` is mathematically
+ * "the viewer is N pixels from the z=0 plane", the same quantity in the same unit as d here.
+ * So layer A (DOM + CSS 3D) and layer B (three.js) are aligned by nature, with no calibration needed.
+ * three.js's own CSS3DRenderer does exactly this.
  */
 export function cameraFor(stage: StageSize, fovDeg?: number): Camera3D {
   const fov = clampFov(fovDeg);
@@ -81,46 +95,53 @@ export function cameraFor(stage: StageSize, fovDeg?: number): Camera3D {
     distance,
     aspect: Math.max(1e-6, stage.width / h),
     position: [0, 0, distance],
-    // near 取 1 像素;far 给足,卡片往后退到相机距离的十倍开外已经小成一个点了
+    // near is 1 pixel; far is generous: a card pushed back beyond ten times the camera distance has
+    // already shrunk to a dot
     near: 1,
     far: distance * 10,
   };
 }
 
-/** CSS 要的 perspective 值(像素)。就是相机距离,单列一个名字是为了让调用处读起来是那个意思 */
+/**
+ * The perspective value CSS needs (pixels). It is just the camera distance; it has its own name so that
+ * the call site reads as what it means
+ */
 export function perspectivePx(stage: StageSize, fovDeg?: number): number {
   return cameraFor(stage, fovDeg).distance;
 }
 
-/** 反过来:给定相机距离,它等价于多大的 fov。给调试和文档用 */
+/** The reverse: the fov equivalent to a given camera distance. For debugging and docs */
 export function fovForDistance(stage: StageSize, distance: number): number {
   const h = Math.max(1, stage.height);
   return (2 * Math.atan(h / (2 * Math.max(1e-6, distance))) * 180) / Math.PI;
 }
 
 export interface StagePoint {
-  /** 舞台像素,原点左上,x 向右 */
+  /** Stage pixels, origin at top left, x pointing right */
   x: number;
-  /** 舞台像素,原点左上,**y 向下** */
+  /** Stage pixels, origin at top left, **y pointing down** */
   y: number;
-  /** 朝观众为正,单位仍是舞台像素。默认 0 = 屏幕平面 */
+  /** Positive toward the viewer, unit still stage pixels. Default 0 = the screen plane */
   z?: number;
 }
 
 export type WorldPoint = [number, number, number];
 
 /**
- * 归一化 `-0`。
+ * Normalize `-0`.
  *
- * y 轴要翻向,而 `-(540 - 540)` 得到的是 **`-0`** 而不是 `0`。数值上两者相等,
- * 但 `Object.is` 和 `assert.deepEqual` 区分它们,`JSON.stringify(-0)` 还会输出 `0` ——
- * 于是"内存里的对象"和"存盘再读回来的对象"会不相等,而值明明没变。
- * 加个 `+ 0` 就抹平了(`-0 + 0 === +0`)。看着像废话,删掉就会有人花半天查一个假的不一致。
+ * The y axis has to be flipped, and `-(540 - 540)` yields **`-0`** rather than `0`. Numerically the
+ * two are equal, but `Object.is` and `assert.deepEqual` tell them apart, and `JSON.stringify(-0)`
+ * outputs `0`, so "the object in memory" and "the object saved and read back" would be unequal even
+ * though the value has not changed.
+ * Adding `+ 0` smooths it out (`-0 + 0 === +0`). It looks like a pointless step, but delete it and
+ * someone will spend half a day chasing a bogus inconsistency.
  */
 const nz = (v: number): number => v + 0;
 
 /**
- * 舞台坐标 → 世界坐标。原点从左上挪到画面中心,y 翻向,z 原样(两边都是"朝观众为正")。
+ * Stage coordinates → world coordinates. The origin moves from the top left to the picture center, y is
+ * flipped, and z is unchanged (on both sides "positive toward the viewer").
  */
 export function stageToWorld(p: StagePoint, stage: StageSize): WorldPoint {
   return [
@@ -130,7 +151,7 @@ export function stageToWorld(p: StagePoint, stage: StageSize): WorldPoint {
   ];
 }
 
-/** 世界坐标 → 舞台坐标。和 stageToWorld 互为逆运算 */
+/** World coordinates → stage coordinates. The inverse operation of stageToWorld */
 export function worldToStage(w: WorldPoint, stage: StageSize): Required<StagePoint> {
   return {
     x: nz(w[0] + stage.width / 2),
@@ -140,12 +161,15 @@ export function worldToStage(w: WorldPoint, stage: StageSize): Required<StagePoi
 }
 
 /**
- * 一个点经过透视投影之后落在屏幕上的位置和缩放比。
+ * The position and scale at which a point lands on the screen after perspective projection.
  *
- * 给两个用处:实体模式要知道代理平面画多大,包围盒要知道投影后占多少地方。
- * 公式是针孔相机:离相机越近(z 越大)放得越大,`scale = d / (d − z)`。
- * `z ≥ d` 表示点跑到相机后面或正好在相机上 —— 那时投影没有意义,返回 null,
- * 调用方自己决定是隐藏还是夹住,别在这里替它做决定。
+ * It serves two purposes: solid mode needs to know how large to draw the proxy plane, and the bounding
+ * box needs to know how much room it takes after projection.
+ * The formula is a pinhole camera: the closer to the camera (the larger z), the bigger it is drawn,
+ * `scale = d / (d − z)`.
+ * `z ≥ d` means the point has gone behind the camera or exactly onto it; projection is meaningless
+ * then, so it returns null, and the caller decides for itself whether to hide or clamp; do not make
+ * that decision for it here.
  */
 export function projectStage(
   p: StagePoint,
@@ -164,4 +188,181 @@ export function projectStage(
     y: cy + (p.y - cy) * scale,
     scale,
   };
+}
+
+/**
+ * Near-clip fraction of camera focal distance `d` for 2D boards placed in 3D space.
+ *
+ * `cameraFor().near` stays 1 stage pixel so genuine 3D geometry (`scene-3d`) can approach the lens,
+ * whereas a flat DOM board at `d - z = 1 px` scales by `d / 1 ≈ 1484×` (at 1080p, 40° fov) and swells
+ * across the entire frame right before crossing `z = d`. Clipping boards at `0.15 · d` caps perspective
+ * magnification at `~6.7×` and culls boards cleanly before and after crossing the camera plane.
+ */
+export const BOARD_NEAR_RATIO = 0.15;
+
+/** Structural frame subset accepted by 3D board helpers (kept independent of `types.ts` and `layout.ts`). */
+export interface BoardFrame3D {
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  anchor?: readonly [number, number];
+  scale?: number;
+  rotate?: number;
+  rotateX?: number;
+  rotateY?: number;
+  translateZ?: number;
+}
+
+/** Normalized `[0..1]` content rectangle within a board (origin at top-left, matching `alphaBox`). */
+export interface BoardSubBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Optional camera pose override for walk-through or orbited viewpoints; defaults to `cameraFor(stage, fovDeg)`. */
+export interface CameraPose3D {
+  /** Camera position in world coordinates (default: `[0, 0, distance]`) */
+  position?: WorldPoint;
+  /** Unit vector along the camera's line of sight (default: `[0, 0, -1]`) */
+  forward?: WorldPoint;
+  /** Near-clip distance along `forward` in stage pixels (default: `boardNearDistance(stage, fovDeg)`) */
+  near?: number;
+}
+
+/** Near-clip distance (stage pixels) for 2D boards viewed through the stage camera. */
+export function boardNearDistance(stage: StageSize, fovDeg?: number): number {
+  const cam = cameraFor(stage, fovDeg);
+  return Math.max(cam.near, cam.distance * BOARD_NEAR_RATIO);
+}
+
+function unitForward(fwd: WorldPoint | undefined): WorldPoint {
+  if (!fwd) return [0, 0, -1];
+  const len = Math.hypot(fwd[0], fwd[1], fwd[2]);
+  if (!(len > 1e-9)) return [0, 0, -1];
+  return [nz(fwd[0] / len), nz(fwd[1] / len), nz(fwd[2] / len)];
+}
+
+/**
+ * World coordinates of the four corners of a placed board (top-left → top-right → bottom-right → bottom-left).
+ *
+ * Uses the exact transform chain of `frameCss` / `visualBox` (`rotate → scale → rotateY → rotateX → translateZ`
+ * around the anchor, then `stageToWorld`), optionally restricted to a normalized `[0..1]` `subBox` when the
+ * board geometry has been cropped to its non-transparent content box.
+ */
+export function boardWorldCorners(
+  frame: BoardFrame3D | undefined,
+  stage: StageSize,
+  subBox?: BoardSubBox,
+): [WorldPoint, WorldPoint, WorldPoint, WorldPoint] {
+  const size = resolveFrameSize(frame as any, stage);
+  const w = size.w;
+  const h = size.h;
+  const fx = frame?.x ?? 0;
+  const fy = frame?.y ?? 0;
+  const ax = frame?.anchor?.[0] ?? 0;
+  const ay = frame?.anchor?.[1] ?? 0;
+  const scale = frame?.scale ?? 1;
+  const rotate = frame?.rotate ?? 0;
+  const rotateX = frame?.rotateX ?? 0;
+  const rotateY = frame?.rotateY ?? 0;
+  const translateZ = frame?.translateZ ?? 0;
+
+  const baseLeft = fx - ax * w;
+  const baseTop = fy - ay * h;
+  const left = subBox ? baseLeft + subBox.x * w : baseLeft;
+  const top = subBox ? baseTop + subBox.y * h : baseTop;
+  const bw = subBox ? subBox.w * w : w;
+  const bh = subBox ? subBox.h * h : h;
+
+  const rad = (rotate * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const rx = (rotateX * Math.PI) / 180;
+  const ry = (rotateY * Math.PI) / 180;
+  const cosX = Math.cos(rx);
+  const sinX = Math.sin(rx);
+  const cosY = Math.cos(ry);
+  const sinY = Math.sin(ry);
+  const has3d = !!(rotateX || rotateY || translateZ);
+
+  const rawCorners: [number, number][] = [
+    [left, top],
+    [left + bw, top],
+    [left + bw, top + bh],
+    [left, top + bh],
+  ];
+
+  const out = rawCorners.map(([cxi, cyi]) => {
+    const dx0 = (cxi - fx) * scale;
+    const dy0 = (cyi - fy) * scale;
+    let x = dx0 * cos - dy0 * sin;
+    let y = dx0 * sin + dy0 * cos;
+    let z = 0;
+    if (has3d) {
+      const nx = x * cosY + z * sinY;
+      z = -x * sinY + z * cosY;
+      x = nx;
+      const ny = y * cosX - z * sinX;
+      z = y * sinX + z * cosX;
+      y = ny;
+      z += translateZ;
+    }
+    return stageToWorld({ x: fx + x, y: fy + y, z }, stage);
+  });
+
+  return out as [WorldPoint, WorldPoint, WorldPoint, WorldPoint];
+}
+
+/**
+ * Signed depth range of a placed board along the camera's forward ray (`> 0` in front of the camera,
+ * `<= 0` on or behind the camera plane).
+ */
+export function boardCameraDepthRange(
+  frame: BoardFrame3D | undefined,
+  stage: StageSize,
+  fovDeg?: number,
+  pose?: CameraPose3D,
+  subBox?: BoardSubBox,
+): { minDepth: number; maxDepth: number; centerDepth: number; near: number } {
+  const cam = cameraFor(stage, fovDeg);
+  const pos = pose?.position ?? cam.position;
+  const fwd = unitForward(pose?.forward);
+  const near = pose?.near ?? Math.max(cam.near, cam.distance * BOARD_NEAR_RATIO);
+  const corners = boardWorldCorners(frame, stage, subBox);
+  let minDepth = Infinity;
+  let maxDepth = -Infinity;
+  let sum = 0;
+  for (const c of corners) {
+    const d = (c[0] - pos[0]) * fwd[0] + (c[1] - pos[1]) * fwd[1] + (c[2] - pos[2]) * fwd[2];
+    if (d < minDepth) minDepth = d;
+    if (d > maxDepth) maxDepth = d;
+    sum += d;
+  }
+  return {
+    minDepth: nz(minDepth),
+    maxDepth: nz(maxDepth),
+    centerDepth: nz(sum / 4),
+    near: nz(near),
+  };
+}
+
+/**
+ * Whether a placed 2D board has passed behind (or into the near-clip zone of) the camera and must be culled.
+ *
+ * Returns `true` once every corner of the board lies at or behind the near plane (`maxDepth <= near`),
+ * while tilted boards that straddle `near` rely on the matching camera near plane (`boardNearDistance`)
+ * to clip the near portion without exploding perspective scale.
+ */
+export function isBoardBehindCamera(
+  frame: BoardFrame3D | undefined,
+  stage: StageSize,
+  fovDeg?: number,
+  pose?: CameraPose3D,
+  subBox?: BoardSubBox,
+): boolean {
+  const { maxDepth, near } = boardCameraDepthRange(frame, stage, fovDeg, pose, subBox);
+  return maxDepth <= near;
 }

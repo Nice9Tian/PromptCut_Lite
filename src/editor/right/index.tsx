@@ -16,12 +16,14 @@ export function RightPanel() {
 
   useEffect(() => {
     const cleanup = connectMcpExecutor(() => editorApi, (s) => setMcpConnected(s.connected));
-    // 「用户正在编辑」推给同一个编辑器进程(A2),Agent 读写到这些片段时工具结果带提示
+    // Push "user is editing" to the same editor process (A2), so when the Agent reads or writes these clips
+    // the tool results carry a hint
     const stopEditing = startUserEditing();
     return () => { stopEditing(); cleanup(); };
   }, []);
 
-  // 右栏整列:左边一张宿主卡片(显示右侧 rail 选中项的页面),右边贴窗口边缘的竖向 rail(侧边自由布局,editor/dock/)。
+  // The whole right rail column: on the left a host card (showing the page of the item selected in the right
+  // rail), on the right a vertical rail stuck to the window edge (free side layout, editor/dock/).
 
   return (
     <>
@@ -30,20 +32,19 @@ export function RightPanel() {
         <RailBar side="right" />
       </div>
       {/*
-        所有页面(五个分区、剧本页、各 AiPanel)在这里各渲染一次,portal 进各自的固定节点,两侧宿主只挪 DOM 节点。
-        RightPanel 在 Editor 网格里永远占同一个兄弟槽位、从不卸载,所以拖动 / 切换 / 收起都不会让 AiPanel 卸载重建。
-        排在宿主后面:宿主的布局效应先跑、先登记,页面内容的布局效应跑的时候节点已经挂进文档
+        All pages (five sections, script page, each AiPanel) are rendered once here, portaled into their
+        respective fixed nodes; hosts on both sides only move DOM nodes. RightPanel always occupies the
+        same sibling slot in the Editor grid and never unmounts, so dragging / switching / collapsing
+        never causes AiPanel to unmount and rebuild. Positioned after the host: the host's layout effect
+        runs first and registers first; when page content layout effects run, nodes are already mounted in
+        the document.
       */}
       <DockPages mcpConnected={mcpConnected} />
-      {/*
-        下面三个浮层在线页面打不开(打开它们的入口在线都置灰或不存在:网页采集、配音设置、Agent 交出浏览器),
-        在线构建里不挂,连同背后的 /api 调用一起剪掉(C10 契约第 10 节;M8 遗留 L24)
-      */}
-      {/* 站点登录框:开始页的卡和 collect_login 工具都会打开它,挂在这里才能在编辑台里出现 */}
+      {/* Site login box: the card on the start page and the collect_login tool both open it; it is mounted here so it can appear in the editor */}
       <CollectLoginDialog />
-      {/* 配音设置子窗口:顶栏的「配音设置」按钮开它 */}
+      {/* Voiceover settings child window: opened by the "Voiceover settings" button on the top bar */}
       <VoiceSettingsDialog />
-      {/* 桌面壳模式下 agent 交出浏览器时的浮层(Chrome 方案下永远不会打开) */}
+      {/* Overlay for when the agent hands over the browser in desktop shell mode (never opens with the Chrome approach) */}
       <AgentBrowserFrame />
     </>
   );

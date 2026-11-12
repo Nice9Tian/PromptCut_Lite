@@ -6,6 +6,7 @@ import "./ProjectSettingsDialog.css";
 import { ReadOnlyFence } from "./ReadOnlyFence";
 import { useReadOnly } from "./readOnly";
 import { CREATIVITY_HINT, CREATIVITY_LABEL, CREATIVITY_LEVELS, CREATIVITY_SHORT, DEFAULT_CREATIVITY, normalizeCreativity, projectCreativity, type CreativityLevel } from "../kernel/creativity.mjs";
+import { tr } from "../i18n/index.ts";
 
 export interface ProjectSettingsDialogProps {
   open: boolean;
@@ -13,11 +14,11 @@ export interface ProjectSettingsDialogProps {
 }
 
 type AspectRatio = "16:9" | "4:3";
-/** pinned 架构 7：项目选项里可切的帧率。新项目默认 30（`src/kernel/project.ts`） */
+/** pinned architecture 7: frame rates selectable in the project options. New projects default to 30 (`src/kernel/project.ts`) */
 const FPS_OPTIONS = [24, 25, 30, 60] as const;
 type Fps = (typeof FPS_OPTIONS)[number];
 const FALLBACK_FPS: Fps = 30;
-/** 项目里存着的帧率不在选项里（手改过工程文件）时退回 30，不悄悄改掉用户的值以外的东西 */
+/** If the project's stored frame rate is not among the options (project file edited by hand), fall back to 30, and do not silently change anything beyond the user's value */
 const asFps = (value: number): Fps => (FPS_OPTIONS as readonly number[]).includes(value) ? (value as Fps) : FALLBACK_FPS;
 type Orientation = "horizontal" | "vertical";
 
@@ -32,7 +33,7 @@ const RESOLUTION_MAP: Record<AspectRatio, Record<Orientation, { width: number; h
   },
 };
 
-/** 根据当前画幅尺寸反推比例与方向,推导失败默认 16:9 横版 */
+/** Derive ratio and orientation from the current aspect ratio size; if derivation fails, default to 16:9 landscape */
 function inferSettings(w: number, h: number): { ratio: AspectRatio; orientation: Orientation } {
   if (w === 1920 && h === 1080) return { ratio: "16:9", orientation: "horizontal" };
   if (w === 1080 && h === 1920) return { ratio: "16:9", orientation: "vertical" };
@@ -52,8 +53,7 @@ function inferSettings(w: number, h: number): { ratio: AspectRatio; orientation:
 }
 
 /**
- * 项目设置对话框:配置视频画幅比例与方向,实时预览分辨率;底下一段「多用户协作」(C10a 契约第 6 节,`sync/CollabSection.tsx`)。
- * 房间关联与项目元数据分开保存:「确定」先写项目元数据,再交给协作段做开启 / 取消;它有动作在做时对话框留着显示进度与结果。
+ * Project settings dialog: configures the video aspect ratio and orientation, with a live resolution preview.
  */
 export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogProps) {
   const curW = useStore((s) => s.project.width);
@@ -69,12 +69,12 @@ export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogPr
   const [orientation, setOrientation] = useState<Orientation>("horizontal");
   const [fps, setFps] = useState<Fps>(FALLBACK_FPS);
   const [duration, setDuration] = useState("");
-  /** R9:canvas 卡的共享 WebGL 渲染器走哪条路线;空串 = 按宿主能力(低内存档 shared,否则 perDocument) */
+  /** R9: which route the shared WebGL renderer of canvas cards takes; empty string = by host capability (shared in the low-memory tier, otherwise perDocument) */
   const [glRoute, setGlRoute] = useState<"" | "perDocument" | "shared">("");
-  /** 创造力等级的项目默认(user-workflow.md「创造力等级」):AI 栏每个对话默认取它,桌面 APP 的会话跟随它 */
+  /** Project default for the creativity level (user-workflow.md "creativity level"): every chat in the AI panel defaults to it, and the desktop app's session follows it */
   const [creativity, setCreativity] = useState<CreativityLevel>(DEFAULT_CREATIVITY);
   const durationInputRef = useRef<HTMLInputElement>(null);
-  // 这个项目只给了只读权限(游客):设置项照常显示,但改不了,「确定」置灰,只剩「关闭」
+  // This project was given read-only permission (guest): settings are shown as usual but cannot be changed, "OK" is greyed out, and only "Close" remains
   const ro = useReadOnly();
 
   const currentRes = RESOLUTION_MAP[ratio][orientation];
@@ -84,17 +84,19 @@ export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogPr
     if (!durationInputRef.current?.reportValidity()) return;
     const requestedDuration = Number(duration);
     if (!Number.isFinite(requestedDuration) || requestedDuration < 1) return;
-    // 名字允许留空,但不允许真的变成空标题——空了就退回「未命名」
+    // The name may be left empty, but it must not end up as a truly empty title: if empty, fall back to "Untitled"
     actions.setProjectMeta({
-      name: name.trim() || "未命名",
+      name: name.trim() || tr("Untitled"),
       width: currentRes.width,
       height: currentRes.height,
-      // pinned 架构 7：所有步长按 1/fps。成本键含 fps（`cardCostKey`），换了帧率
-      // 全部卡的记录都失配 —— `probeRunner` 据此重挡一次遮罩、重测一轮。
+      // pinned architecture 7: all step sizes are 1/fps. The cost key includes fps (`cardCostKey`), so after a
+      // frame rate change every card's record mismatches. `probeRunner` re-covers the mask and re-measures once.
       fps,
-      // 切了路线:两个舞台按新的生效路线重建连接;`device` 串跟着变,probeRunner 重挡遮罩、重测(同切 fps)
+      // Route switched: both stages rebuild their connections on the new effective route; the `device` string changes
+      // too, and probeRunner re-covers the mask and re-measures (same as an fps switch)
       glRoute: glRoute || undefined,
-      // 出厂的「高」不落字段:旧项目没有这个字段,存盘结果和从没改过一样
+      // The factory default "High" is not written to the field: old projects have no such field, so the saved result
+      // is the same as if it was never changed
       creativity: creativity === DEFAULT_CREATIVITY ? undefined : creativity,
     });
     if (requestedDuration !== curDuration) actions.setDurationManual(requestedDuration);
@@ -108,7 +110,7 @@ export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogPr
   const confirmRef = useRef(handleConfirm);
   const cancelRef = useRef(handleCancel);
 
-  // 照 ConfirmDialog.tsx 的做法:在无依赖的 useEffect 里同步 ref,不在 render 期间产生副作用
+  // Follow ConfirmDialog.tsx: sync the ref in a dependency-less useEffect, with no side effects during render
   useEffect(() => {
     confirmRef.current = handleConfirm;
     cancelRef.current = handleCancel;
@@ -142,7 +144,8 @@ export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogPr
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open]);
 
-  // 遮罩:按下和松开都落在遮罩上才关,在输入框里拖着选文字不会误关(见 ui/backdropClose.ts)
+  // Backdrop: close only when both press and release land on the backdrop, so dragging to select text inside an
+  // input does not close it by mistake (see ui/backdropClose.ts)
   const backdrop = useBackdropClose(handleCancel);
   if (!open) return null;
 
@@ -156,25 +159,25 @@ export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogPr
         onClick={(e) => e.stopPropagation()}
       >
         <div id="pc-dialog-title-settings" className="pc-dialog-title">
-          项目设置
+          {tr("Project settings")}
         </div>
         <div className="pc-dialog-body">
           {ro.locked && <div className="pc-dialog-row" data-pc="settings-readonly-note">{ro.why}</div>}
           <ReadOnlyFence>
           <div className="pc-dialog-row">
-            <label className="pc-dialog-label" htmlFor="pc-proj-name">项目名称</label>
+            <label className="pc-dialog-label" htmlFor="pc-proj-name">{tr("Project name")}</label>
             <input
               id="pc-proj-name"
               className="pc-dialog-input"
               type="text"
               value={name}
               maxLength={80}
-              placeholder="未命名"
+              placeholder={tr("Untitled")}
               onChange={(e) => setName(e.target.value)}
             />
           </div>
           <div className="pc-dialog-row">
-            <span className="pc-dialog-label">画幅比例</span>
+            <span className="pc-dialog-label">{tr("Aspect ratio")}</span>
             <div className="pc-dialog-options">
               <button
                 type="button"
@@ -193,26 +196,26 @@ export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogPr
             </div>
           </div>
           <div className="pc-dialog-row">
-            <span className="pc-dialog-label">画幅方向</span>
+            <span className="pc-dialog-label">{tr("Orientation")}</span>
             <div className="pc-dialog-options">
               <button
                 type="button"
                 className={`pc-dialog-opt${orientation === "horizontal" ? " pc-dialog-opt--on" : ""}`}
                 onClick={() => setOrientation("horizontal")}
               >
-                横版
+                {tr("Landscape")}
               </button>
               <button
                 type="button"
                 className={`pc-dialog-opt${orientation === "vertical" ? " pc-dialog-opt--on" : ""}`}
                 onClick={() => setOrientation("vertical")}
               >
-                竖版
+                {tr("Portrait")}
               </button>
             </div>
           </div>
           <div className="pc-dialog-row">
-            <label className="pc-dialog-label" htmlFor="pc-proj-fps">帧率</label>
+            <label className="pc-dialog-label" htmlFor="pc-proj-fps">{tr("Frame rate")}</label>
             <select
               id="pc-proj-fps"
               data-pc="fps-select"
@@ -226,7 +229,7 @@ export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogPr
             </select>
           </div>
           <div className="pc-dialog-row">
-            <label className="pc-dialog-label" htmlFor="pc-proj-gl-route">三维渲染</label>
+            <label className="pc-dialog-label" htmlFor="pc-proj-gl-route">{tr("3D rendering")}</label>
             <select
               id="pc-proj-gl-route"
               data-pc="gl-route-select"
@@ -234,28 +237,28 @@ export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogPr
               value={glRoute}
               onChange={(e) => setGlRoute(e.target.value as "" | "perDocument" | "shared")}
             >
-              <option value="">自动(按本机内存)</option>
-              <option value="perDocument">每个舞台各一个</option>
-              <option value="shared">两个舞台共用一个(省内存)</option>
+              <option value="">{tr("Auto (by local memory)")}</option>
+              <option value="perDocument">{tr("One per stage")}</option>
+              <option value="shared">{tr("One shared by both stages (saves memory)")}</option>
             </select>
           </div>
           <div className="pc-dialog-row">
-            <label className="pc-dialog-label" htmlFor="pc-proj-creativity">创造力等级</label>
+            <label className="pc-dialog-label" htmlFor="pc-proj-creativity">{tr("Creativity level")}</label>
             <select
               id="pc-proj-creativity"
               data-pc="creativity-select"
               className="pc-dialog-select"
               value={creativity}
-              title={`${CREATIVITY_LABEL[creativity]}:${CREATIVITY_HINT[creativity]}。AI 栏每个对话默认取这个等级,可以单独改;桌面 APP 的会话跟随它`}
+              title={tr("{0}: {1}. Each chat in the AI panel uses this level by default and can override it; desktop app sessions follow it", tr(CREATIVITY_LABEL[creativity]), tr(CREATIVITY_HINT[creativity]))}
               onChange={(e) => setCreativity(normalizeCreativity(e.target.value) ?? DEFAULT_CREATIVITY)}
             >
               {CREATIVITY_LEVELS.map((lv) => (
-                <option key={lv} value={lv} title={CREATIVITY_HINT[lv]}>{CREATIVITY_LABEL[lv]} · {CREATIVITY_SHORT[lv]}</option>
+                <option key={lv} value={lv} title={tr(CREATIVITY_HINT[lv])}>{tr(CREATIVITY_LABEL[lv])} · {tr(CREATIVITY_SHORT[lv])}</option>
               ))}
             </select>
           </div>
           <div className="pc-dialog-row">
-            <label className="pc-dialog-label" htmlFor="pc-proj-duration">总时长（秒）</label>
+            <label className="pc-dialog-label" htmlFor="pc-proj-duration">{tr("Total duration (seconds)")}</label>
             <input
               ref={durationInputRef}
               id="pc-proj-duration"
@@ -269,7 +272,7 @@ export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogPr
             />
           </div>
           <div className="pc-dialog-row">
-            <span className="pc-dialog-label">应用分辨率</span>
+            <span className="pc-dialog-label">{tr("Apply resolution")}</span>
             <span className="pc-dialog-res">
               {currentRes.width} × {currentRes.height}
             </span>
@@ -278,7 +281,7 @@ export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogPr
         </div>
         <div className="pc-dialog-foot">
           <button type="button" className="pc-btn" onClick={handleCancel}>
-            {ro.locked ? "关闭" : "取消"}
+            {ro.locked ? tr("Close") : tr("Cancel")}
           </button>
           <button
             type="button"
@@ -287,7 +290,7 @@ export function ProjectSettingsDialog({ open, onClose }: ProjectSettingsDialogPr
             title={ro.title()}
             onClick={() => void handleConfirm()}
           >
-            确定
+            {tr("OK")}
           </button>
         </div>
       </div>

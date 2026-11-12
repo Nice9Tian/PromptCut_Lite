@@ -1,13 +1,18 @@
 diff --git a/server/test/port-file.test.mjs b/server/test/port-file.test.mjs
-index ccf3f2820bcddb4bd27d5597e5c73d02ab236360..98c0edaf632286e999a2fc0c90e30440d0a32b30 100644
+index 8a2c0f634f05a37ca04a091792eaf2e2143470f1..f07544eba0beffab3a8f15b4eecda74448261267 100644
 --- a/server/test/port-file.test.mjs
 +++ b/server/test/port-file.test.mjs
-@@ -111,7 +111,7 @@ test('port-file:scripts/ 下起编辑器的脚本都带 PROMPTCUT_NO_PORT_FILE=1
+@@ -115,11 +115,11 @@ test('port-file: every script under scripts/ that starts the editor carries PROM
+     const first = src.match(/^import[\s{*'"][^\n]*/m)?.[0] || '';
+     const want = path.relative(path.dirname(file), path.join(REPO, 'scripts', 'lib', 'no-user-dirs.mjs')).split(path.sep).join('/');
+     const spec = want.startsWith('.') ? want : `./${want}`;
+-    const viaEntry = first.startsWith(`import '${spec}'`);
++    const viaEntry = first.startsWith(`import '${spec}'`) || first.startsWith(`import "${spec}"`);
      const explicit = /PROMPTCUT_NO_PORT_FILE:\s*'1'/.test(src);
-     if (!viaEntry && !explicit) offenders.push(`${rel}:会起编辑器,第一个 import 不是 no-user-dirs.mjs,也没显式设 PROMPTCUT_NO_PORT_FILE: '1'`);
+     if (!viaEntry && !explicit) offenders.push(`${rel}: starts the editor, but its first import is not no-user-dirs.mjs and it does not explicitly set PROMPTCUT_NO_PORT_FILE: '1'`);
    }
--  assert.ok(checked.length >= 25, `扫描到的脚本太少(${checked.length}),识别规则可能坏了:${checked.join(', ')}`);
-+  assert.ok(checked.length >= 10, `扫描到的脚本太少(${checked.length}),识别规则可能坏了:${checked.join(', ')}`);
+-  assert.ok(checked.length >= 25, `Too few scripts scanned (${checked.length}), the detection rule may be broken: ${checked.join(', ')}`);
++  assert.ok(checked.length >= 10, `Too few scripts scanned (${checked.length}), the detection rule may be broken: ${checked.join(', ')}`);
    for (const must of ['scripts/lib/dev-server.mjs', 'scripts/probes/ready-index-probe.mjs', 'scripts/probes/cold-start-probe.mjs']) {
-     assert.ok(checked.includes(must), `${must} 起编辑器,识别规则却没认出来`);
+     assert.ok(checked.includes(must), `${must} starts the editor, but the detection rule did not recognize it`);
    }

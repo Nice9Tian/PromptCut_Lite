@@ -12,43 +12,44 @@ import { CUTS_ITEM, agentIdOf, effectiveActive, isSectionItem, plusAnchor, visib
 import { addAgentOnSide, clickRailItem, useRailLayout } from "./railStore";
 import "../right/chat/chat.css";
 import "./dock.css";
+import { tr } from "../../i18n/index.ts";
 
-/** rail 项 56 高 + 4 间距;「+」40 高 + 4 间距(studio.css / dock.css) */
+/** A rail item is 56 high + 4 gap; "+" is 40 high + 4 gap (studio.css / dock.css) */
 const SLOT_H = 60;
 const PLUS_H = 44;
 
-/** Agent 项悬停说明末尾补一行状态 */
+/** Append a status line at the end of the Agent item's hover description */
 const AGENT_STATE_TIP: Record<"busy" | "done" | "interrupted" | "idle", string> = {
-  busy: "正在运行",
-  done: "已完成,等你查看",
-  interrupted: "已中断,等你查看",
+  busy: tr("Running"),
+  done: tr("Finished, waiting for you to review"),
+  interrupted: tr("Interrupted, waiting for you to review"),
   idle: "",
 };
 
 const SECTION_META: Record<SectionId, { label: string; Icon: ComponentType }> = {
-  library: { label: "素材库", Icon: RailIconLibrary },
-  animations: { label: "动画", Icon: RailIconAnimations },
-  effects: { label: "特效", Icon: RailIconEffects },
-  edit: { label: "编辑", Icon: RailIconEdit },
-  captions: { label: "字幕", Icon: RailIconCaptions },
+  library: { label: tr("Media library"), Icon: RailIconLibrary },
+  animations: { label: tr("Animation"), Icon: RailIconAnimations },
+  effects: { label: tr("Effects"), Icon: RailIconEffects },
+  edit: { label: tr("Edit"), Icon: RailIconEdit },
+  captions: { label: tr("Captions"), Icon: RailIconCaptions },
 };
 
 /**
- * 一条竖向 rail(左右共用)。项的顺序、在哪一侧、选中哪一项都来自 railStore。
+ * One vertical rail (shared by left and right). Item order, which side, and which item is selected all come from railStore.
  *
- *   点另一项 = 切过去并展开这一侧;点这一侧此刻选中的项 = 收起 / 展开(sideRails)。
- *   按住拖动超过 4px = 拖动(railDrag.ts),可以在同一条 rail 里调顺序,也可以拖到另一条 rail。
- *   「+」(新 Agent 分页)不是可拖的项:画在这一侧最后一个 Agent 项正下方,这一侧没有 Agent 就不画。
- *   项之间不画分隔线,只靠 4px 间距;拖空的 rail 仍然 64px 宽、占满高度,当落点用。
+ *   Clicking another item = switch to it and expand this side; clicking the item currently selected on this side = collapse / expand (sideRails).
+ *   Press and drag more than 4px = drag (railDrag.ts); you can reorder within the same rail or drag to the other rail.
+ *   "+" (new Agent tab) is not a draggable item: it is drawn directly below the last Agent item on this side, and not drawn if this side has no Agent.
+ *   No divider lines between items, only a 4px gap; an emptied rail is still 64px wide and full height, to serve as a drop target.
  *
- * 钩子:nav `data-pc="left-rail" | "right-rail"` + `data-pc-dock-rail=<side>`,列表 `data-pc-dock-list=<side>`,
- * 每项外层 `.pc-dock-slot[data-pc-dock-item=<ItemId>]`,里面的按钮照旧 `data-pc-rail=<分区 | script>` / `data-pc-agent-tab=<tabId>`,
- * 「+」`data-pc="agent-tab-add"` + `data-pc-dock-add=<side>`。
+ * Hooks: nav `data-pc="left-rail" | "right-rail"` + `data-pc-dock-rail=<side>`, list `data-pc-dock-list=<side>`,
+ * each item's outer `.pc-dock-slot[data-pc-dock-item=<ItemId>]`, the button inside is still `data-pc-rail=<section | script>` / `data-pc-agent-tab=<tabId>`,
+ * "+" `data-pc="agent-tab-add"` + `data-pc-dock-add=<side>`.
  */
 /**
- * 一侧 rail 分成两截:head 在上半区(抽屉 / 面板旁边),tail 在时间轴卡片旁边、顶边和时间轴顶边对齐。
- * 剪辑组管的是时间轴,所以它连同排在它后面的项画在 tail;两截是同一条 rail(同一份列表、同一个 data-pc-dock-rail),
- * 拖放在两截之间照常挪。
+ * One side's rail is split into two parts: head is in the upper area (beside the drawer / panel), tail is beside the timeline card, with its top edge aligned to the timeline's top edge.
+ * The cut group manages the timeline, so it and the items after it are drawn in tail; the two parts are the same rail (same list, same data-pc-dock-rail),
+ * and drag and drop moves items between the two parts as usual.
  */
 export type RailPart = "head" | "tail";
 
@@ -59,7 +60,7 @@ export function RailBar({ side, part = "head" }: { side: Side; part?: RailPart }
   const script = useScript();
   const attention = useAgentAttentionMap();
 
-  // 上半截竖向放不下时,末尾几项收进「▾」子窗口:量列表可用高度
+  // When the upper part cannot fit vertically, the last few items fold into the "▾" popup: measure the available height of the list
   const listRef = useRef<HTMLDivElement>(null);
   const [listH, setListH] = useState(Infinity);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -68,7 +69,7 @@ export function RailBar({ side, part = "head" }: { side: Side; part?: RailPart }
   const all = visibleItems(layout[side]);
   const active = effectiveActive(layout, side);
   const anchor = plusAnchor(all);
-  // 剪辑组和排在它后面的项画在时间轴旁边那截(tail),前面的画在上面(head)。没有剪辑组时整条都在 head
+  // The cut group and the items after it are drawn in the part beside the timeline (tail), the ones before it above (head). With no cut group, the whole rail is in head
   const cut = all.indexOf(CUTS_ITEM);
   const split = cut < 0 ? all.length : cut;
   const offset = part === "tail" ? split : 0;
@@ -85,8 +86,8 @@ export function RailBar({ side, part = "head" }: { side: Side; part?: RailPart }
     return () => ro.disconnect();
   }, [part, empty]);
 
-  // 放得下几项:按顺序累加(「+」跟在 anchor 那一项后面也占高度),全放下就不要「▾」;
-  // 放不下就给「▾」留出位置再数一遍。只收末尾的项 —— 拖放落点按画出来的项数算,收中间的会对不上
+  // How many items fit: accumulate in order (the "+" after the anchor item also takes height); if all fit, there is no "▾";
+  // if not, reserve a place for "▾" and count again. Fold only the last items: drop target indexes are computed by the number of drawn items, and folding middle ones would not match
   let fit = items.length;
   if (part === "head") {
     const heightOf = (n: number) => {
@@ -110,7 +111,7 @@ export function RailBar({ side, part = "head" }: { side: Side; part?: RailPart }
   const renderSlot = (id: ItemId, inMenu = false): ReactNode => {
     const on = id === active;
     const expanded = on ? !collapsed : undefined;
-    // 子窗口里的项:点了切过去并关窗口,不能从这里拖
+    // Items in the popup: clicking switches to it and closes the popup; they cannot be dragged from here
     const handlers = inMenu
       ? {
           onClick: () => {
@@ -123,7 +124,7 @@ export function RailBar({ side, part = "head" }: { side: Side; part?: RailPart }
           onPointerDown: (e: ReactPointerEvent<HTMLButtonElement>) => beginRailPointer(e, id),
         };
 
-    // 剪辑组 2026-10-20 撤掉(Argon 审核意见:剪辑入口只留素材库剪辑组和时间轴上方标签栏);老布局里残留的这一项不画
+    // Cut group removed 2026-10-20 (Argon review comment: the only cut entry points are the cut group in the media library and the tab bar above the timeline); this item left over in old layouts is not drawn
     if (id === CUTS_ITEM) return null;
 
     if (isSectionItem(id)) {
@@ -136,7 +137,7 @@ export function RailBar({ side, part = "head" }: { side: Side; part?: RailPart }
             className={`pc-rail-item${on ? " is-on" : ""}`}
             aria-pressed={on}
             aria-expanded={expanded}
-            title={on ? (collapsed ? `展开「${label}」` : `收起「${label}」`) : label}
+            title={on ? (collapsed ? tr("Expand \"{0}\"", label) : tr("Collapse \"{0}\"", label)) : label}
             {...handlers}
           >
             <Icon />
@@ -155,11 +156,11 @@ export function RailBar({ side, part = "head" }: { side: Side; part?: RailPart }
             className={`pc-rail-item${on ? " is-on" : ""}`}
             aria-current={on ? "page" : undefined}
             aria-expanded={expanded}
-            title={script ? `剧本已写 ${script.length} 字，每轮都会附给 AI` : "写下这条片子要讲什么，AI 每轮都会照着它做"}
+            title={script ? tr("Script has {0} characters, attached to the AI every turn", script.length) : tr("Write down what this video is about, the AI follows it every turn")}
             {...handlers}
           >
             <IconScript />
-            <span>剧本</span>
+            <span>{tr("Script")}</span>
             {script && <i className="pc-rr-dot" aria-hidden="true" />}
           </button>
         </div>
@@ -170,10 +171,10 @@ export function RailBar({ side, part = "head" }: { side: Side; part?: RailPart }
     const index = tabs.findIndex((t) => t.id === tabId);
     const t = tabs[index];
     if (!t) return null;
-    // 开始页占位(本项目一个会话都没有):画成一项「开始」,没有关闭按钮
+    // Start page placeholder (this project has no session at all): drawn as one "Start" item, with no close button
     const draft = t.draft === true;
     const closable = canCloseTab(t.id);
-    // 跑的时候头像背景流光;跑完 / 中断且用户还没看这一页时一个小点(蓝 / 黄),见 agentAttention.tsx
+    // While running, the avatar background has a flowing light; when finished / interrupted and the user has not yet looked at this page, a small dot (blue / yellow), see agentAttention.tsx
     const state = t.busy ? "busy" : attention.get(t.id) ?? "idle";
     const stateTip = AGENT_STATE_TIP[state];
     return (
@@ -186,26 +187,26 @@ export function RailBar({ side, part = "head" }: { side: Side; part?: RailPart }
           data-pc-agent-tab={t.id}
           data-pc-agent-state={state}
           data-pc-agent-draft={draft ? "1" : undefined}
-          title={draft ? "开始页:这个项目还没有 Agent 会话,发出第一条消息后才会建立" : stateTip ? `${tabTooltip(t)}
+          title={draft ? tr("Start page: this project has no Agent session yet, one is created after the first message is sent") : stateTip ? `${tabTooltip(t)}
 ${stateTip}` : tabTooltip(t)}
           {...handlers}
         >
           <span className="pc-rr-glyph" aria-hidden="true">{draft ? "✦" : glyphOf(t, index)}</span>
-          <span className="pc-rr-label">{draft ? "开始" : shortLabel(t.title)}</span>
+          <span className="pc-rr-label">{draft ? tr("Start") : shortLabel(t.title)}</span>
           {(state === "done" || state === "interrupted") && <i className={`pc-rr-state is-${state}`} aria-hidden="true" />}
           {t.unread > 0 && (
-            <b className="pc-rr-badge" title={`${t.unread} 条其他 Agent 的消息待处理`}>{t.unread}</b>
+            <b className="pc-rr-badge" title={tr("{0} messages from other Agents pending", t.unread)}>{t.unread}</b>
           )}
         </button>
         {!draft && (
           <button
             type="button"
             className="pc-rr-x"
-            aria-label={`关闭 ${t.title}`}
+            aria-label={tr("Close {0}", t.title)}
             disabled={!closable}
-            title={t.busy ? "还在跑,关掉会中断它" : "关闭这一页"}
+            title={t.busy ? tr("Still running, closing it will interrupt it") : tr("Close this tab")}
             onClick={() => {
-              if (t.busy && !confirm(`${t.title} 还在跑,关掉会中断它。确定关闭?`)) return;
+              if (t.busy && !confirm(tr("{0} is still running and closing it will interrupt it. Close anyway?", t.title))) return;
               closeTab(t.id);
             }}
           >
@@ -216,7 +217,7 @@ ${stateTip}` : tabTooltip(t)}
     );
   };
 
-  // 「+」和各项放在同一个带 key 的数组里:新开一页后它挪到新项下面是移动,不是卸载重建
+  // "+" and the items go in the same keyed array: after a new page opens, moving it below the new item is a move, not an unmount and rebuild
   const plusButton = (inMenu: boolean) => (
     <button
       key="+"
@@ -224,15 +225,15 @@ ${stateTip}` : tabTooltip(t)}
       className="pc-rail-item pc-dock-add"
       data-pc="agent-tab-add"
       data-pc-dock-add={inMenu ? undefined : side}
-      title="新助手分页"
-      aria-label="新助手分页"
+      title={tr("New assistant tab")}
+      aria-label={tr("New assistant tab")}
       onClick={() => {
         addAgentOnSide(side);
         if (inMenu) setMenuOpen(false);
       }}
     >
       <IconBubblePlus />
-      {inMenu && <span>新助手分页</span>}
+      {inMenu && <span>{tr("New assistant tab")}</span>}
     </button>
   );
   const children: ReactNode[] = [];
@@ -249,7 +250,7 @@ ${stateTip}` : tabTooltip(t)}
         count={hidden.length}
         open={menuOpen}
         hasActive={!!active && hidden.includes(active)}
-        title={`还有 ${hidden.length} 项`}
+        title={tr("{0} more", hidden.length)}
         onToggle={() => setMenuOpen((v) => !v)}
       />,
     );
@@ -260,11 +261,11 @@ ${stateTip}` : tabTooltip(t)}
       className={`pc-rail pc-rail--${side} pc-dock-rail${part === "tail" ? " pc-dock-rail--tail" : ""}`}
       data-pc={part === "tail" ? `${side}-rail-tail` : `${side}-rail`}
       data-pc-dock-rail={side}
-      aria-label={side === "left" ? (part === "tail" ? "左栏剪辑" : "左栏分区") : part === "tail" ? "右栏剪辑" : "右栏分页"}
+      aria-label={side === "left" ? (part === "tail" ? tr("Left rail cuts") : tr("Left rail sections")) : part === "tail" ? tr("Right rail cuts") : tr("Right rail tabs")}
     >
-      {/* 时间轴旁边那一截顶上一道小横线,和上半部分分开 */}
+      {/* A thin horizontal line on top of the part beside the timeline, separating it from the upper part */}
       {part === "tail" && <div className="pc-rail-sep pc-dock-tail-sep" aria-hidden="true" />}
-      {/* data-pc-dock-offset:这一截前面还有几项(在 head 里),拖放算落点时加上 */}
+      {/* data-pc-dock-offset: how many items come before this part (in head); added when drag and drop computes the drop target */}
       <div ref={listRef} className="pc-dock-rail-list" data-pc-dock-list={side} data-pc-dock-offset={offset}>
         {children}
       </div>

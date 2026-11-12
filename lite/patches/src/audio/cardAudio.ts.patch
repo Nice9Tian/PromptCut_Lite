@@ -1,8 +1,8 @@
 diff --git a/src/audio/cardAudio.ts b/src/audio/cardAudio.ts
-index 01b9a01505c0d315c710377b2081977f81d7f76c..db5102bd74d1c8f4c30d2de0800051ac5616b769 100644
+index 972ce0d49c497507df0c4f5ff6a7cb27440bc44d..17ff89f6f66772145889766201ccabbadef80e15 100644
 --- a/src/audio/cardAudio.ts
 +++ b/src/audio/cardAudio.ts
-@@ -5,8 +5,6 @@ import type { CardDef } from "../kernel/types";
+@@ -7,8 +7,6 @@ import type { CardDef } from "../kernel/types";
  import { cyrb53 } from "../render/cyrb53.mjs";
  import { evaluateCardAudio, type AudioSourceContext } from "../render/cards/audioSources";
  import { syncedUserCards, onSyncedUserCardsChanged } from "../kernel/registry";
@@ -11,9 +11,9 @@ index 01b9a01505c0d315c710377b2081977f81d7f76c..db5102bd74d1c8f4c30d2de0800051ac
  import { projectCardGraph, cardJson } from "../kernel/cardGraph.mjs";
  import { clipHasEmbeddedAudio, cardAudioIdentity, resolveCardAudioRendition, assertAudiovisualCardKind } from "../kernel/cardAudioRendition.mjs";
  import { audioProjectOf } from "../kernel/cutAudio.mjs";
-@@ -137,41 +135,9 @@ export type CardAudioRoute = { route: "page" | "isolated"; reason?: undefined }
-  *   - null:合成不了(一路上有素材输入、有没放开或没载入的卡、两种卡串在一起),`reason` 给面板。
-  * 只回答「在哪里跑、能不能跑」,轻重另判(`src/editor/io/onlineSoundJudge.ts`)。
+@@ -172,41 +170,9 @@ export type CardAudioRoute = { route: "page" | "isolated"; reason?: undefined }
+  * It only answers "where to run and whether it can run"; whether it is light or heavy is judged
+  * separately (`src/editor/io/onlineSoundJudge.ts`).
   */
 -export function cardAudioRoute(project: unknown, nodeId: string): CardAudioRoute {
 -  const ready = hooks;
@@ -51,12 +51,12 @@ index 01b9a01505c0d315c710377b2081977f81d7f76c..db5102bd74d1c8f4c30d2de0800051ac
 -  if (page && isolated) return { route: null, reason: ONLINE_AUDIO_MIXED };
 -  return { route: isolated ? "isolated" : "page" };
 +export function cardAudioRoute(_project: unknown, nodeId: string): CardAudioRoute {
-+  if (!hooks || !nodeId) return { route: null, reason: "找不到卡片声音节点" };
++  if (!hooks || !nodeId) return { route: null, reason: "Card audio node not found" };
 +  return { route: "page" };
  }
  
- /** 声音线程回来的采样块当不可信输入:形状不对、带非有限值的一律不要 */
-@@ -188,12 +154,6 @@ function checkedIsolatedBlock(samples: unknown, count: number): Float32Array {
+ /**
+@@ -228,12 +194,6 @@ function checkedIsolatedBlock(samples: unknown, count: number): Float32Array {
   */
  export function cardAudioBlockRenderer(project: unknown, nodeId: string, signal?: AbortSignal): (start: number, count: number) => Promise<Float32Array> {
    const ready = requireCardAudioHooks();
@@ -69,7 +69,7 @@ index 01b9a01505c0d315c710377b2081977f81d7f76c..db5102bd74d1c8f4c30d2de0800051ac
    let context: AudioSourceContext | null = null;
    return (start, count) => {
      context ??= { graph: audioGraphOf(project, ready.getCard), project: project as Pick<Project, "tracks" | "media">, getCard: ready.getCard, sampleRate: CARD_AUDIO_SAMPLE_RATE, signal };
-@@ -305,8 +265,6 @@ function isSameOriginOrBlob(url: string): boolean {
+@@ -360,8 +320,6 @@ function isSameOriginOrBlob(url: string): boolean {
  export async function requestCardAudio(x: CardAudioRequest, signal?: AbortSignal, _fetchImpl: typeof fetch = fetch): Promise<CardAudioReply> {
    if (signal?.aborted) throw new DOMException("aborted", "AbortError");
    if (!Number.isSafeInteger(x.start) || !Number.isSafeInteger(x.count) || x.count < 1 || x.count > CARD_AUDIO_MAX_BLOCK_FRAMES) throw new CardAudioError("invalid-reply", `audio range must be 1…${CARD_AUDIO_MAX_BLOCK_FRAMES} samples`);
@@ -78,10 +78,12 @@ index 01b9a01505c0d315c710377b2081977f81d7f76c..db5102bd74d1c8f4c30d2de0800051ac
    const ready = requireCardAudioHooks();
    const owner = ownerOf(x.project), k = key(x), blocks = projectBlocks.get(owner) ?? new Map<string, Promise<CardAudioReply>>();
    projectBlocks.set(owner, blocks);
-@@ -320,9 +278,7 @@ export async function requestCardAudio(x: CardAudioRequest, signal?: AbortSignal
+@@ -374,11 +332,7 @@ export async function requestCardAudio(x: CardAudioRequest, signal?: AbortSignal
+       sampleRate: x.sampleRate,
      };
      pending = (async () => {
-       // 同步来的卡:交给隔离的声音宿主(编辑页面不执行它们的 audio());其余在页面里求值
+-      // Synced cards: handed to the isolated sound host (the editor page does not execute their audio());
+-      // the rest are evaluated in the page
 -      const samples = routed.route === "isolated"
 -        ? checkedIsolatedBlock(await isolatedHost!.render(x, signal), x.count)
 -        : await evaluateCardAudio(context, x.nodeId, { start: x.start, count: x.count, sampleRate: x.sampleRate });
@@ -89,8 +91,8 @@ index 01b9a01505c0d315c710377b2081977f81d7f76c..db5102bd74d1c8f4c30d2de0800051ac
        const channels = samples.length / x.count;
        if (!Number.isInteger(channels) || channels < 1) throw new CardAudioError("invalid-reply", "invalid card audio descriptor");
        const reply: CardAudioReply = { samples, format: "wav", sampleRate: x.sampleRate, frames: x.count, channels };
-@@ -404,9 +360,7 @@ export function clearCardAudioCache() { /* retained API; per-project disposal is
- /** 校验持久声音。在线端只取 WAV，不执行用户卡 audio()。 */
+@@ -462,9 +416,7 @@ export function clearCardAudioCache() { /* retained API; per-project disposal is
+ /** Validates persistent sound. The online side only takes the WAV and does not execute the user card's audio(). */
  export function persistentCardAudio(project: Project, clip: TrackClip) {
    return resolveCardAudioRendition(project, clip, { getCard: hooks?.getCard,
 -    sourceVersionOf: (id) => onlinePage() && syncedUserCards().get(id)?.audioSourceVersion
@@ -98,13 +100,13 @@ index 01b9a01505c0d315c710377b2081977f81d7f76c..db5102bd74d1c8f4c30d2de0800051ac
 -      : hooks?.getCard(id) ? hooks.sourceVersionOf(id) : syncedUserCards().get(id)?.audioSourceVersion });
 +    sourceVersionOf: (id) => hooks?.getCard(id) ? hooks.sourceVersionOf(id) : syncedUserCards().get(id)?.audioSourceVersion });
  }
- /** 导出前核一遍:剪辑段按混音同一份展开(`audioProjectOf`)走进被引用的剪辑,里面出声的有声卡缺了、过期了同样当场报出原片段。
-  * 变速段上的声画一体卡同样要核(2026-10-23 用户定「出声。」) */
-@@ -422,7 +376,6 @@ export async function renderEmbeddedCardWav(project: Project, clip: TrackClip, s
+ /** Checked once before export: cut segments are expanded the same way as the mix (`audioProjectOf`)
+  * into the referenced cut, and an audio card inside that makes sound which is missing or stale is
+@@ -486,7 +438,6 @@ export async function renderEmbeddedCardWav(project: Project, clip: TrackClip, s
    onProgress?: (done: number, total: number) => void): Promise<{ wav: Uint8Array; channels: number; frames: number }> {
    requireCardAudioHooks();
    const nodeId = cardAudioNodeOf(project, clip);
 -  if (onlinePage() && !(nodeId && onlineCardAudioSynthesizable(project, nodeId))) throw new Error((nodeId && onlineCardAudioBlocker(project, nodeId)) || ONLINE_CARD_AUDIO_BLOCKED);
-   if (!nodeId || !clipHasEmbeddedAudio(project, clip, cardAudioGraphCard)) throw new Error("这张卡没有内嵌声音");
+   if (!nodeId || !clipHasEmbeddedAudio(project, clip, cardAudioGraphCard)) throw new Error("This card has no embedded audio");
    assertAudiovisualCardKind(cardAudioGraphCard(clip.cardId));
    cardAudioIdentity(project, clip, cardAudioIdentityHooks());

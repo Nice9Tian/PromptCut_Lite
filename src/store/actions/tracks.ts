@@ -2,14 +2,18 @@ import { newId, type Project, type Track } from "../../kernel/project";
 import { transitionsOf } from "../../kernel/transitions";
 
 import { state, set, setProject, clearTransitionFades, updateTrack, pruneCardNodes } from "../core";
+import { tr as trText } from "../../i18n/index.ts";
 
 export const tracks = {
 
-  /* ---------- 轨道 ---------- */
-  /** 加一条序列。opts.index 给了就插在那个位置(时间轴上「拖到序列之间」新建用),不给就加在数组末尾。 */
+  /* ---------- Tracks ---------- */
+  /**
+   * Adds a track. If opts.index is provided, inserts at that position (used for creating tracks
+   * by "dragging between tracks" on the timeline); if omitted, appends to the end of the array.
+   */
   addTrack(name?: string, opts: { index?: number } = {}): Track {
     const n = state.project.tracks.length + 1;
-    const track: Track = { id: newId("t"), name: name ?? `序列 ${n}`, clips: [] };
+    const track: Track = { id: newId("t"), name: name ?? trText("Track {0}", n), clips: [] };
     const tracks = [...state.project.tracks];
     const at = opts.index == null ? tracks.length : Math.max(0, Math.min(tracks.length, opts.index));
     tracks.splice(at, 0, track);
@@ -20,8 +24,9 @@ export const tracks = {
     tracks.removeTracks([trackId]);
   },
   /**
-   * 删几条序列(一步撤销)。上面片段挂着的转场一并撤掉、留在别的序列上那一头的淡化擦干净 ——
-   * 和 removeClip 一个道理;以前只删序列不管转场,会留下指向不存在片段的转场。
+   * Deletes tracks (single undo step). Transitions attached to clips on them are removed together,
+   * and fades on the other end remaining on other tracks are cleared: same principle as removeClip;
+   * previously, deleting tracks ignored transitions, leaving transitions pointing to non-existent clips.
    */
   removeTracks(trackIds: string[]) {
     const p = state.project;

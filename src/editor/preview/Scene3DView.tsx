@@ -1,96 +1,137 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
+import { Stage } from "../../render/Stage";
+import { isCaptionClip } from "../../kernel/captions";
+import type { Timeline } from "../../kernel/types";
 import { useBakePrefetch, beginForegroundBake, endForegroundBake, canonFrameT } from "./useBakePrefetch";
 import { clipFingerprint, markBaked, momentId } from "./bakeCoverage";
 import { measureImageBox, worthCropping } from "./alphaBox";
-import { flattenOverlay, type Project } from "../../kernel/project";
-import { placeClip3D } from "./place3d";
-import { frustum2d } from "./frustum2d";
+import { activeCutKind, cardOpacityAt, flattenBoards3D, isImageMedia, MEDIA_BOARD_CARD, opacityAt, type Board3DClip, type Project, type TrackClip } from "../../kernel/project";
+import { CUT_SEGMENT_CARD, cutOf } from "../../kernel/cutSegments";
+import { placeClip3D, sortBoardsByDepth, type SortableBoard3D } from "./place3d";
+import { cameraFrustum3D, frustum2d } from "./frustum2d";
+import { resolveClipFrameAt } from "../../kernel/frameExpr.mjs";
+import { activeCutEntry, defaultCutFovDeg, resolveCamera3DAt } from "../../kernel/camera.mjs";
+import { clipSpeed } from "../../kernel/clipTime.mjs";
+import { clipFilterOpsAt, cssFilter } from "../../kernel/filters.mjs";
+import { emphasisFilter } from "../../kernel/emphasis";
+import { driveMedia, filterOf, releaseMedia, targetTimeOf } from "../../render/mediaDrive";
+import { playbackUrl } from "../../render/mediaTier";
+import { tierHashes } from "../media/assetTiers";
 import { getCard } from "../../kernel/registry";
 import { actions, useStore } from "../../store/project";
 import {
   addLights, applyTexture, geometryOf, materialOf, poseMesh, radiusFor, shapeOf,
   type Scene3DParams,
 } from "../../cards/native/scene3dObject";
-import { cameraFor, DEFAULT_FOV_DEG, stageToWorld } from "../../kernel/space3d";
+import {
+  boardNearDistance,
+  cameraFor,
+  DEFAULT_FOV_DEG,
+  isBoardBehindCamera,
+  type BoardSubBox,
+  type CameraPose3D,
+} from "../../kernel/space3d";
 import { motionOf, pickBakeT, sampleTimesFor, texKeyOf, type TimedClip } from "./bakeTime";
 import { isScrubbing, subscribeScrub } from "../timeline/useScrub";
 import { StreamPlayer, PushedStreamSource, type StreamPlaneRequest } from "../../render/streamPlayer";
 import { isStreamOrigin } from "../../render/streamSegments.mjs";
 import { currentReadyIndex } from "../snapshotFeed";
 import { setPlan3DView } from "../planDispatch";
-// 棋盘格底和浮层样式在这儿(.pc-3d-checker / .pc-3d-note)。自己引一次,不指望父组件替它引
+// The checkerboard background and overlay styles live here (.pc-3d-checker / .pc-3d-note). Import them here ourselves, don't count on the parent component to import them
 import "./preview.css";
+import { tr } from "../../i18n/index.ts";
 
 /**
- * 3D 视图:把这一刻画面上的每张卡当成一块**立在空间里的板子**,可以像 Blender 那样绕着看。
+ * 3D view: treats every card in the picture at this moment as a **board standing in space**, which
+ * you can orbit around like in Blender.
  *
- * # 它和 2D 视图分工不同
+ * # How it differs from the 2D view
  *
- * 2D 视图的契约是「预览所见 = 导出所得」——那是**成片长什么样**。
- * 这个视图回答的是另一个问题:**这些东西在空间里是怎么摆的**。所以它不追求逐像素等同,
- * 它追求的是"层和层之间的前后、倾斜、间距一眼看得出来"。相机可以随便转,这本来就不是成片的机位。
+ * The 2D view's contract is "what the preview shows = what the export gives": that is **what the
+ * final video looks like**.
+ * This view answers a different question: **how these things are arranged in space**. So it doesn't
+ * aim for pixel-level equality;
+ * it aims to make "the front/back order, tilt and spacing between layers visible at a glance". The
+ * camera can turn freely; this was never the final video's camera position.
  *
- * # 板子上贴的是预渲染出来的真图,不是重画一遍
+ * # What is pasted on a board is the real prerendered image, not a redraw
  *
- * 每块板子的贴图来自 `/api/vision/bake-batch`,而那条路画图的就是导出成片的那个渲染器。
- * 所以板子上的内容和成片里的**是同一批像素**,不是这里另外实现一遍卡片。
- * 另实现一遍就等于又开一条会分叉的路 —— 这个项目里那类分叉的代价写在 vite-plugin-vision.ts 开头。
+ * Each board's texture comes from `/api/vision/bake-batch`, and what draws images on that path is
+ * the same renderer that exports the final video.
+ * So the content on a board and the content in the final video are **the same pixels**, and cards
+ * are not implemented a second time here.
+ * Implementing it a second time would mean opening another path that can diverge. The cost of that
+ * kind of divergence in this project is written at the top of vite-plugin-vision.ts.
  *
- * # 三维的卡在这里是**真的三维**
+ * # 3D cards here are **truly 3D**
  *
- * `scene-3d` 那种本身就是立体物件的卡,不走"贴图平板"那条路 —— 一开始是那么做的,
- * 结果绕着转它还是一张画,而这个视图存在的理由正是"看清东西在空间里怎么摆"。
- * 现在直接用卡片同一份几何构造(`cards/native/scene3dObject.ts`)在这儿造一个真的物件,
- * 连灯光预设都是同一份。两边共用一份构造,才不会出现"检视里看到的和成片里不是一个东西"。
+ * Cards like `scene-3d` that are solid objects themselves don't take the "textured flat board"
+ * path. It started out that way,
+ * and when you orbited it was still a flat picture, while the whole reason this view exists is
+ * "to see clearly how things are arranged in space".
+ * Now the object is built right here with the same geometry construction the card uses
+ * (`cards/native/scene3dObject.ts`), and even the lighting presets are the same copy.
+ * Only by sharing one construction on both sides do we avoid "what you see in the inspection isn't
+ * the same thing as in the final video".
  *
- * # 代理色块只是过渡
+ * # Proxy swatches are only a transition
  *
- * 贴图没到位之前先画一块半透明色块占位,**渲好了立刻换上**。
- * 预渲染按输入做了缓存(见 bakeOne),同一张卡同样的参数只真渲一次,之后开这个视图是零成本 ——
- * 所以正常情况下你看到的一直是真贴图,色块只在第一次、或者刚改完卡的那几秒出现。
+ * Until the texture arrives, a semi-transparent swatch is drawn as a placeholder, and **it is
+ * swapped out as soon as the render is done**.
+ * Prerender is cached by input (see bakeOne): the same card with the same parameters is really
+ * rendered only once, and opening this view afterwards costs nothing.
+ * So normally what you see is always the real texture; the swatch appears only the first time, or
+ * for a few seconds right after a card was edited.
  */
 
 type ThreeMod = typeof import("three");
 type OrbitMod = typeof import("three/examples/jsm/controls/OrbitControls.js");
 
 let modsPromise: Promise<[ThreeMod, OrbitMod]> | null = null;
-/** three 和 OrbitControls 都只在真的打开 3D 页时才下载 */
+/** three and OrbitControls are only downloaded when the 3D tab is really opened */
 const loadMods = (): Promise<[ThreeMod, OrbitMod]> =>
   (modsPromise ??= Promise.all([
     import("three"),
     import("three/examples/jsm/controls/OrbitControls.js"),
   ]));
 
-/** 没贴图时的占位色。半透明,一眼看得出"这块还在渲" */
+/** Placeholder color when there is no texture. Semi-transparent, so you can tell at a glance "this one is still rendering" */
 const PROXY_COLOR = 0x64748b;
+const PROXY_OPACITY = 0.45;
 
 /**
- * URL → 已经解码好的贴图。**跨场景重建复用。**
+ * URL → already-decoded texture. **Reused across scene rebuilds.**
  *
- * # 为什么要有它:两张卡交界处会闪一下色块
+ * # Why it exists: a swatch flashes at the boundary between two cards
  *
- * 场景的重建键 `sig` 是「此刻画面上有哪几张卡」,所以播放头**每跨过一次卡片边界**整个场景
- * 就重建一次,每块板子都是新的 mesh + 新的 material。而 `applyTexture` 一律走
- * `new THREE.TextureLoader().load(url)` —— 哪怕这张图刚刚才贴过、HTTP 缓存里热着,
- * 解码也是异步的。于是新板子先以 PROXY_COLOR 的色块出场,一两帧之后贴图才回来。
- * 用户看到的就是「两张卡之间突然闪一下实体模式」,而其实什么都没缺,只是重解码了一遍。
+ * The scene's rebuild key `sig` is "which cards are in the picture right now", so **every time the
+ * playhead crosses a card boundary** the whole scene is rebuilt, and every board is a new mesh +
+ * a new material. And `applyTexture` always goes through
+ * `new THREE.TextureLoader().load(url)`: even if this image was just applied and is hot in the HTTP
+ * cache, decoding is still asynchronous. So the new board first appears as a PROXY_COLOR swatch,
+ * and the texture comes back one or two frames later.
+ * What the user sees is "solid mode suddenly flashes between two cards", when in fact nothing was
+ * missing; it was just decoded again.
  *
- * 存下解码结果之后,重建时命中的那张**同一帧就贴上**,中间没有色块。
+ * Once the decoded result is stored, the texture that hits on a rebuild is **applied in the same
+ * frame**, with no swatch in between.
  *
- * # 为什么要有上限,而且淘汰时要跳过正在用的
+ * # Why there is a cap, and why eviction has to skip the ones in use
  *
- * 一张 1920×1080 的贴图在显存里约 8MB,而预渲染会渲出几百个时刻 —— 不设上限,用户把时间轴
- * 从头拖到尾就能把显存撑爆。上限之外还有一条:**正在板子上的那几张一律不淘汰**,
- * 淘汰时 dispose 掉一张还挂在 material.map 上的贴图,那块板子会直接变黑,而且不报错。
+ * A 1920×1080 texture takes about 8MB of video memory, and prerender renders hundreds of moments:
+ * with no cap, the user dragging the timeline from start to end can blow up video memory. Besides
+ * the cap there is another rule: **the textures currently on boards are never evicted**;
+ * if eviction disposes a texture still attached to material.map, that board turns black outright,
+ * and no error is reported.
  */
 const TEX_CACHE_MAX = 12;
 const texCache = new Map<string, any>();
-/** 此刻真的挂在板子上的那几个 URL。淘汰要绕开它们 */
+/** The URLs really attached to boards right now. Eviction has to avoid them */
 const texInUse = new Set<string>();
 
 function cacheTexture(url: string, tex: any) {
-  // Map 保持插入顺序,重新 set 一次就等于把它挪到队尾 —— 最久没用的排在队头
+  // Map keeps insertion order, so setting again moves the entry to the tail: the least recently used is at the head
   texCache.delete(url);
   texCache.set(url, tex);
   for (const k of [...texCache.keys()]) {
@@ -103,13 +144,24 @@ function cacheTexture(url: string, tex: any) {
 
 interface Props {
   project: Project;
-  /** 时间轴当前时刻(秒) */
+  /** Current moment on the timeline (seconds) */
   t: number;
+  /** `"camera"` renders through the cut's active 3D output camera; `"space"` enables OrbitControls inspection with camera frustum gizmo. */
+  mode?: "camera" | "space";
+  /** Invoked when clicking the active 3D camera gizmo in `"space"` mode. */
+  onSelectCamera?: (cameraId: string) => void;
 }
 
-export function Scene3DView({ project, t }: Props) {
+export function Scene3DView({ project, t, mode = "space", onSelectCamera }: Props) {
+  const outerRef = useRef<HTMLDivElement>(null);
   const host = useRef<HTMLDivElement>(null);
+  const captionOverlayRef = useRef<HTMLDivElement>(null);
   const streamHost = useRef<HTMLDivElement>(null);
+  const mediaHost = useRef<HTMLDivElement>(null);
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const onSelectCameraRef = useRef(onSelectCamera);
+  onSelectCameraRef.current = onSelectCamera;
   const selected = useStore((s) => s.selection[0]);
   const playing = useStore((s) => s.playing);
   const playingRef = useRef(playing);
@@ -122,47 +174,71 @@ export function Scene3DView({ project, t }: Props) {
   const [mods, setMods] = useState<[ThreeMod, OrbitMod] | null>(null);
   const [pending, setPending] = useState(0);
   /**
-   * 正在渲哪一刻。有值 = 板子上现在是**色块**,这一刻的图还没渲出来。
-   * 说出来是因为原来那个 bug 最坏的地方不是慢,是**沉默地显示另一个时刻** ——
-   * 界面上写着 0.2 秒,板子上是 1.0 秒的画,没有任何提示。
+   * Which moment is being rendered. A value = the boards currently show **swatches**, and the image
+   * for this moment is not rendered yet.
+   * We spell it out because the worst part of the original bug wasn't slowness, it was
+   * **silently showing a different moment**:
+   * the UI says 0.2 seconds, the board shows the picture at 1.0 seconds, with no hint at all.
    */
   const [bakingAt, setBakingAt] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
   /**
-   * 要不要显示「2D 视角框」。默认关:大多数时候用户是来看卡怎么摆的,
-   * 多一套线只会挡视线;要判断「这张卡在不在画面里」时才打开。
+   * Whether to show the "2D view frame". Off by default: most of the time the user is here to see how
+   * cards are arranged,
+   * and an extra set of lines only blocks the view; turn it on when judging "is this card in the
+   * picture or not".
    *
-   * 走 ref 是因为建场景那个 effect 不能把它放进依赖 —— 放进去点一下按钮就重建整个场景。
-   * 显隐由渲染循环每帧读这个 ref 来切(和选中描边 selRef 同一套做法)。
+   * It goes through a ref because the effect that builds the scene must not have it as a dependency:
+   * with it in, clicking the button would rebuild the whole scene.
+   * Visibility is toggled by the render loop reading this ref every frame (same approach as the
+   * selection outline selRef).
    */
   const [frustumOn, setFrustumOn] = useState(false);
+  const [spaceGizmoHidden, setSpaceGizmoHidden] = useState(false);
   const frustumRef = useRef(frustumOn);
   frustumRef.current = frustumOn;
+  const spaceGizmoHiddenRef = useRef(spaceGizmoHidden);
+  spaceGizmoHiddenRef.current = spaceGizmoHidden;
+  const selectedCameraId = useStore((s) => (s as any).selectedCameraId as string | null | undefined);
+  const selectedCameraRef = useRef(selectedCameraId ?? null);
+  selectedCameraRef.current = selectedCameraId ?? null;
   /*
-   * 「这张卡长什么样」的指纹,只带**决定像素**的东西:哪张卡、什么参数、画布多大。
-   * 不带 clipId 之外的身份信息也不带时刻 —— 它管的是**要不要重建场景**,不是贴哪张图。
+   * Fingerprint of "what this card looks like", carrying only what **determines pixels**: which card,
+   * what parameters, how big the canvas is.
+   * It carries no identity information beyond clipId and no moment either: it governs **whether to
+   * rebuild the scene**, not which image to apply.
    *
-   * 只用 clipId 有两个错:换个项目 clipId 会重复(都是 c1 / n1 这种),新项目会看到上个项目的
-   * 贴图;改了卡片参数之后 clipId 没变,贴图也不会更新,画面停在旧的样子还不报错。
+   * Using clipId alone has two faults: across projects clipId repeats (they are all c1 / n1 and the
+   * like), so a new project would see the previous project's texture; and after card parameters
+   * change while clipId stays the same, the texture doesn't update either, and the picture stays in
+   * the old look with no error.
    *
-   * 位置和三维变换不在里面 —— 服务端预渲染的时候会把 frame 整个摘掉(见 bakeOne 的说明),
-   * 所以转一下卡片、推一下深度,贴图一个像素都不会变。把整个 frame 塞进去的后果是:
-   * 在「三维」面板里拖滑杆,每一格都算变了,于是每一格重建一次场景。
+   * Position and 3D transforms are not in it: when the server prerenders it strips the whole frame
+   * (see the note on bakeOne), so rotating a card or pushing its depth doesn't change a single pixel
+   * of the texture. The consequence of stuffing the whole frame in is:
+   * dragging a slider in the "3D" panel counts every step as changed, so the scene is rebuilt on
+   * every step.
    */
-  // 指纹只有一份实现(bakeCoverage.clipFingerprint)—— 进度条判断「这段覆盖还算不算数」
-  // 用的也是它。两处各写一套的话会出现「条子说还有效、画面已经换了」,而且不报错。
+  // There is only one implementation of the fingerprint (bakeCoverage.clipFingerprint): the progress bar
+  // uses the same one to judge "does this stretch of coverage still count". If each side had its own, you would get "the bar says it is still valid, but the picture has already changed", with no error.
   const texKey = clipFingerprint;
   /**
-   * 要不要**重建整个场景**的指纹。只带真正决定**几何**的东西:
-   * 哪几张卡、各自是什么卡、板子多大。`scene-3d` 还要带 params —— 它的几何
-   * (形状、半径)就是参数算出来的;二维卡的板子只是一块 PlaneGeometry,和参数无关。
+   * Fingerprint of whether to **rebuild the whole scene**. It carries only what really determines
+   * **geometry**:
+   * which cards, what kind of card each is, how big the boards are. `scene-3d` also carries params:
+   * its geometry
+   * (shape, radius) is computed from the parameters; the board of a 2D card is just a PlaneGeometry,
+   * independent of params.
    *
-   * **二维卡的 params 故意不在里面。** 它们只决定贴图长什么样,而换贴图走的是
-   * `swap` / `proxy` 那条路,只改 material.map,不用重建。
+   * **The params of 2D cards are deliberately not in it.** They only decide what the texture looks
+   * like, and swapping a texture goes through the
+   * `swap` / `proxy` path, which only changes material.map and needs no rebuild.
    *
-   * 放进来的后果实测过:拖一次滑杆连发十几次改动,就**重建十几次整个场景** ——
-   * 每次都 new 一个 WebGLRenderer、再 forceContextLoss 掉旧的(浏览器上限约 16,
-   * 超了静默丢最老的)。用户看到的就是画面卡住、改了半天毫无反馈。
+   * The consequence of including them was measured: dragging a slider once fires a dozen-plus
+   * changes in a row, and the **whole scene is rebuilt a dozen-plus times**:
+   * every time a new WebGLRenderer is created and the old one is dropped with forceContextLoss (the
+   * browser limit is about 16, and beyond that it silently drops the oldest). What the user sees is
+   * the picture freezing, and no feedback after editing for ages.
    */
   const buildKey = (c: { id: string; cardId: string; params?: unknown; frame?: { w?: number; h?: number } | null }) => {
     const box = `${c.frame?.w ?? "-"}x${c.frame?.h ?? "-"}`;
@@ -171,161 +247,210 @@ export function Scene3DView({ project, t }: Props) {
       : [c.id, c.cardId, box].join("|");
   };
   /**
-   * **播放头这一刻**该显示哪一刻预渲染出来的图,以及那张图的缓存键。
+   * **The moment under the playhead**: which prerendered image to show, and that image's cache key.
    *
-   * 原来这里只有一个答案:片段中点。于是任何带动画的卡在 3D 里显示的都不是当前这一刻 ——
-   * mu-number-ticker(滚动 1.6 秒)放在 [0,2],播放头 0.23 秒时 2D 是 81%,3D 是 100%。
-   * 摆位置的人对着的是一张别的时刻的画面,而且不报错。选哪一刻的规则见 bakeTime.ts。
+   * There used to be only one answer here: the clip midpoint. So any animated card shown in 3D was
+   * not showing the current moment: mu-number-ticker (rolls for 1.6 seconds) placed at [0,2], with
+   * the playhead at 0.23 seconds, is at 81% in 2D and 100% in 3D. Whoever was positioning things was
+   * looking at a frame from a different moment, and no error was raised. The rule for picking the
+   * moment is in bakeTime.ts.
    */
   /*
-   * 有原始帧率那一张就用它,没有才退回低帧率那一档。
+   * Use the native-frame-rate image if there is one; only fall back to the low-frame-rate tier
+   * when there isn't.
    *
-   * 不这么挑的话,逐帧预渲染出来的那几百张**一张都不会被显示** —— 显示端永远只问 0.25 秒
-   * 那个格子要图,渲再多也是白烧。
+   * Without this choice, the hundreds of per-frame prerendered images **would never be shown**:
+   * the display side only ever asks for the 0.25-second slot, so rendering more is wasted work.
    *
-   * 退回低帧率仍然守着原来那条规矩:`pickBakeT` 只往回取(floor),所以看到的一定是
-   * **已经发生过的**那一刻,最多差 0.25 秒,不会把还没播到的画面提前显示出来。
+   * Falling back to the low frame rate still keeps the original rule: `pickBakeT` only goes
+   * backwards (floor), so what you see is always a moment that **has already happened**, at most
+   * 0.25 seconds off, and never shows a frame that has not been played yet.
    */
-  /** 播放头这一刻对应的**原始帧率**那一格 —— 也就是成片里真会出现的那一帧 */
+  const clipMotionOf = (c: TimedClip) =>
+    c.cardId === CUT_SEGMENT_CARD || cutOf(c)
+      ? { settleMs: 0, after: "evolve" as const }
+      : motionOf(getCard(c.cardId) as any, c.params);
+  /** The **native-frame-rate** slot for the playhead's current moment: the frame that will actually appear in the final video */
   const fineTOf = (c: TimedClip) => {
-    const motion = motionOf(getCard(c.cardId) as any, c.params);
+    const motion = clipMotionOf(c);
     const fps = Math.max(1, projRef.current.fps || 30);
     return canonFrameT(pickBakeT(c, motion, t, { stepSec: 1 / fps }), c.start, fps);
   };
   const bakeTOf = (c: TimedClip) => {
     const fine = fineTOf(c);
     if (moments.current.has(texKeyOf(c, fine))) return fine;
-    const motion = motionOf(getCard(c.cardId) as any, c.params);
+    const motion = clipMotionOf(c);
     const fps = Math.max(1, projRef.current.fps || 30);
     return canonFrameT(pickBakeT(c, motion, t), c.start, fps);
   };
   const momentKey = (c: TimedClip) => texKeyOf(c, bakeTOf(c));
   /*
-   * 播放头**停住**了没有。停住 = 用户在盯着这一帧看,那就值得把它自己那一帧渲出来。
+   * Whether the playhead has **stopped**. Stopped = the user is looking at this frame, so it is
+   * worth rendering that exact frame.
    *
-   * 为什么要分这一下:粗粒度那一档(黄条)是 0.25 秒一格的替身,拖动时它很划算 ——
-   * 一张图管一片区域,拖过去不用每落一个位置就渲一次(单张四五秒)。但停下来之后它就
-   * 不够了:实测播放头停在第 121 帧,三维要的是第 120 帧,和二维差整整一帧。
-   * 拖动中不补(省渲染),停下来才补(要准),两头都占得住。
+   * Why this split exists: the coarse tier (the yellow bar) is a stand-in with one slot per 0.25
+   * seconds, and it pays off while dragging: one image covers a whole region, so dragging past does
+   * not need a render at every position (four or five seconds per image). But once the playhead
+   * stops it is not enough: measured with the playhead stopped on frame 121, 3D wants frame 120,
+   * a full frame away from 2D. No top-up while dragging (saves rendering), top up once stopped
+   * (accuracy needed), so both ends are covered.
    */
   /*
-   * 前台渲成功一次就 +1。**只有成功才加。**
+   * +1 every time a foreground render succeeds. **Only success counts.**
    *
-   * 要它是因为 momentSig 盯不住这件事:贴图缓存是个 ref,粗粒度那张落地之后 momentSig 一个字都没变
-   * (bakeTOf 前后都返回同一个粗粒度时刻),效果不重跑,下面「停住了就预渲染重试精确帧」那条路就永远够不着。
-   * 失败不加是防死循环:失败后要渲的还是那几张,加了就会一直重试。
+   * It is needed because momentSig cannot detect this: the texture cache is a ref, and after the
+   * coarse image lands, momentSig does not change at all (bakeTOf returns the same coarse moment
+   * before and after), so the effect does not rerun, and the "stopped, so retry the exact frame via
+   * prerender" path below is never reached. Failures do not count to avoid an infinite loop: after a
+   * failure, what needs rendering is still the same images, and counting would retry forever.
    */
   const [bakeGen, setBakeGen] = useState(0);
   /**
-   * 手还按在播放头上没有(见 timeline/useScrub 的 isScrubbing)。
+   * Whether the hand is still pressing on the playhead (see isScrubbing in timeline/useScrub).
    *
-   * **按着的时候一张都不渲。** 拖动时播放头每跨过一个 0.25 秒的格子就换一个时刻,
-   * 于是按着不放拖过去一路就是一串前台渲染,每一个都占住一个 Chrome 好几秒 ——
-   * 而它们渲的全是用户一闪而过、根本没停下来看的位置。等用户真的松手停在某处,
-   * 他要的那一张反而排在这堆注定作废的活后面。
+   * **While pressed, render nothing.** During a drag the playhead switches moment every time it
+   * crosses a 0.25-second slot, so holding and dragging across produces a string of foreground
+   * renders, each of which occupies a Chrome for several seconds, and all of them render positions
+   * the user just flashed past without stopping to look. When the user finally releases and stops
+   * somewhere, the image they want ends up queued behind this pile of doomed work.
    *
-   * 用「松手」这个事件而不是防抖 N 毫秒:松手是明确的,不用猜多久算停下;
-   * 而点一下卡尺跳过去(按下即松开)也不会因此多等一拍。
+   * It uses the "release" event rather than debouncing for N milliseconds: release is explicit, with
+   * no guessing how long counts as stopped; and clicking the ruler to jump (press and release at
+   * once) does not wait an extra beat because of it.
    */
   const scrubbing = useSyncExternalStore(subscribeScrub, isScrubbing, isScrubbing);
+  const scrubbingRef = useRef(scrubbing);
+  scrubbingRef.current = scrubbing;
   const [parked, setParked] = useState(false);
   useEffect(() => {
     setParked(false);
-    // 手还按着就不算「停住」——那时候连粗粒度那张都不该渲,更别说补精确帧
+    // While the hand is still pressed it does not count as "stopped": then even the coarse image should not be rendered, let alone the exact-frame top-up
     if (scrubbing) return;
     const id = setTimeout(() => setParked(true), 500);
     return () => clearTimeout(id);
   }, [t, scrubbing]);
   /**
-   * 按**时刻**存的贴图:`texKeyOf(clip, 那一刻)` → URL。前台现场渲染的和预渲染拿回来的都进这里,
-   * 一个键只对应一张图,所以「板子上贴的到底是哪一刻」永远是确定的。
+   * Textures stored by **moment**: `texKeyOf(clip, that moment)` → URL. Both images rendered live in
+   * the foreground and images fetched from prerender go in here, and one key maps to exactly one
+   * image, so "which moment is actually on the board" is always well defined.
    *
-   * 板子上只会出现这个表里、且键正好等于此刻 `momentKey(clip)` 的那一张。别的一律不贴 ——
-   * 见下面 apply 的说明:贴一张别的时刻的真实画面,比贴一块色块糟得多。
+   * The only image that appears on a board is one in this table whose key is exactly the current
+   * `momentKey(clip)`. Nothing else is applied: see the apply note below: applying a real frame from
+   * another moment is much worse than applying a placeholder block.
    */
   const moments = useRef(new Map<string, string>());
-  /** 场景那一套,和 scene-3d 卡一样要显式 dispose —— WebGL 资源不归 GC 管 */
-  const gl = useRef<{ dispose: () => void; render: () => void } | null>(null);
+  /** The scene set, like the scene-3d card, must be disposed explicitly: WebGL resources are not managed by the GC */
+  const gl = useRef<{ dispose: () => void; render: () => void; syncSize: () => void } | null>(null);
+  useEffect(() => {
+    gl.current?.syncSize();
+    gl.current?.render();
+  }, [mode]);
   /**
-   * 贴图到位后要能立刻换上去:clipId → 换图函数。
+   * Lets a texture be swapped in immediately once it is ready: clipId → swap function.
    *
-   * 第二个参数是「这张图确实是此刻该显示的那一刻」。**不带这个标记的一律不上板子** ——
-   * 调用方必须先自己对过账,不能指望「随便一张总比色块强」。
+   * The second argument means "this image really is the moment that should be shown now". **Anything
+   * without this flag never goes on the board**: the caller must reconcile first by itself, and
+   * cannot count on "any image is better than a placeholder block".
    */
   const swap = useRef(new Map<string, (url: string, precise?: boolean) => void>());
-  /** 把板子打回色块:clipId → 复位函数。换到了没渲过的时刻就立刻退回去,不留着旧图冒充 */
+  /** Reset the board to a placeholder block: clipId → reset function. When it moves to a moment that was never rendered, go back at once, and do not keep the old image posing as current */
   const proxy = useRef(new Map<string, () => void>());
-  /** 三维物件每帧要按 t 摆姿势(会转的那种)。渲染循环里调,所以要读最新的 t */
+  /** 3D objects need to be posed by t every frame (the spinning kind). Called in the render loop, so it must read the latest t */
   const posers = useRef<((t: number) => void)[]>([]);
   /**
-   * 用户转到哪儿了。**跨场景重建保留** —— 这是「拖时间轴相机会弹回去」的修复点。
+   * Where the user has rotated to. **Preserved across scene rebuilds**: this is the fix for "dragging the
+   * timeline snaps the camera back".
    *
-   * 建场景那个 effect 的依赖里有 `sig`,而 `sig` 是「**这一刻**有哪些卡」算出来的。
-   * `t` 已经刻意排除在依赖外了,但 `sig` 会**随时间间接变化**:拖过任意一条 clip 边界,
-   * 活跃的卡就换了一批,effect 整段重跑,`new PerspectiveCamera` + `new OrbitControls`
-   * 把机位打回默认 —— 用户刚转好的视角,一拖进度条就没了。
+   * The effect that builds the scene depends on `sig`, and `sig` is computed from "which cards exist at
+   * **this moment**". `t` is deliberately left out of the dependencies, but `sig` **changes indirectly
+   * with time**: drag across any clip boundary and the set of active cards changes, so the whole effect
+   * reruns, and `new PerspectiveCamera` + `new OrbitControls` reset the camera to its default position.
+   * The view the user just set up is lost as soon as they drag the progress bar.
    *
-   * 存在 ref 里而不是 state:它每次拖动都在变,进 state 会引起重渲染,而这个值
-   * 只有重建场景那一刻才被读一次。
+   * It lives in a ref instead of state: it changes on every drag, and putting it in state would trigger
+   * re-renders, while the value is only read once, at the moment the scene is rebuilt.
    */
   const pose = useRef<{ pos: [number, number, number]; target: [number, number, number] } | null>(null);
   const tRef = useRef(t);
   tRef.current = t;
-  // 选中变了不该重建场景(重建 = 重新加载所有贴图),所以也走 ref
+  // A selection change should not rebuild the scene (rebuild = reload all textures), so it goes through a ref too
   const selRef = useRef(selected);
   selRef.current = selected;
   /*
-   * 摆位每帧从最新的 project 读,不进建场景那个 effect 的依赖。
-   * 否则在「三维」面板里拖一下滑杆就重建一次整个场景(几何全部重建、贴图全部重新加载),
-   * 而拖动是连续的 —— 一次拖动几十次重建。
+   * Placement is read from the latest project every frame, and is not in the dependencies of the
+   * effect that builds the scene.
+   * Otherwise, dragging a slider in the "3D" panel would rebuild the whole scene each time (all
+   * geometry rebuilt, all textures reloaded), and a drag is continuous: dozens of rebuilds per drag.
    */
   const projRef = useRef(project);
   projRef.current = project;
   /*
-   * 整条片子要预渲染哪几个时刻。**按每张卡自己的动画节奏抽样**(sampleTimesFor),
-   * 不是一段一张中点 —— 中点那张多半不是用户正看的那一刻,那正是「3D 里显示的不是当前帧」的病根。
+   * Which moments of the whole video to prerender. **Sampled at each card's own animation rhythm**
+   * (sampleTimesFor), not one midpoint image per clip: the midpoint image is mostly not the moment
+   * the user is looking at, and that is exactly the root cause of "3D does not show the current
+   * frame".
    *
-   * 只算一次(project 没变就不重算):这个列表每轮调度都要用,而它只跟项目内容有关,
-   * 和播放头无关 —— 播放头只决定**先渲哪个**,那是 bakePlan 的事。
+   * Computed only once (not recomputed while the project is unchanged): this list is used in every
+   * scheduling round, and it depends only on the project content, not on the playhead. The playhead
+   * only decides **which one to render first**, and that is bakePlan's job.
    */
+  const effFrameAt = (c: { start: number; end: number; frame?: Board3DClip["frame"]; frameExpr?: Board3DClip["frameExpr"] }, atT: number) =>
+    c.frameExpr
+      ? resolveClipFrameAt(c.frame, c.frameExpr, Math.max(0, atT - c.start), c.end - c.start)
+      : c.frame;
+
   const wantedMoments = useMemo(() => {
     const out: { clipId: string; t: number; start: number; end: number; tier: "coarse" | "full"; fine: boolean }[] = [];
     const fps = Math.max(1, project.fps || 30);
-    for (const c of flattenOverlay(project).clips) {
-      // 素材段本来就是位图,不用渲;scene-3d 在这个视图里是真几何,也不用
-      if ((c as any).mediaId || c.cardId === "scene-3d") continue;
-      const motion = motionOf(getCard(c.cardId) as any, c.params);
+    const stageSize = { width: project.width, height: project.height };
+    const cutEntry = activeCutEntry(project);
+    const defFov = defaultCutFovDeg(project, cutEntry);
+    const hasMovingCam = Boolean(cutEntry?.cameras?.length);
+    for (const c of flattenBoards3D(project)) {
+      // Media clips are live/decoded bitmaps, scene-3d is real geometry, and statically culled boards are skipped
+      if (c.cardId === MEDIA_BOARD_CARD || c.cardId === "scene-3d") continue;
+      if (!c.frameExpr && !hasMovingCam && isBoardBehindCamera(c.frame, stageSize, defFov)) continue;
+      const motion = clipMotionOf(c as TimedClip);
+      const seg = cutOf(c);
+      const visStart = seg ? seg.from : c.start;
+      const visEnd = seg ? Math.min(c.end, c.start + Math.max(0, seg.duration - seg.offset)) : c.end;
+      if (!(visEnd > visStart)) continue;
       /*
-       * 按**量化后的时刻**去重:0.5 秒这种点在两档的格子上都有,不去重会重复排一遍,
-       * 而且服务端算出来是同一个键,白问一次。
+       * Deduplicate by the **quantized moment**: a point like 0.5 seconds lies on the slots of both
+       * tiers, and without deduplication it would be queued twice, and the server computes the same key
+       * anyway, so asking twice is wasted.
        */
       const slots = new Map<number, { t: number; tier: "coarse" | "full"; fine: boolean }>();
-      // 低帧率那一档(0.25 秒一格):先把整条片子铺满它,成本只有原始帧率的零头
+      // Low-frame-rate tier (one slot per 0.25 seconds): first cover the whole video with it, at a cost of only a fraction of the native frame rate
       for (const raw of sampleTimesFor(c as TimedClip, motion)) {
-        const t = canonFrameT(raw, c.start, fps);
-        slots.set(t, { t, tier: "coarse", fine: false });
+        if (raw < visStart - 1e-6 || raw >= visEnd) continue;
+        const qt = canonFrameT(raw, c.start, fps);
+        slots.set(qt, { t: qt, tier: "coarse", fine: false });
       }
       /*
-       * 原始帧率那一档:逐帧。**排在低帧率全部铺完之后**才会被渲(顺序由 bakePlan 定)。
-       * maxPerClip 按这一段自己的帧数给,不用默认的 12 —— 默认那个是为低帧率定的,
-       * 拿它来限制逐帧会把一段两秒的卡抽稀成 12 张,那就不叫原始帧率了。
+       * Native-frame-rate tier: frame by frame. **It is only rendered after the low-frame-rate tier has
+       * been fully laid out** (the order is set by bakePlan). maxPerClip is given by this clip's own
+       * frame count, not the default 12: that default was set for the low frame rate, and using it to
+       * limit the per-frame tier would thin a two-second card down to 12 images, which is no longer the
+       * native frame rate.
        */
       const frames = Math.ceil((c.end - c.start) * fps) + 2;
       for (const raw of sampleTimesFor(c as TimedClip, motion, { stepSec: 1 / fps, maxPerClip: frames })) {
-        const t = canonFrameT(raw, c.start, fps);
-        const had = slots.get(t);
-        // 两档都落在这一刻:排队上算低帧率(先渲),但它同时也是逐帧那一档的一格
+        if (raw < visStart - 1e-6 || raw >= visEnd) continue;
+        const qt = canonFrameT(raw, c.start, fps);
+        const had = slots.get(qt);
+        // Both tiers land on this moment: for queueing it counts as low frame rate (rendered first), but it is also one slot of the per-frame tier
         if (had) had.fine = true;
-        else slots.set(t, { t, tier: "full", fine: true });
+        else slots.set(qt, { t: qt, tier: "full", fine: true });
       }
-      for (const s of slots.values()) out.push({ clipId: c.id, start: c.start, end: c.end, ...s });
+      for (const s of slots.values()) out.push({ clipId: c.id, start: visStart, end: visEnd, ...s });
     }
     return out;
   }, [project]);
   /*
-   * 空闲时把这些时刻预先渲好(排队规则见 bakePlan.ts)。
-   * 这个视图挂着的时候才开:预渲染一张要起一个 Chrome、四五秒,
-   * 没打开三维页的人不该为它一直付这笔账。
+   * Render these moments ahead of time when idle (queueing rules in bakePlan.ts).
+   * Only enabled while this view is mounted: prerendering one image launches a Chrome and takes
+   * four or five seconds, and people who have not opened the 3D tab should not keep paying for it.
    */
   const prefetch = useBakePrefetch({ project, t, moments: wantedMoments, enabled: !playing });
 
@@ -335,23 +460,28 @@ export function Scene3DView({ project, t }: Props) {
     return () => { dead = true; };
   }, []);
 
-  const timeline = flattenOverlay(project);
-  const active = timeline.clips.filter((c) => t >= c.start && t < c.end);
-  // 这一刻有哪些卡、各自长什么样 —— 变了才重建场景。**故意不带时刻**:
-  // 带上的话在一段卡里拖时间轴,每跨一格就重建一次整个场景(几何全建、贴图全重载、
-  // 还要新开一个 WebGL 上下文,浏览器上限约 16)。换时刻只换 material.map,不必重建。
+  const allBoards = useMemo(() => flattenBoards3D(project), [project]);
+  const active = allBoards.filter((c) => t >= c.start && t < c.end);
   const sig = active.map(buildKey).join("|");
-  // 该显示哪几刻。变了只重新取图,不重建场景
-  const momentSig = active.map(momentKey).join("|");
+  const momentSig = active.filter((c) => c.cardId !== MEDIA_BOARD_CARD).map(momentKey).join("|");
+  const stageSizeNow = { width: project.width, height: project.height };
+  const activeCutNow = activeCutEntry(project);
+  const defFovNow = defaultCutFovDeg(project, activeCutNow);
+  const cam3dNow = resolveCamera3DAt(activeCutNow?.cameras, stageSizeNow, t, defFovNow);
+  const culledSig = active
+    .map((c) => (isBoardBehindCamera(effFrameAt(c, t), stageSizeNow, cam3dNow.fovDeg, { position: cam3dNow.position, forward: cam3dNow.forward, near: cam3dNow.near }) ? "1" : "0"))
+    .join("");
 
-  /* ── 建场景 ───────────────────────────────────────────────────── */
+  /* ── Build the scene ───────────────────────────────────────────── */
   useEffect(() => {
     const el = host.current;
     if (!mods || !el) return;
     const [THREE, { OrbitControls }] = mods;
-    const w = Math.max(1, el.clientWidth);
-    const h = Math.max(1, el.clientHeight);
+    const outerEl = outerRef.current || el;
+    const w = Math.max(1, el.clientWidth || outerEl.clientWidth);
+    const h = Math.max(1, el.clientHeight || outerEl.clientHeight);
     const stage = { width: project.width, height: project.height };
+    const initDefFov = defaultCutFovDeg(project, activeCutEntry(project));
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
@@ -361,33 +491,82 @@ export function Scene3DView({ project, t }: Props) {
 
     const scene = new THREE.Scene();
     /*
-     * 相机的**初始**位置就是成片的机位(space3d 那台),所以一打开看到的和 2D 视图一样;
-     * 之后 OrbitControls 让你从这里转出去。有这个起点,"转偏了"随时能对回来。
+     * The camera's **initial** position is the final video's camera position (the space3d one), so what
+     * you see on open matches the 2D view; after that OrbitControls lets you rotate away from here.
+     * With this starting point, "rotated off" can always be brought back.
      */
-    const cam = cameraFor(stage, project.camera3dFov ?? DEFAULT_FOV_DEG);
-    const camera = new THREE.PerspectiveCamera(cam.fovDeg, w / h, 1, cam.distance * 40);
-    // 转过就接着用上次的机位,没转过才用成片那台的位置(见 pose 那个 ref 的说明)
+    const cam = cameraFor(stage, initDefFov);
+    const nearClip = boardNearDistance(stage, initDefFov);
+    const camera = new THREE.PerspectiveCamera(cam.fovDeg, w / h, nearClip, Math.max(cam.distance * 40, 20000));
     camera.position.set(...(pose.current?.pos ?? cam.position));
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(...(pose.current?.target ?? [0, 0, 0]));
     controls.enableDamping = true;
-    // 用户一转就记下来。OrbitControls 的 change 在每次相机被它改动时触发,
-    // 包括阻尼滑行的那几帧,所以松手后的最终位置一定记的是最后那一下。
+    controls.enabled = modeRef.current === "space";
     controls.addEventListener("change", () => {
+      if (modeRef.current !== "space") return;
       pose.current = {
         pos: camera.position.toArray() as [number, number, number],
         target: controls.target.toArray() as [number, number, number],
       };
     });
-    controls.update();
+    const onOrbitEnd = () => setBakeGen((g) => g + 1);
+    controls.addEventListener("end", onOrbitEnd);
+    if (modeRef.current === "space") controls.update();
+
+    const syncViewportSize = () => {
+      const outEl = outerRef.current || el;
+      const ow = Math.max(1, outEl.clientWidth);
+      const oh = Math.max(1, outEl.clientHeight);
+      if (modeRef.current === "camera") {
+        const aspect = Math.max(1e-6, projRef.current.width / Math.max(1, projRef.current.height));
+        let vw = ow;
+        let vh = vw / aspect;
+        if (vh > oh) {
+          vh = oh;
+          vw = vh * aspect;
+        }
+        vw = Math.max(1, Math.round(vw));
+        vh = Math.max(1, Math.round(vh));
+        el.style.left = `${Math.round((ow - vw) / 2)}px`;
+        el.style.top = `${Math.round((oh - vh) / 2)}px`;
+        el.style.width = `${vw}px`;
+        el.style.height = `${vh}px`;
+        el.style.right = "auto";
+        el.style.bottom = "auto";
+        const capEl = captionOverlayRef.current;
+        if (capEl) {
+          const pw = Math.max(1, projRef.current.width);
+          const ph = Math.max(1, projRef.current.height);
+          capEl.style.left = `${Math.round((ow - vw) / 2)}px`;
+          capEl.style.top = `${Math.round((oh - vh) / 2)}px`;
+          capEl.style.width = `${pw}px`;
+          capEl.style.height = `${ph}px`;
+          capEl.style.transformOrigin = "0 0";
+          capEl.style.transform = `scale(${vw / pw})`;
+        }
+        camera.aspect = aspect;
+        camera.updateProjectionMatrix();
+        renderer.setSize(vw, vh, false);
+      } else {
+        el.style.left = "0";
+        el.style.top = "0";
+        el.style.right = "0";
+        el.style.bottom = "0";
+        el.style.width = "auto";
+        el.style.height = "auto";
+        const nw = Math.max(1, el.clientWidth || ow);
+        const nh = Math.max(1, el.clientHeight || oh);
+        camera.aspect = nw / nh;
+        camera.updateProjectionMatrix();
+        renderer.setSize(nw, nh, false);
+      }
+    };
+    syncViewportSize();
 
     scene.add(new THREE.AmbientLight(0xffffff, 2.2));
 
-    /*
-     * 屏幕平面(z=0)的轮廓。没有它就完全没有参照 —— 转两下就不知道哪边是"正面"了。
-     * 画成线框而不是实面:实面会挡住 z 为负的卡。
-     */
     const edge = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.PlaneGeometry(stage.width, stage.height)),
       new THREE.LineBasicMaterial({ color: 0x64748b, transparent: true, opacity: 0.5 }),
@@ -396,33 +575,36 @@ export function Scene3DView({ project, t }: Props) {
 
     const disposables: { dispose: () => void }[] = [edge.geometry, edge.material as any];
 
-    /*
-     * 「2D 视角框」:一个**尖在 2D 那台相机、底在画幅**的四角锥(几何见 frustum2d.ts)。
-     *
-     * 上面那圈 `edge` 只说了「画幅在这个平面上」,没说**是从哪儿看过去的** ——
-     * 而转两下之后,"这张卡到底在不在画面里"恰恰要靠视线方向才判断得了。
-     *
-     * 整个锥八条线**同一个琥珀色**:底面四条边和四条棱是一样东西的两部分,
-     * 分成两个颜色会让人以为是两样东西。琥珀和选中描边的青(0x22d3ee)、
-     * 画幅轮廓的灰蓝(0x64748b)都分得开。
-     *
-     * **建一次就放着,用 visible 开关**,不进 effect 依赖:进依赖的话点一下按钮就要
-     * 重建整个场景 —— 几何全建、贴图全重载,还新开一个 WebGL 上下文(上限约 16)。
-     */
+    const frustumMat = new THREE.LineBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.9 });
     const frustum = new THREE.LineSegments(
       new THREE.BufferGeometry().setAttribute(
         "position",
-        new THREE.Float32BufferAttribute(frustum2d(stage, project.camera3dFov).positions, 3),
+        new THREE.Float32BufferAttribute(frustum2d(stage, initDefFov).positions, 3),
       ),
-      new THREE.LineBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.9 }),
+      frustumMat,
     );
     frustum.visible = frustumRef.current;
     scene.add(frustum);
-    disposables.push(frustum.geometry, frustum.material as any);
+    disposables.push(frustum.geometry, frustumMat as any);
+
+    const camGizmoGeo = new THREE.BoxGeometry(
+      Math.max(28, stage.width * 0.03),
+      Math.max(20, stage.height * 0.025),
+      Math.max(36, stage.width * 0.035),
+    );
+    const camGizmoMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b, wireframe: false });
+    const camGizmo = new THREE.Mesh(camGizmoGeo, camGizmoMat);
+    camGizmo.userData.isCameraGizmo = true;
+    camGizmo.visible = false;
+    scene.add(camGizmo);
+    disposables.push(camGizmoGeo, camGizmoMat);
+    let lastFrustumSig = "";
+    let lastAppliedMode = modeRef.current;
+
     swap.current = new Map();
     proxy.current = new Map();
 
-    /* 轨道流播放器：从隐藏画布中解码并获取各卡片轨道流 */
+    /* Track stream player: decodes from a hidden canvas and fetches each card's track stream */
     const player = new StreamPlayer({
       root: () => streamHost.current,
     });
@@ -432,12 +614,28 @@ export function Scene3DView({ project, t }: Props) {
       clipId: string;
       mesh: any;
       mat: any;
-      pl: any;
+      pl: ReturnType<typeof placeClip3D>;
       canvas: HTMLCanvasElement | null;
       canvasTex: any;
       cropped: boolean;
+      subBox: BoardSubBox | undefined;
       boundSig: string;
       mode: "proxy" | "stream" | "exact";
+    }[] = [];
+    const mediaBoards: {
+      clipId: string;
+      mesh: any;
+      mat: any;
+      pl: ReturnType<typeof placeClip3D>;
+      texCanvas: HTMLCanvasElement;
+      canvasTex: any;
+      lastDrawSig: string;
+    }[] = [];
+    const scene3dItems: {
+      clipId: string;
+      mesh: any;
+      mat: any;
+      hasTex: boolean;
     }[] = [];
 
     const cropToCanvasBound = (b: typeof boards[number], cv: HTMLCanvasElement) => {
@@ -461,37 +659,242 @@ export function Scene3DView({ project, t }: Props) {
       const dy = H / 2 - (by + bh / 2);
       b.mesh.position.set(b.pl.meshOffset[0] + dx, b.pl.meshOffset[1] + dy, b.pl.meshOffset[2]);
       b.cropped = true;
+      b.subBox = W > 0 && H > 0 ? { x: bx / W, y: by / H, w: bw / W, h: bh / H } : undefined;
     };
 
     posers.current = [];
-    // 拾取用:每块 mesh 记住它属于哪个 clip(three 的 userData 就是干这个的)
     const pickables: any[] = [];
-    // 摆位每帧重算,所以要留着这几个 group 的引用
     const placed: { clipId: string; pivot: any; inner: any; spin: any; tilt: any; mesh: any }[] = [];
+    const meshByClipId = new Map<string, any>();
+    const marks = new Map<string, any>();
+    const camDir = new THREE.Vector3();
 
     /*
-     * 画家序的序号。**谁盖住谁只看序列顺序,不看 Z** —— 这是成片那边写死的约定。
-     *
-     * 成片(Stage.tsx)故意**不加** `transform-style: preserve-3d`,那里有实测三行表:
-     * 加了它,兄弟卡片就从「按 DOM 顺序叠」变成「按 z 深度排序」,于是 Agent 把最上层的卡
-     * 往里推一点(translateZ 负值)会立刻被下面所有卡盖住 —— 和工具描述承诺的相反。
-     *
-     * 而这个视图里,板子材质是 transparent,three.js 对透明队列走 reversePainterSortStable:
-     * 没有 renderOrder 就**按 z 排**,而 `tilt.position.z = pl.translateZ` 让卡片本来就各有各的 z。
-     * 也就是说这里以前是让 translateZ 主导遮挡的,正好和成片相反,而且不报错。
-     * 显式钉上画家序,两边才是同一套规矩。
+     * Synchronize placement, timeline envelopes (`cardOpacityAt` + nested `cutEnv`), near-plane culling
+     * (`isBoardBehindCamera`), and back-to-front depth sorting (`sortBoardsByDepth`).
      */
+    const syncSceneState = () => {
+      const projNow = projRef.current;
+      const tNow = tRef.current;
+      const stageNow = { width: projNow.width, height: projNow.height };
+      const cutNow = activeCutEntry(projNow);
+      const defFov = defaultCutFovDeg(projNow, cutNow);
+      const cam3d = resolveCamera3DAt(cutNow?.cameras, stageNow, tNow, defFov);
+      const is3DCut = activeCutKind(projNow) === "3d";
+      const curMode = modeRef.current;
+
+      if (curMode !== lastAppliedMode) {
+        lastAppliedMode = curMode;
+        syncViewportSize();
+        if (curMode === "space") {
+          const defCam = cameraFor(stageNow, defFov);
+          camera.fov = defFov;
+          camera.near = boardNearDistance(stageNow, defFov);
+          camera.far = Math.max(defCam.distance * 40, 20000);
+          camera.rotation.set(0, 0, 0);
+          const defaultSpacePos: [number, number, number] = is3DCut
+            ? [
+                -defCam.distance * 0.9,
+                defCam.distance * 0.42,
+                Math.max(defCam.distance * 1.4, cam3d.position[2] + defCam.distance * 0.6),
+              ]
+            : defCam.position;
+          camera.position.set(...(pose.current?.pos ?? defaultSpacePos));
+          controls.target.set(...(pose.current?.target ?? [0, 0, 0]));
+          camera.updateProjectionMatrix();
+          controls.enabled = true;
+          controls.update();
+        }
+      }
+
+      if (curMode === "camera") {
+        controls.enabled = false;
+        const aspect = Math.max(1e-6, stageNow.width / Math.max(1, stageNow.height));
+        if (camera.fov !== cam3d.fovDeg || camera.near !== cam3d.near || Math.abs(camera.aspect - aspect) > 1e-5) {
+          camera.fov = cam3d.fovDeg;
+          camera.near = cam3d.near;
+          camera.far = Math.max(cam3d.far, 20000);
+          camera.aspect = aspect;
+          camera.updateProjectionMatrix();
+        }
+        camera.position.set(...cam3d.position);
+        camera.rotation.order = "YXZ";
+        camera.rotation.set((cam3d.rx * Math.PI) / 180, (cam3d.ry * Math.PI) / 180, (cam3d.rz * Math.PI) / 180);
+      } else {
+        controls.enabled = true;
+      }
+
+      const flatClips = flattenBoards3D(projNow);
+      const liveById = new Map<string, { clip: Board3DClip; effFrame: Board3DClip["frame"]; trackOrder: number }>();
+      flatClips.forEach((c, idx) => liveById.set(c.id, { clip: c, effFrame: effFrameAt(c, tNow), trackOrder: idx }));
+
+      const plById = new Map<string, ReturnType<typeof placeClip3D>>();
+      for (const q of placed) {
+        const entry = liveById.get(q.clipId);
+        if (!entry) continue;
+        const pl2 = placeClip3D(entry.effFrame, stageNow);
+        plById.set(q.clipId, pl2);
+        q.pivot.position.set(...pl2.pivot);
+        q.inner.rotation.z = pl2.rollZ;
+        q.inner.scale.setScalar(pl2.scale);
+        q.spin.rotation.y = pl2.spinY;
+        q.tilt.rotation.x = pl2.tiltX;
+        q.tilt.position.z = pl2.translateZ;
+      }
+      for (const poseFn of posers.current) poseFn(tNow);
+
+      camera.updateMatrixWorld();
+      camera.getWorldDirection(camDir);
+      const poseNow: CameraPose3D = {
+        position: [camera.position.x, camera.position.y, camera.position.z],
+        forward: [camDir.x, camDir.y, camDir.z],
+        near: camera.near,
+      };
+      const fovForCull = curMode === "camera" ? cam3d.fovDeg : defFov;
+
+      const sortInput: SortableBoard3D[] = [];
+
+      for (const b of boards) {
+        const entry = liveById.get(b.clipId);
+        const pl2 = plById.get(b.clipId);
+        if (pl2) {
+          if (!b.cropped && (Math.abs(pl2.size.width - b.pl.size.width) > 0.5 || Math.abs(pl2.size.height - b.pl.size.height) > 0.5)) {
+            const nextGeo = new THREE.PlaneGeometry(pl2.size.width, pl2.size.height);
+            const old = b.mesh.geometry;
+            b.mesh.geometry = nextGeo;
+            old.dispose();
+            disposables.push(nextGeo);
+          }
+          b.pl = pl2;
+          if (b.cropped && b.subBox) {
+            const W = pl2.size.width;
+            const H = pl2.size.height;
+            const dx = (b.subBox.x + b.subBox.w / 2) * W - W / 2;
+            const dy = H / 2 - (b.subBox.y + b.subBox.h / 2) * H;
+            b.mesh.position.set(pl2.meshOffset[0] + dx, pl2.meshOffset[1] + dy, pl2.meshOffset[2]);
+          } else {
+            b.mesh.position.set(...pl2.meshOffset);
+          }
+        }
+        const inRange = !!entry && tNow >= entry.clip.start && tNow < entry.clip.end;
+        const op = inRange && entry ? cardOpacityAt(entry.clip, tNow) : 0;
+        const subBox = b.cropped ? b.subBox : undefined;
+        const culled = !entry || isBoardBehindCamera(entry.effFrame, stageNow, fovForCull, poseNow, subBox);
+        const visible = !culled && op > 0;
+        b.mesh.visible = visible;
+        b.mat.transparent = true;
+        b.mat.depthWrite = false;
+        b.mat.opacity = b.mode === "proxy" ? PROXY_OPACITY * op : op;
+        if (visible && entry) {
+          sortInput.push({
+            id: b.clipId,
+            frame: entry.effFrame,
+            trackOrder: entry.trackOrder,
+            subBox,
+          });
+        }
+      }
+
+      for (const mb of mediaBoards) {
+        const entry = liveById.get(mb.clipId);
+        const pl2 = plById.get(mb.clipId);
+        if (pl2) {
+          if (Math.abs(pl2.size.width - mb.pl.size.width) > 0.5 || Math.abs(pl2.size.height - mb.pl.size.height) > 0.5) {
+            const nextGeo = new THREE.PlaneGeometry(pl2.size.width, pl2.size.height);
+            const old = mb.mesh.geometry;
+            mb.mesh.geometry = nextGeo;
+            old.dispose();
+            disposables.push(nextGeo);
+          }
+          mb.pl = pl2;
+          mb.mesh.position.set(...pl2.meshOffset);
+        }
+        const inRange = !!entry && tNow >= entry.clip.start && tNow < entry.clip.end;
+        const op = inRange && entry ? cardOpacityAt(entry.clip, tNow) : 0;
+        const culled = !entry || isBoardBehindCamera(entry.effFrame, stageNow, fovForCull, poseNow);
+        const visible = !culled && op > 0;
+        mb.mesh.visible = visible;
+        mb.mat.transparent = true;
+        mb.mat.depthWrite = false;
+        mb.mat.opacity = op;
+        if (visible && entry) {
+          sortInput.push({
+            id: mb.clipId,
+            frame: entry.effFrame,
+            trackOrder: entry.trackOrder,
+          });
+        }
+      }
+
+      for (const s of scene3dItems) {
+        const entry = liveById.get(s.clipId);
+        const pl2 = plById.get(s.clipId);
+        if (pl2) s.mesh.position.set(...pl2.meshOffset);
+        const inRange = !!entry && tNow >= entry.clip.start && tNow < entry.clip.end;
+        const op = inRange && entry ? cardOpacityAt(entry.clip, tNow) : 0;
+        const culled = !entry || isBoardBehindCamera(entry.effFrame, stageNow, fovForCull, poseNow);
+        const visible = !culled && op > 0;
+        s.mesh.visible = visible;
+        const wantTransparent = s.hasTex || op < 1;
+        if (s.mat.transparent !== wantTransparent) {
+          s.mat.transparent = wantTransparent;
+          s.mat.needsUpdate = true;
+        }
+        s.mat.depthWrite = !wantTransparent;
+        s.mat.opacity = op;
+        if (visible && entry) {
+          sortInput.push({
+            id: s.clipId,
+            frame: entry.effFrame,
+            trackOrder: entry.trackOrder,
+          });
+        }
+      }
+
+      const sorted = sortBoardsByDepth(sortInput, stageNow, fovForCull, poseNow);
+      for (const item of sorted) {
+        const m = meshByClipId.get(item.id);
+        if (m) m.renderOrder = item.renderOrder;
+      }
+
+      for (const [id, box] of marks) {
+        const targetMesh = meshByClipId.get(id);
+        box.visible = curMode === "space" && id === selRef.current && !!targetMesh?.visible;
+        if (box.visible) box.update();
+      }
+
+      const showCamGizmo = curMode === "space" && (is3DCut ? !spaceGizmoHiddenRef.current : frustumRef.current);
+      if (showCamGizmo) {
+        const fSig = `${stageNow.width}x${stageNow.height}:${cam3d.position.join(",")}:${cam3d.rx},${cam3d.ry},${cam3d.rz}:${cam3d.fovDeg}`;
+        if (fSig !== lastFrustumSig) {
+          lastFrustumSig = fSig;
+          frustum.geometry.setAttribute(
+            "position",
+            new THREE.Float32BufferAttribute(cameraFrustum3D(stageNow, cam3d).positions, 3),
+          );
+          frustum.geometry.computeBoundingSphere();
+        }
+        const isCamSel = Boolean(cam3d.activeClipId && selectedCameraRef.current === cam3d.activeClipId);
+        const gizmoColor = isCamSel ? 0x22d3ee : 0xf59e0b;
+        frustumMat.color.setHex(gizmoColor);
+        camGizmoMat.color.setHex(gizmoColor);
+        camGizmo.position.set(...cam3d.position);
+        camGizmo.rotation.order = "YXZ";
+        camGizmo.rotation.set((cam3d.rx * Math.PI) / 180, (cam3d.ry * Math.PI) / 180, (cam3d.rz * Math.PI) / 180);
+      }
+      frustum.visible = showCamGizmo;
+      camGizmo.visible = showCamGizmo && is3DCut;
+      edge.visible = curMode === "space" && !showCamGizmo;
+    };
+
     let order = 0;
 
     for (const clip of active) {
-      // 正负号全在 place3d.ts 里,那边有单测钉着(见它的说明)
-      const pl = placeClip3D(clip.frame, stage);
-      const renderOrder = order++;
+      const pl = placeClip3D(effFrameAt(clip, tRef.current), stage);
+      const renderOrder = ++order;
 
-      // 摆位那一串 group 是共用的:平板和真三维物件都挂在它里面
       const pivot = new THREE.Group();
       pivot.position.set(...pl.pivot);
-      // 从里到外:roll → scale → spin → tilt → 平移,和 frameCss 的顺序一致
       const inner = new THREE.Group();
       inner.rotation.z = pl.rollZ;
       inner.scale.setScalar(pl.scale);
@@ -506,12 +909,51 @@ export function Scene3DView({ project, t }: Props) {
       scene.add(pivot);
       placed.push({ clipId: clip.id, pivot, inner, spin, tilt, mesh: null });
 
+      if (clip.cardId === MEDIA_BOARD_CARD && clip.media) {
+        const texCanvas = document.createElement("canvas");
+        texCanvas.width = Math.max(1, Math.round(pl.size.width));
+        texCanvas.height = Math.max(1, Math.round(pl.size.height));
+        const canvasTex = new THREE.CanvasTexture(texCanvas);
+        canvasTex.colorSpace = THREE.SRGBColorSpace;
+        canvasTex.minFilter = THREE.LinearFilter;
+        canvasTex.magFilter = THREE.LinearFilter;
+        canvasTex.generateMipmaps = false;
+        const geo = new THREE.PlaneGeometry(pl.size.width, pl.size.height);
+        const mat = new THREE.MeshBasicMaterial({
+          map: canvasTex,
+          color: 0xffffff,
+          transparent: true,
+          opacity: 1,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(...pl.meshOffset);
+        mesh.renderOrder = renderOrder;
+        inner.add(mesh);
+        mesh.userData.clipId = clip.id;
+        meshByClipId.set(clip.id, mesh);
+        pickables.push(mesh);
+        disposables.push(geo, mat, canvasTex);
+        mediaBoards.push({
+          clipId: clip.id,
+          mesh,
+          mat,
+          pl,
+          texCanvas,
+          canvasTex,
+          lastDrawSig: "",
+        });
+        continue;
+      }
+
       const def = getCard(clip.cardId);
 
       /*
-       * 三维的卡在这里就是**真的三维**,不糊贴图。
-       * 用的是卡片同一份构造(scene3dObject.ts):同样的几何、材质、灯光预设、姿势公式。
-       * 灯挂在这个物件自己的 group 上,所以同屏几个三维卡各带各的灯,各自和成片对得上。
+       * A 3D card here is **truly 3D**, with no texture smeared on.
+       * It uses the same construction as the card (scene3dObject.ts): the same geometry, material,
+       * lighting presets and pose formula. The light hangs on this object's own group, so several 3D
+       * cards on screen each carry their own light, and each matches the final video.
        */
       if (clip.cardId === "scene-3d" && def) {
         const params = { ...def.defaults, ...clip.params } as Scene3DParams;
@@ -519,48 +961,53 @@ export function Scene3DView({ project, t }: Props) {
         const mat = materialOf(THREE, params);
         const mesh = new THREE.Mesh(geo, mat);
         mesh.position.set(...pl.meshOffset);
-        // 不带贴图时它是不透明的(走 opaque 队列、自己写深度),renderOrder 只影响绘制先后不影响结果;
-        // 一旦 applyTexture 把它转成 transparent,就和板子排在同一个队列里,这时候这一行是必须的
         mesh.renderOrder = renderOrder;
         inner.add(mesh);
         mesh.userData.clipId = clip.id;
+        meshByClipId.set(clip.id, mesh);
         pickables.push(mesh);
         disposables.push(geo, mat);
 
-        // 灯的距离尺度照抄卡片:它用的是自己画布那台相机的距离
-        const camD = cameraFor({ width: pl.size.width, height: pl.size.height }, params.fov > 0 ? params.fov : (project.camera3dFov ?? DEFAULT_FOV_DEG)).distance;
+        const sItem = { clipId: clip.id, mesh, mat, hasTex: false };
+        scene3dItems.push(sItem);
+
+        const camD = cameraFor({ width: pl.size.width, height: pl.size.height }, params.fov > 0 ? params.fov : initDefFov).distance;
         addLights(THREE, inner, params.light, camD);
 
         if (params.texture) {
-          const tex = applyTexture(THREE, mat, params.texture, () => renderer.render(scene, camera));
+          const tex = applyTexture(THREE, mat, params.texture, () => {
+            sItem.hasTex = true;
+            syncSceneState();
+            renderer.render(scene, camera);
+          });
           if (tex) disposables.push(tex);
         }
 
-        // 会转的物件要跟着时间轴走 —— 姿势是「相对这张卡起点」的秒数的纯函数
         const start = clip.start;
         posers.current.push((now: number) => poseMesh(mesh, params, Math.max(0, now - start)));
         poseMesh(mesh, params, Math.max(0, t - start));
         continue;
       }
 
-      /* 二维的卡:一块贴着「预渲染出来的真图」的板子 */
+      /* A 2D card: a board with the "real prerendered image" applied */
       const geo = new THREE.PlaneGeometry(pl.size.width, pl.size.height);
       const mat = new THREE.MeshBasicMaterial({
         color: PROXY_COLOR,
         transparent: true,
-        opacity: 0.45,
+        opacity: PROXY_OPACITY,
         side: THREE.DoubleSide,
         depthWrite: false,
       });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(...pl.meshOffset);
-      mesh.renderOrder = renderOrder;   // 见上面「画家序」那段
+      mesh.renderOrder = renderOrder;
       inner.add(mesh);
       mesh.userData.clipId = clip.id;
+      meshByClipId.set(clip.id, mesh);
       pickables.push(mesh);
       disposables.push(geo, mat);
 
-      // 轨道流画布与纹理
+      // Track stream canvas and texture
       const canvas = streamHost.current?.querySelector<HTMLCanvasElement>(
         `[data-pc-clip="${CSS.escape(clip.id)}"] > canvas[data-pc-stream-plane]`,
       );
@@ -574,17 +1021,7 @@ export function Scene3DView({ project, t }: Props) {
         disposables.push(canvasTex);
       }
 
-      const boardState: {
-        clipId: string;
-        mesh: any;
-        mat: any;
-        pl: any;
-        canvas: HTMLCanvasElement | null;
-        canvasTex: any;
-        cropped: boolean;
-        boundSig: string;
-        mode: "proxy" | "stream" | "exact";
-      } = {
+      const boardState: typeof boards[number] = {
         clipId: clip.id,
         mesh,
         mat,
@@ -592,48 +1029,56 @@ export function Scene3DView({ project, t }: Props) {
         canvas: canvas ?? null,
         canvasTex,
         cropped: false,
+        subBox: undefined,
         boundSig: "",
         mode: "proxy",
       };
       boards.push(boardState);
 
-      /** 这块板子此刻挂着哪张贴图。贴图缓存淘汰时要绕开正在用的,靠它记账 */
+      /** Which texture this board currently holds. When evicting the texture cache, the ones in use must be skipped, and this is the bookkeeping for that */
       let boundUrl: string | null = null;
 
       /*
-       * **只贴当前这一刻的图,别的一律退回色块。**
+       * **Only apply the image for the current moment; anything else goes back to a placeholder block.**
        *
-       * 一度写成「精确的那张没到就先拿预渲染那张垫着,总比一块灰色色块强」——那是错的。
-       * 垫上去的是另一个时刻的真实画面,它长得和成片一模一样,没人看得出它是垫的;
-       * 而色块**自明**地不是成品(和实体模式同一条道理,见 render/solidMode.ts)。
-       * 一张看着像真的、其实是别的时刻的画面,会被当成这一刻的依据传下去 ——
-       * 那正是「界面上 0.2 秒、板子上 1.0 秒」这个 bug 的本体,换个时刻再犯一遍没有意义。
+       * It was once written as "if the exact image has not arrived, use the prerendered one as padding,
+       * better than a gray block": that was wrong. What gets padded in is a real frame from another
+       * moment, which looks exactly like the final video, so nobody can tell it is padding; whereas a
+       * placeholder block is **self-evidently** not a finished result (the same reasoning as solid mode,
+       * see render/solidMode.ts). An image that looks real but is actually from another moment gets
+       * passed along as evidence for this moment: that is exactly the essence of the bug "0.2 seconds on
+       * the UI, 1.0 seconds on the board", and committing it again at another moment is pointless.
        */
       /*
-       * **把整屏的板子裁成内容那一块。**
+       * **Crop the full-screen board down to the content area.**
        *
-       * 绝大多数卡没写 frame.w/h,它们的框就是整幅舞台 —— 于是每块板子都是屏幕大小、
-       * 外形一模一样,里面 70~90% 是全透明的。一摞这样的透明片摆在空间里,
-       * 「东西是怎么摆的」根本看不出来,而那正是这个视图存在的理由。
+       * Most cards do not set frame.w/h, so their frame is the whole stage: every board is screen-sized,
+       * with an identical outline, and 70~90% of it is fully transparent. A stack of such transparent
+       * sheets laid out in space makes "how things are placed" impossible to see, and that is the very
+       * reason this view exists.
        *
-       * 内容框从**贴图自己**量(alpha 包围盒)。预渲染的排版尺寸修对之后,贴图画布和卡片的框
-       * 是 1:1 的,所以量出来的相对位置直接就是「四个角在这张卡的框里的位置」——
-       * 拿它从这块屏幕平面上裁一小块,再把贴图的对应区域映上去,位置天然是对的。
+       * The content box is measured from **the texture itself** (alpha bounding box). Once the layout
+       * size of the prerender is fixed, the texture canvas and the card's frame are 1:1, so the measured
+       * relative position directly gives "where the four corners are within this card's frame": use it
+       * to crop a small piece from this screen plane, then map the corresponding region of the texture
+       * onto it, and the position is naturally right.
        *
-       * 量不出来、或者本来就铺满(满屏渐变底那种)就保持整块 —— 那种卡**就该**是一整块板子。
+       * If it cannot be measured, or it genuinely fills the whole area (like a full-screen gradient
+       * background), keep the whole board: such a card **should** be one whole board.
        */
       const cropToContent = (tex: any) => {
         const box = measureImageBox(tex.image);
-        const W = pl.size.width, H = pl.size.height;
+        const W = boardState.pl.size.width, H = boardState.pl.size.height;
         boardState.boundSig = "";
         if (!worthCropping(box) || !box) {
+          boardState.subBox = undefined;
           if (boardState.cropped) {
             const nextGeo = new THREE.PlaneGeometry(W, H);
             const old = mesh.geometry;
             mesh.geometry = nextGeo;
             old.dispose();
             disposables.push(nextGeo);
-            mesh.position.set(...pl.meshOffset);
+            mesh.position.set(...boardState.pl.meshOffset);
             tex.repeat.set(1, 1);
             tex.offset.set(0, 0);
             tex.needsUpdate = true;
@@ -647,59 +1092,69 @@ export function Scene3DView({ project, t }: Props) {
         old.dispose();
         disposables.push(nextGeo);
         /*
-         * 把板子挪到内容框的中心。平面自己是以原点为中心的,而内容框多半不在正中,
-         * 不挪的话贴图看着就整体偏了 —— 这一步和 UV 那一步必须成对,少一个都会错位。
+         * Move the board to the center of the content box. The plane itself is centered on the origin,
+         * while the content box is mostly not at the center, and without moving it the texture would look
+         * offset as a whole: this step and the UV step must come as a pair, and missing either one causes
+         * misalignment.
          */
         const dx = (box.x + box.w / 2) * W - W / 2;
-        const dy = H / 2 - (box.y + box.h / 2) * H;   // three 的 y 朝上,图片坐标朝下
-        mesh.position.set(pl.meshOffset[0] + dx, pl.meshOffset[1] + dy, pl.meshOffset[2]);
-        // 贴图只显示这一块。three 的 UV 原点在左下,所以 y 要翻过来
+        const dy = H / 2 - (box.y + box.h / 2) * H;   // three's y points up, image coordinates point down
+        mesh.position.set(boardState.pl.meshOffset[0] + dx, boardState.pl.meshOffset[1] + dy, boardState.pl.meshOffset[2]);
+        // The texture shows only this region. three's UV origin is at the bottom left, so y must be flipped
         tex.repeat.set(box.w, box.h);
         tex.offset.set(box.x, 1 - box.y - box.h);
         tex.needsUpdate = true;
         boardState.cropped = true;
+        boardState.subBox = { x: box.x, y: box.y, w: box.w, h: box.h };
       };
 
-      /** 贴上去之后的收尾:裁到内容框、恢复成不透明的白底(色块那一套的反操作) */
+      /** Finishing after applying: crop to the content box, restore the white tint, sync opacity/cull/depth, and render */
       const dressUp = (tex: any) => {
         cropToContent(tex);
         mat.color.set(0xffffff);
-        mat.opacity = 1;
+        mat.depthWrite = false;
+        syncSceneState();
         renderer.render(scene, camera);
       };
       const apply = (url: string, precise = false) => {
-        if (!precise) return; // 预渲染那条路不带时刻,它给的图只进缓存,不上板子
+        if (!precise) return; // The prerender path carries no moment: the image it gives goes only into the cache, not onto the board
         boundUrl = url;
         texInUse.add(url);
-        boardState.mode = "exact";
         /*
-         * **解码过的直接贴,不再走一遍 TextureLoader。**
+         * **Apply decoded textures directly, without going through TextureLoader again.**
          *
-         * 这一条就是「两张卡之间闪一下色块」的根治:跨过卡片边界时整个场景重建,
-         * 每块板子都是新的 material,而异步加载哪怕命中 HTTP 缓存也要一两帧才回来 ——
-         * 那一两帧里板子是 PROXY_COLOR 的色块。命中这里就在同一帧贴完,中间没有空档。
+         * This is the root fix for "a placeholder block flashes between two cards": when crossing a card
+         * boundary the whole scene is rebuilt, every board gets a new material, and async loading takes
+         * one or two frames to come back even on an HTTP cache hit: during those one or two frames the
+         * board is a PROXY_COLOR block. A hit here applies it in the same frame, with no gap in between.
          */
         const hit = texCache.get(url);
         if (hit) {
+          boardState.mode = "exact";
           mat.map = hit;
-          // 预渲染出来的卡是透明底,不开 transparent 四周会变成黑块(和 applyTexture 里同一个理由)
+          // A prerendered card has a transparent background; without transparent on, the surroundings turn into black blocks (same reason as in applyTexture)
           mat.transparent = true;
+          mat.depthWrite = false;
           mat.needsUpdate = true;
-          cacheTexture(url, hit); // 挪到队尾:它是最近用过的
+          cacheTexture(url, hit); // Move it to the end of the queue: it is the most recently used
           dressUp(hit);
           return;
         }
         applyTexture(THREE, mat, url, (loaded: any) => {
           cacheTexture(url, loaded);
+          if (boundUrl !== url) return;
+          boardState.mode = "exact";
           dressUp(loaded);
         });
         /*
-         * **不进 disposables。** 贴图的所有权归上面那个缓存,场景重建时连它一起 dispose 掉的话,
-         * 下一次重建又得重新解码,缓存就白做了;更糟的是别的板子可能正挂着同一张
-         * (相对键之后,同一张卡的两个副本共用同一个文件),dispose 会让那块板子直接变黑。
+         * **Not in disposables.** The texture's ownership belongs to the cache above: if it were disposed
+         * along with everything else on a scene rebuild, the next rebuild would have to decode it again,
+         * and the cache would be pointless; worse, another board may be holding the same one right now
+         * (after relative keys, two copies of the same card share one file), and disposing would turn that
+         * board black.
          */
       };
-      /** 退回色块:这一刻的图还没渲出来,或者换到了别的时刻;若流画面可用则保持流画面过渡 */
+      /** Back to a placeholder block: this moment's image has not been rendered yet, or it moved to a different moment; if the stream picture is available, keep the stream picture transition */
       const toProxy = () => {
         if (boundUrl) { texInUse.delete(boundUrl); boundUrl = null; }
         if (player.showingClips().has(clip.id) && canvasTex && canvas) {
@@ -709,29 +1164,36 @@ export function Scene3DView({ project, t }: Props) {
           canvasTex.needsUpdate = true;
           mat.map = canvasTex;
           mat.color.set(0xffffff);
-          mat.opacity = 1;
           mat.transparent = true;
+          mat.depthWrite = false;
           mat.needsUpdate = true;
           boardState.mode = "stream";
+          syncSceneState();
           renderer.render(scene, camera);
           return;
         }
         if (boardState.cropped) {
-          const nextGeo = new THREE.PlaneGeometry(pl.size.width, pl.size.height);
+          const nextGeo = new THREE.PlaneGeometry(boardState.pl.size.width, boardState.pl.size.height);
           const old = mesh.geometry;
           mesh.geometry = nextGeo;
           old.dispose();
           disposables.push(nextGeo);
-          mesh.position.set(...pl.meshOffset);
+          mesh.position.set(...boardState.pl.meshOffset);
           boardState.cropped = false;
+          boardState.subBox = undefined;
           boardState.boundSig = "";
         }
         boardState.mode = "proxy";
-        if (!mat.map) return;
+        if (!mat.map) {
+          syncSceneState();
+          renderer.render(scene, camera);
+          return;
+        }
         mat.map = null;
         mat.color.set(PROXY_COLOR);
-        mat.opacity = 0.45;
+        mat.depthWrite = false;
         mat.needsUpdate = true;
+        syncSceneState();
         renderer.render(scene, camera);
       };
       swap.current.set(clip.id, apply);
@@ -741,11 +1203,13 @@ export function Scene3DView({ project, t }: Props) {
     }
 
     /*
-     * 点选。用射线打中的第一块 mesh,把它的 clip 设成选中 —— 选中之后左边的编辑面板
-     * 就是这张卡,可以直接拧「三维」那三个旋钮,所以这一页从"能看"变成"能摆"。
+     * Click to select. Take the first mesh hit by the ray and set its clip as selected: once selected,
+     * the editing panel on the left is this card, and you can directly turn the three "3D" knobs, so
+     * this tab goes from "can look" to "can place".
      *
-     * 要和 OrbitControls 共存:转视角也是按下+拖动。所以按下时记位置,
-     * 松开时只有几乎没动过(< 4px)才当成点击 —— 否则转个视角就把选中改掉了。
+     * It has to coexist with OrbitControls: rotating the view is also press + drag. So record the
+     * position on press, and on release treat it as a click only if it barely moved (< 4px):
+     * otherwise rotating the view would change the selection.
      */
     const raycaster = new THREE.Raycaster();
     let downAt: { x: number; y: number } | null = null;
@@ -761,16 +1225,33 @@ export function Scene3DView({ project, t }: Props) {
         -((e.clientY - r.top) / r.height) * 2 + 1,
       );
       raycaster.setFromCamera(ndc, camera);
-      const hit = raycaster.intersectObjects(pickables, false)[0];
-      // 点空白处不清选中:清了的话在 3D 页随手一点就丢了左边正在编辑的那张卡
+      const candidates = [
+        ...(camGizmo.visible ? [camGizmo] : []),
+        ...pickables.filter((m) => m.visible),
+      ];
+      const hit = raycaster.intersectObjects(candidates, false)[0];
+      if (hit?.object?.userData?.isCameraGizmo) {
+        const pNow = projRef.current;
+        const cutNow = activeCutEntry(pNow);
+        const c3 = resolveCamera3DAt(
+          cutNow?.cameras,
+          { width: pNow.width, height: pNow.height },
+          tRef.current,
+          defaultCutFovDeg(pNow, cutNow),
+        );
+        if (c3.activeClipId) {
+          onSelectCameraRef.current?.(c3.activeClipId);
+          (actions as any).selectCamera?.(c3.activeClipId);
+        }
+        return;
+      }
       const id = hit?.object?.userData?.clipId;
       if (id) actions.select([id]);
     };
     renderer.domElement.addEventListener("pointerdown", onDown);
     renderer.domElement.addEventListener("pointerup", onUp);
 
-    /* 选中的那块描一圈边:不改它自己的材质,另加一个线框子物体,取消选中直接删掉 */
-    const marks = new Map<string, any>();
+    /* Outline the selected board: leave its own material alone and add a separate wireframe child object; deselecting just deletes it */
     for (const m of pickables) {
       const box = new THREE.BoxHelper(m, 0x22d3ee);
       box.visible = false;
@@ -778,15 +1259,19 @@ export function Scene3DView({ project, t }: Props) {
       marks.set(m.userData.clipId, box);
       disposables.push(box.geometry, box.material as any);
     }
+    syncSceneState();
+    renderer.render(scene, camera);
 
     let lastPlanesSig = "";
-    const activeIds = new Set(active.filter((c) => c.cardId !== "scene-3d").map((c) => c.id));
+    const activeIds = new Set(
+      active.filter((c) => c.cardId !== "scene-3d" && c.cardId !== MEDIA_BOARD_CARD).map((c) => c.id),
+    );
 
     let raf = 0;
     const tick = () => {
-      controls.update();
+      if (modeRef.current === "space") controls.update();
 
-      // 轨道流与 3D 板子同步
+      // Sync the track stream with the 3D boards
       const ready = currentReadyIndex();
       const fps = Math.max(1, projRef.current.fps || 30);
       const streamPlanes: StreamPlaneRequest[] = [];
@@ -810,6 +1295,66 @@ export function Scene3DView({ project, t }: Props) {
       const showing = player.showingClips();
 
       const isPlay = playingRef.current;
+
+      if (mediaBoards.length > 0 && mediaHost.current) {
+        const pNow = projRef.current;
+        const allLive = flattenBoards3D(pNow);
+        for (const mb of mediaBoards) {
+          const bClip = allLive.find((x) => x.id === mb.clipId);
+          if (!bClip?.media) continue;
+          const mediaEl = mediaHost.current.querySelector<HTMLVideoElement | HTMLImageElement>(
+            `[data-pc-3d-media="${CSS.escape(mb.clipId)}"]`,
+          );
+          if (!mediaEl) continue;
+          let sw = 0;
+          let sh = 0;
+          let tTag = "";
+          if (mediaEl instanceof HTMLVideoElement) {
+            driveMedia(mediaEl, {
+              target: targetTimeOf(bClip as unknown as TrackClip, tRef.current),
+              playing: isPlay,
+              volume: 0,
+              scrubbing: scrubbingRef.current,
+              rate: clipSpeed(bClip as unknown as TrackClip),
+            });
+            if (mediaEl.readyState >= 2) {
+              sw = mediaEl.videoWidth;
+              sh = mediaEl.videoHeight;
+              tTag = mediaEl.currentTime.toFixed(4);
+            }
+          } else if (mediaEl.complete && mediaEl.naturalWidth > 0) {
+            sw = mediaEl.naturalWidth;
+            sh = mediaEl.naturalHeight;
+            tTag = "img";
+          }
+          if (sw > 0 && sh > 0) {
+            const bw = Math.max(1, Math.round(mb.pl.size.width));
+            const bh = Math.max(1, Math.round(mb.pl.size.height));
+            if (mb.texCanvas.width !== bw || mb.texCanvas.height !== bh) {
+              mb.texCanvas.width = bw;
+              mb.texCanvas.height = bh;
+            }
+            const cssFilt = filterOf(bClip as unknown as TrackClip, pNow.filters, tRef.current) ?? "";
+            const drawSig = `${bw}x${bh}:${tTag}:${cssFilt}`;
+            if (isPlay || drawSig !== mb.lastDrawSig) {
+              mb.lastDrawSig = drawSig;
+              const ctx = mb.texCanvas.getContext("2d");
+              if (ctx) {
+                ctx.clearRect(0, 0, bw, bh);
+                ctx.save();
+                if (cssFilt) ctx.filter = cssFilt;
+                const sc = Math.max(bw / sw, bh / sh);
+                const dw = sw * sc;
+                const dh = sh * sc;
+                ctx.drawImage(mediaEl, (bw - dw) / 2, (bh - dh) / 2, dw, dh);
+                ctx.restore();
+                mb.canvasTex.needsUpdate = true;
+              }
+            }
+          }
+        }
+      }
+
       for (const b of boards) {
         if (isPlay) {
           if (showing.has(b.clipId) && b.canvasTex && b.canvas) {
@@ -819,8 +1364,8 @@ export function Scene3DView({ project, t }: Props) {
               b.canvasTex.offset.set(0, 0);
               b.mat.map = b.canvasTex;
               b.mat.color.set(0xffffff);
-              b.mat.opacity = 1;
               b.mat.transparent = true;
+              b.mat.depthWrite = false;
               b.mat.needsUpdate = true;
               b.mode = "stream";
             }
@@ -835,22 +1380,20 @@ export function Scene3DView({ project, t }: Props) {
                 disposables.push(nextGeo);
                 b.mesh.position.set(...b.pl.meshOffset);
                 b.cropped = false;
+                b.subBox = undefined;
                 b.boundSig = "";
               }
               b.mat.map = null;
               b.mat.color.set(PROXY_COLOR);
-              b.mat.opacity = 0.45;
               b.mat.transparent = true;
+              b.mat.depthWrite = false;
               b.mat.needsUpdate = true;
               b.mode = "proxy";
             }
           }
         } else {
-          // 暂停态：如果已有精确 PNG 快照，保持 exact；
-          // 如果还没有 exact 快照，但流画面可用，保持流画面过渡；
-          // 两者都没有则显示半透明占位色块
           if (b.mode === "exact") {
-            // 已有精确 PNG 快照，保持
+            // An exact PNG snapshot already exists, keep it
           } else if (showing.has(b.clipId) && b.canvasTex && b.canvas) {
             cropToCanvasBound(b, b.canvas);
             if (b.mode !== "stream") {
@@ -858,8 +1401,8 @@ export function Scene3DView({ project, t }: Props) {
               b.canvasTex.offset.set(0, 0);
               b.mat.map = b.canvasTex;
               b.mat.color.set(0xffffff);
-              b.mat.opacity = 1;
               b.mat.transparent = true;
+              b.mat.depthWrite = false;
               b.mat.needsUpdate = true;
               b.mode = "stream";
             }
@@ -873,119 +1416,92 @@ export function Scene3DView({ project, t }: Props) {
               disposables.push(nextGeo);
               b.mesh.position.set(...b.pl.meshOffset);
               b.cropped = false;
+              b.subBox = undefined;
               b.boundSig = "";
             }
             b.mat.map = null;
             b.mat.color.set(PROXY_COLOR);
-            b.mat.opacity = 0.45;
             b.mat.transparent = true;
+            b.mat.depthWrite = false;
             b.mat.needsUpdate = true;
             b.mode = "proxy";
           }
         }
       }
-      // 会转的三维物件跟着时间轴走:姿势是 t 的纯函数,所以每帧照着当前 t 摆一次就行
-      /*
-       * 每帧按最新的 project 重摆一次。开销就是几个矩阵,但换来的是:
-       * 在「三维」面板里拖滑杆时场景**不重建** —— 不重建就不会重新造几何、
-       * 不会重新加载贴图,拖起来是连续的。
-       */
-      for (const q of placed) {
-        const c = projRef.current.tracks.flatMap((tr: any) => tr.clips).find((x: any) => x.id === q.clipId);
-        if (!c) continue;
-        const pl2 = placeClip3D(c.frame, { width: projRef.current.width, height: projRef.current.height });
-        q.pivot.position.set(...pl2.pivot);
-        q.inner.rotation.z = pl2.rollZ;
-        q.inner.scale.setScalar(pl2.scale);
-        q.spin.rotation.y = pl2.spinY;
-        q.tilt.rotation.x = pl2.tiltX;
-        q.tilt.position.z = pl2.translateZ;
-      }
-      for (const pose of posers.current) pose(tRef.current);
-      for (const [id, box] of marks) { box.visible = id === selRef.current; if (box.visible) box.update(); }
-      /*
-       * 视角框只切显隐,不重建场景(理由见上面建它的地方)。
-       *
-       * 开着的时候把灰色那圈 `edge` 收起来:锥的底面和它是**同一个矩形**,
-       * 两条线重叠在一起会打架(深度一样,谁在上面看显卡心情),而且一圈灰一圈黄
-       * 也不该是两个颜色。开了就整个锥都是黄的,关了再把灰圈放回来当常驻参照。
-       */
-      frustum.visible = frustumRef.current;
-      edge.visible = !frustumRef.current;
+      syncSceneState();
       renderer.render(scene, camera);
       raf = requestAnimationFrame(tick);
     };
-    // 这个视图是给人转着看的,不进导出,所以用真的 rAF 没有确定性问题
     raf = requestAnimationFrame(tick);
 
     const ro = new ResizeObserver(() => {
-      const nw = Math.max(1, el.clientWidth);
-      const nh = Math.max(1, el.clientHeight);
-      camera.aspect = nw / nh;
-      camera.updateProjectionMatrix();
-      renderer.setSize(nw, nh, false);
+      syncViewportSize();
     });
-    ro.observe(el);
+    ro.observe(outerEl);
 
     gl.current = {
-      render: () => renderer.render(scene, camera),
+      syncSize: syncViewportSize,
+      render: () => {
+        syncSceneState();
+        renderer.render(scene, camera);
+      },
       dispose: () => {
         cancelAnimationFrame(raf);
+        if (mediaHost.current) {
+          for (const v of Array.from(mediaHost.current.querySelectorAll("video"))) {
+            releaseMedia(v);
+          }
+        }
         renderer.domElement.removeEventListener("pointerdown", onDown);
         renderer.domElement.removeEventListener("pointerup", onUp);
+        controls.removeEventListener("end", onOrbitEnd);
         ro.disconnect();
         controls.dispose();
-        /*
-         * 这一场的板子全没了,所以「正在用的贴图」清空 —— 不清的话这些 URL 会永远挡着淘汰,
-         * 缓存只进不出,显存一路涨。贴图本身不在 disposables 里(所有权归 texCache)。
-         */
         texInUse.clear();
         for (const d of disposables) d.dispose?.();
         renderer.dispose();
-        // dispose() 不释放 WebGL 上下文,浏览器上限约 16,超了静默丢最老的(和 scene-3d 同一个坑)
         renderer.forceContextLoss();
         renderer.domElement.remove();
       },
     };
     return () => { gl.current?.dispose(); gl.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    // t 故意不在依赖里:姿势由渲染循环按 tRef 每帧更新,进依赖会让整个场景每帧重建
-  }, [mods, sig, project.width, project.height, project.camera3dFov]);
+  }, [mods, sig, project.width, project.height, project.camera3dFov, project.activeCutId]);
 
-  /* ── 换到哪一刻就贴哪一刻;没有的先退回色块,再去渲 ─────────────── */
+  /* ── Apply the texture for whichever moment we switch to; if there is none, fall back to the placeholder block first, then render ── */
   useEffect(() => {
-    // 播放中不发前台渲染请求，贴图直接从轨道流走；拖动中也不发
     if (playing || scrubbing) { setPending(0); setBakingAt(null); return; }
-    /*
-     * 只给**二维的卡**要贴图。scene-3d 那种在这个视图里是真几何,不需要贴图 ——
-     * 一开始没排除它,结果每开一次都白渲一张(单张 4.7~6.5 秒),而且渲出来根本没人用。
-     */
-    const flat = active.filter((c) => c.cardId !== "scene-3d");
+    const curStage = { width: project.width, height: project.height };
+    const cutNow = activeCutEntry(project);
+    const defFov = defaultCutFovDeg(project, cutNow);
+    const c3Now = resolveCamera3DAt(cutNow?.cameras, curStage, t, defFov);
+    const curFov = mode === "camera" ? c3Now.fovDeg : defFov;
+    const curPose: CameraPose3D | undefined =
+      mode === "camera"
+        ? { position: c3Now.position, forward: c3Now.forward, near: c3Now.near }
+        : pose.current
+          ? {
+              position: pose.current.pos,
+              forward: [
+                pose.current.target[0] - pose.current.pos[0],
+                pose.current.target[1] - pose.current.pos[1],
+                pose.current.target[2] - pose.current.pos[2],
+              ],
+              near: boardNearDistance(curStage, defFov),
+            }
+          : undefined;
+    const flat = active.filter(
+      (c) =>
+        c.cardId !== "scene-3d" &&
+        c.cardId !== MEDIA_BOARD_CARD &&
+        !isBoardBehindCamera(effFrameAt(c, t), curStage, curFov, curPose),
+    );
     const need: typeof flat = [];
     for (const c of flat) {
       const url = moments.current.get(momentKey(c));
-      // 有这一刻的就贴上(这条也覆盖「拖回刚才那一刻」:缓存命中,一张都不用重渲)
       if (url) swap.current.get(c.id)?.(url, true);
-      // 没有就打回色块（或留着流画面过渡），并记录需要渲染
       else { proxy.current.get(c.id)?.(); need.push(c); }
     }
-    /*
-     * 这一轮要渲哪些、各渲哪一刻。两种情形:
-     *   need 非空 —— 板子上现在是色块,按 bakeTOf 渲。那可能是粗粒度那一档(0.25 秒一格),
-     *                拖动时这很划算:一张图管一片区域,不用每落一个位置就渲四五秒。
-     *   need 为空、但播放头**停住**了 —— 画面已经有了,可它可能只是那个替身。
-     *                用户在盯着看,预渲染重试播放头自己那一帧(实测停在第 121 帧时,
-     *                三维拿的是第 120 帧,和二维差整整一帧)。
-     * 拖动中不补(省渲染),停住才补(要准)。
-     */
-    /*
-     * **手还按着就到此为止:贴图照换(缓存里有的立刻贴上),但一张都不渲。**
-     *
-     * 上面那个循环已经把该贴的贴了、该打回色块的打回了 —— 那是免费的。往下才是花钱的部分:
-     * 拖过去的每一个格子都发一次渲染,每个占住一个 Chrome 好几秒,而它们渲的都是
-     * 用户一闪而过的位置。松手之后 scrubbing 变 false,这个 effect 会立刻再跑一遍,
-     * 那时才真的开渲 —— 用户停在哪儿就渲哪儿,一次都不浪费。
-     */
     if (scrubbing) { setPending(0); setBakingAt(null); return; }
     const asks = need.length
       ? need.map((c) => ({ clip: c, at: bakeTOf(c) }))
@@ -993,11 +1509,6 @@ export function Scene3DView({ project, t }: Props) {
         ? flat.filter((c) => !moments.current.has(texKeyOf(c, fineTOf(c)))).map((c) => ({ clip: c, at: fineTOf(c) }))
         : [];
     if (!asks.length) {
-      /*
-       * 一张都不用渲(拖回了已经预渲染的地方)。**这里必须把「正在渲」清掉** ——
-       * 上一次的 effect 是被 cleanup 掐掉的(dead),它 finally 里那句清理带着 `!dead` 判断,
-       * 所以不会执行。不在这儿清的话,画面已经好了,提示却一直挂着"正在渲第 X 秒"。
-       */
       setPending(0);
       setBakingAt(null);
       return;
@@ -1005,41 +1516,17 @@ export function Scene3DView({ project, t }: Props) {
     let dead = false;
     setPending(asks.length);
     setBakingAt(asks[0].at);
-    /*
-     * **换到别的时刻就把上一次的请求掐掉。**
-     *
-     * 不掐的后果实测过:在没预渲染的区域连着挪 8 次播放头,发出 9 个前台渲染请求、
-     * 同时有 4 个挂着。而浏览器对同一个源只给约 6 条连接 —— 挂满之后,
-     * **连取一张已经渲好的贴图的 GET 都排不进去**,于是"拖回已经预渲染的地方也不刷新,
-     * 非要等前面那个没渲完的先完成"。
-     *
-     * 掐掉不浪费:服务端那边不会因此停手,而且同键并发是合并的(见 bakeOne 的 bakeInFlight),
-     * 图照样会落盘。下次要它的时候直接命中缓存。
-     */
     const ac = new AbortController();
-    /*
-     * 告诉预渲染让路。服务端渲染是串行的,预渲染要是正占着,这一张 —— 用户此刻正盯着的那张 ——
-     * 就得排在它后面多等四五秒。本来是来提速的,反而卡了一下。
-     */
     beginForegroundBake();
     (async () => {
       try {
-        /*
-         * 前台渲染走**编辑器自己的常驻热备渲染器**(两台 Chrome 轮换,见 vite-plugin-vision 的 uiRenderer),
-         * 不进预渲染池:用户正盯着的这一张最高优先级,一毫秒都不该排在 Agent 或预渲染后面。
-         */
         const res = await fetch("/api/ui-render/bake-batch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             project,
-            // 要的是**播放头这一刻**吸附到格子上的那一刻,不是片段中点(见 bakeTime.ts)
             clips: asks.map((a) => ({ clipId: a.clip.id, t: a.at })),
             size: 1024,
-            /*
-             * 插队。用户正盯着这块板子等它变成真图,而队里可能排着一长串没人等的预渲染 ——
-             * 不插队实测要 19.5 秒才出画面,插了队最坏只等正在跑的那一个(约 5 秒)。
-             */
             priority: 1,
           }),
           signal: ac.signal,
@@ -1047,34 +1534,18 @@ export function Scene3DView({ project, t }: Props) {
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.ok) {
           if (dead) return;
-          throw new Error(data.error || `渲染失败(HTTP ${res.status})`);
+          throw new Error(data.error || tr("Render failed (HTTP {0})", res.status));
         }
         for (const b of data.baked ?? []) {
           const a = asks.find((x) => x.clip.id === b.clipId);
-          /*
-           * **渲出来的一定进缓存,哪怕播放头已经挪走了**(dead)。花了四五秒渲的这一张,
-           * 键就是「那一刻」,扔掉的话拖回去还得再等一遍。
-           * 但只有播放头还停在这一刻时才往板子上贴 —— 挪走了还贴,贴的就是别的时刻的画面。
-           */
-          // 存到**我们要的那一刻**上,不是 momentKey —— 预渲染重试精确帧时这两个键不是同一个
           if (a) moments.current.set(texKeyOf(a.clip, a.at), b.url);
-          // 存完再算 momentKey:精确帧一进缓存,bakeTOf 就改口选它,这里正好对上、换上去
           if (!dead && a && texKeyOf(a.clip, a.at) === momentKey(a.clip)) swap.current.get(b.clipId)?.(b.url, true);
-          /*
-           * **同时告诉时间轴那条进度条。**
-           *
-           * 前台现场渲染和空闲预渲染是两条路,而覆盖表原来只有预渲染那条会写。于是前台渲完、
-           * 画面已经换成真图了,时间轴上那一段还是空的 —— 要等下一轮盘点(最长几秒)才补上,
-           * 看起来就是"条子慢半拍"。这里补一句,两条路就都记账了。
-           */
           markBaked([momentId(b.clipId, a ? a.at : b.t)]);
         }
         if (dead) return;
-        // 渲成了就让这个 effect 再跑一轮:刚落地的可能只是粗粒度那张,停住时还要补精确帧
         if (data.baked?.length) setBakeGen((g) => g + 1);
-        if (data.failed?.length) setErr(`${data.failed.length} 张没渲染出来:${data.failed[0].error}`);
+        if (data.failed?.length) setErr(tr("{0} failed to render: {1}", data.failed.length, data.failed[0].error));
       } catch (e: any) {
-        // 被 cleanup 掐掉的不算出错:那是用户挪走了播放头,本来就不该再等它
         if (!dead && e?.name !== "AbortError") setErr(String(e?.message || e));
       } finally {
         endForegroundBake();
@@ -1082,46 +1553,65 @@ export function Scene3DView({ project, t }: Props) {
       }
     })();
     return () => { dead = true; ac.abort(); };
-    // momentSig 在依赖里:拖时间轴换到别的时刻要重新取图。但它**不在建场景那个 effect 的
-    // 依赖里**,所以只是换 material.map,场景不重建。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sig, momentSig, parked, bakeGen, scrubbing, playing]);
+  }, [sig, momentSig, culledSig, parked, bakeGen, scrubbing, playing, mode]);
 
-  /* ── 预渲染好的贴图一到就收进「按时刻」的缓存,轮到那一刻就用得上 ───── */
+  /* ── As soon as a prerendered texture arrives, store it in the per-moment cache so it is ready when that moment comes ── */
   useEffect(() => {
     if (!prefetch.ready.size) return;
-    const all = projRef.current.tracks.flatMap((tr: any) => tr.clips ?? []);
+    const all = flattenBoards3D(projRef.current);
     for (const [id, url] of prefetch.ready) {
-      // 预渲染的键是 `<clipId>@<t>`(见 useBakePrefetch 的 momentId)。clipId 里不会有 @
       const at = id.lastIndexOf("@");
       if (at < 0) continue;
       const clipId = id.slice(0, at);
       const mt = Number(id.slice(at + 1));
-      const c = all.find((x: any) => x.id === clipId);
+      const c = all.find((x) => x.id === clipId);
       if (!c || !Number.isFinite(mt)) continue;
-      const k = texKeyOf(c, mt);
+      const k = texKeyOf(c as TimedClip, mt);
       if (moments.current.get(k) === url) continue;
       moments.current.set(k, url);
-      /*
-       * **只有它正好就是这块板子此刻该显示的那一刻,才换上去。**
-       * 预渲染会把整条片子的很多时刻都渲出来,拿其中任意一张往板子上贴,
-       * 贴的就是别的时刻的画面 —— 那正是要修的那个 bug。
-       */
-      if (k === momentKey(c)) swap.current.get(clipId)?.(url, true);
+      if (k === momentKey(c as TimedClip)) swap.current.get(clipId)?.(url, true);
     }
-    // momentSig 在依赖里:预渲染的结果和「此刻该显示哪一刻」是两个都会变的量,
-    // 任一个变了都要重新对一次账
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefetch.ready, momentSig]);
 
+  const is3DCutView = activeCutKind(project) === "3d";
+  const gizmoShown = is3DCutView ? !spaceGizmoHidden : frustumOn;
+  const captionTimeline = useMemo<Timeline | null>(() => {
+    if (!is3DCutView || mode !== "camera") return null;
+    const caps = [...project.tracks]
+      .reverse()
+      .filter((tr) => !tr.hidden)
+      .flatMap((tr) => tr.clips.filter((c) => isCaptionClip(c)));
+    if (!caps.length) return null;
+    return {
+      width: Math.max(1, project.width),
+      height: Math.max(1, project.height),
+      fps: project.fps,
+      duration: project.duration,
+      clips: caps,
+      ...(project.themeId ? { themeId: project.themeId } : null),
+    };
+  }, [is3DCutView, mode, project]);
+
+  useLayoutEffect(() => {
+    gl.current?.syncSize();
+  }, [captionTimeline, mode]);
+
   return (
-    /*
-     * 底是棋盘格,不是黑的。画布 alpha:true,没画到的地方本来直接透出近黑的面板色,
-     * 于是「深色的卡」和「这儿什么都没有」长得一模一样 —— 格子把这两件事分开。
-     * 格子的灰和边长跟 see_frames 那边逐值对齐(见 .pc-3d-checker 的说明)。
-     */
-    <div className="pc-3d-checker" style={{ position: "relative", width: "100%", height: "100%", minHeight: 200 }}>
-      {/* 隐藏的轨道流画布容器，供 StreamPlayer 解码和提供材质源 */}
+    <div
+      ref={outerRef}
+      className={mode === "space" ? "pc-3d-checker" : undefined}
+      data-pc-3d-mode={mode}
+      style={{
+        position: "relative",
+        width: "100%",
+        height: "100%",
+        minHeight: 200,
+        background: mode === "camera" ? "#090b10" : undefined,
+      }}
+    >
+      {/* Hidden track stream canvas container, used by StreamPlayer to decode and provide the material source */}
       <div
         ref={streamHost}
         aria-hidden="true"
@@ -1134,37 +1624,65 @@ export function Scene3DView({ project, t }: Props) {
           pointerEvents: "none",
         }}
       >
-        {active.filter((c) => c.cardId !== "scene-3d").map((c) => (
+        {active.filter((c) => c.cardId !== "scene-3d" && c.cardId !== MEDIA_BOARD_CARD).map((c) => (
           <div key={c.id} data-pc-clip={c.id}>
             <canvas data-pc-stream-plane="" />
           </div>
         ))}
       </div>
-      <div ref={host} style={{ position: "absolute", inset: 0 }} />
+      {/* Hidden live media elements driving 3D media board textures */}
+      <div
+        ref={mediaHost}
+        aria-hidden="true"
+        style={{
+          position: "fixed",
+          left: -100000,
+          top: -100000,
+          width: 1,
+          height: 1,
+          overflow: "hidden",
+          pointerEvents: "none",
+        }}
+      >
+        {active.filter((c) => c.cardId === MEDIA_BOARD_CARD && c.media).map((c) => {
+          const m = c.media!;
+          const src = playbackUrl(m, tierHashes());
+          return isImageMedia(m) ? (
+            <img key={c.id} data-pc-3d-media={c.id} src={src} crossOrigin="anonymous" alt="" />
+          ) : (
+            <video key={c.id} data-pc-3d-media={c.id} src={src} crossOrigin="anonymous" muted playsInline preload="auto" />
+          );
+        })}
+      </div>
+      <div
+        ref={host}
+        className={mode === "camera" ? "pc-3d-checker" : undefined}
+        style={{ position: "absolute", inset: 0 }}
+      />
+      {captionTimeline && (
+        <div
+          ref={captionOverlayRef}
+          data-pc="scene3d-caption-layer"
+          style={{ position: "absolute", left: 0, top: 0, overflow: "hidden", pointerEvents: "none" }}
+        >
+          <Stage timeline={captionTimeline} t={t} directT={t} playToken={0} nested />
+        </div>
+      )}
 
-      {/*
-        「2D 视角框」开关。放右上角:左下角那条是预渲染进度,别抢地方。
-        只有加载完(mods 到位、场景建起来了)才显示 —— 场景还没有的时候点它什么都不会发生。
-      */}
-      {mods && (
+      {mods && mode === "space" && (
         <button
           type="button"
-          /*
-           * **不要再挂 `.pc-3d-note`**(以前挂过)。那个 class 的意思是「浮在格子上的状态提示」,
-           * 按它去找「正在渲染…」那条会连这个按钮一起匹配到 —— 已经有人写测试时踩过一次。
-           * 长得像不是共用类名的理由:一样的底和圆角在 CSS 里合成一条规则就够了。
-           */
-          className={`pc-3d-toggle${frustumOn ? " is-on" : ""}`}
+          className={`pc-3d-toggle${gizmoShown ? " is-on" : ""}`}
           style={{ position: "absolute", right: 10, top: 10 }}
-          aria-pressed={frustumOn}
-          onClick={() => setFrustumOn((v) => !v)}
+          aria-pressed={gizmoShown}
+          onClick={() => (is3DCutView ? setSpaceGizmoHidden((v) => !v) : setFrustumOn((v) => !v))}
           title={
-            project.camera3dFov
-              ? `画出 2D 页那台相机张开到画幅的四角锥(视角 ${project.camera3dFov}°)—— 用来判断一张卡到底在不在成片画面里`
-              : `画出 2D 页那台相机张开到画幅的四角锥。这个项目没设视角,按默认 ${DEFAULT_FOV_DEG}° 画(和 3D 页开场机位同一台相机)`
+            defFovNow !== DEFAULT_FOV_DEG
+              ? tr("Draws the pyramid that the 2D page camera opens up to the frame edges (field of view {0}°): use it to tell whether a card is actually in the final video frame", defFovNow)
+              : tr("Draws the pyramid that the 2D page camera opens up to the frame edges. This project has no field of view set, so the default {0}° is used (the same camera as the 3D page opening view)", DEFAULT_FOV_DEG)
           }
         >
-          2D 视角框
+          {is3DCutView ? tr("Camera frustum") : tr("2D view frame")}
         </button>
       )}
       {(pending > 0 || err) && !playing && (
@@ -1176,13 +1694,13 @@ export function Scene3DView({ project, t }: Props) {
           }}
         >
           {err ?? (bakingAt === null
-            ? `正在渲染 ${pending} 张卡的贴图…色块是占位,渲染好会自动换上`
-            : `正在渲染第 ${bakingAt.toFixed(2)} 秒的画面(共 ${pending} 张)…色块是占位,不是别的时刻的画面`)}
+            ? tr("Rendering textures for {0} cards... color blocks are placeholders and will be replaced automatically once rendered", pending)
+            : tr("Rendering the frame at second {0} ({1} in total)... color blocks are placeholders, not the frame of another moment", bakingAt.toFixed(2), pending))}
         </div>
       )}
       {!mods && !err && (
         <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
-          <span className="pc-3d-note" style={{ color: "var(--ui-text-2, #94a3b8)" }}>正在加载三维视图…</span>
+          <span className="pc-3d-note" style={{ color: "var(--ui-text-2, #94a3b8)" }}>{tr("Loading 3D view…")}</span>
         </div>
       )}
     </div>

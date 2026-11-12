@@ -1,8 +1,8 @@
 /*
- * 官网首页那层背景光，用渲染器做一遍。
+ * Redo the background glow of the official website home page with the renderer.
  *
- * 官网首页的背景是 `body` 上两团固定的径向光，原文在官网仓库
- * `site/assets/home.css`：
+ * The background of the official website home page is two fixed radial glows on `body`; the original is in the official website repo
+ * `site/assets/home.css`:
  *
  *   background:
  *     radial-gradient(1200px 700px at 15% -10%, var(--glow-a), transparent 60%),
@@ -10,61 +10,66 @@
  *     var(--bg);
  *   background-attachment: fixed;
  *
- * 深色下 `--glow-a` 是 rgba(0,219,219,.14)、`--glow-b` 是 rgba(0,219,219,.08)、`--bg` 是 #111016
- * ——也就是本仓库「流光」皮肤的 `--ui-accent` 和 `--ui-bg`。2026-10-23 线上实测：首页零个 canvas，
- * 整层就是这段 CSS，没有别的动态背景。
+ * In dark mode `--glow-a` is rgba(0,219,219,.14), `--glow-b` is rgba(0,219,219,.08), and `--bg` is #111016,
+ * that is, the `--ui-accent` and `--ui-bg` of this repo's "Streamlight" skin. Measured live on 2026-10-23: zero canvases on the home page,
+ * the whole layer is this CSS, with no other dynamic background.
  *
- * **那为什么还要用渲染器？** 两条：
- *   1. 大片深色上的渐变在 8 位里会起色带（banding），尤其手机 OLED 上一圈一圈很明显。
- *      着色器里加一点抖动噪声就能把台阶打散，CSS 渐变做不到。
- *   2. 参数能调：位置、半径、浓度、颜色、飘动都是 uniform，用户在调参台上拖，定下来的数写回
- *      下面的 LOOK。`drift` 调成 0 就和官网一模一样、完全不动。
+ * **So why use the renderer?** Two reasons:
+ *   1. A gradient over a large dark area bands in 8 bits, ring after ring clearly visible especially on phone OLEDs.
+ *      Adding a little dither noise in the shader breaks up the steps, which a CSS gradient cannot do.
+ *   2. The parameters are tunable: position, radius, density, color and drift are all uniforms; the user drags them on the tuning bench, and the numbers settled on are written back to
+ *      LOOK below. Setting `drift` to 0 makes it identical to the official website, completely still.
  *
- * 和 `BrandCanvas.tsx`（登录页左边那块流动的极光）是两件事，互不影响：那一块电脑版已经定稿。
+ * It is a separate matter from `BrandCanvas.tsx` (the flowing aurora on the left of the login page) and they do not affect each other: that one is already final on the desktop app.
  *
- * 起不来 WebGL2 时退回一张 `div`，上面铺的就是官网原样的 CSS 渐变——兜底和原版完全一致，
- * 只是少了抖动。
+ * If WebGL2 cannot start, it falls back to a `div` covered with exactly the official website's CSS gradient; the fallback is identical to the original,
+ * just without the dither.
  */
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import "./brandGlow.css";
+import { tr } from "../i18n/index.ts";
 
 /**
- * 画面参数。调参台（scratchpad 的 make-glow-lab.mjs）直接读这里的数做滑杆，
- * 调好把「当前值」整段写回来就同步。
+ * Image parameters. The tuning bench (make-glow-lab.mjs in the scratchpad) reads the numbers here directly to make sliders;
+ * once tuned, write the "current values" back as a whole block to sync.
  *
- * 位置 `ax/ay/bx/by` 是视口的比例（0 = 左/上，1 = 右/下，可以是负数），
- * 半径 `arx/ary/brx/bry` 是 CSS 像素——和官网一样是固定像素，不跟着窗口缩放。
+ * The positions `ax/ay/bx/by` are viewport fractions (0 = left/top, 1 = right/bottom, may be negative),
+ * the radii `arx/ary/brx/bry` are CSS pixels: as on the official website they are fixed pixels and do not scale with the window.
  */
 export const LOOK = {
   /**
-   * 飘一圈多少秒。`drift` 为 0 时这一项不起作用。
+   * Seconds per drift cycle. This option has no effect when `drift` is 0.
    *
-   * 这个数同时是**预渲染出来那段循环视频的长度**：两团光的相位都是 uLoop 的整数倍频，
-   * uLoop 从 0 走到 1 正好回到出发点，所以第一帧和最后一帧算出来一样，循环接得上。
-   * 28 秒 × 24 帧 = 672 帧，整数，不会差半帧。
+   * This value is also the **length of the prerendered looping video**: phases of both light orbs
+   * are integer harmonic multiples of uLoop; uLoop going from 0 to 1 returns exactly to the start,
+   * so the first and last frames compute identically and the loop connects seamlessly.
+   * 28 seconds × 24 frames = 672 frames, an exact integer, never off by half a frame.
    */
   loopSeconds: 28,
-  /** 两团光各自飘多远（CSS 像素）。0 = 完全不动，页面也就不用逐帧重画 */
+  /** How far each light orb drifts (CSS pixels). 0 = completely static, avoiding frame-by-frame redraws */
   drift: 110,
 
   /**
-   * 基准视口（CSS 像素）：下面那两组位置是在**这个尺寸**上调出来的。
+   * Reference viewport (CSS pixels): the two position sets below were tuned at **this size**.
    *
-   * 用户 2026-10-23 定：「以铺满屏幕版的中心对齐。」所以两团光不按当前视口的比例摆
-   * —— 那样手机和宽屏上的构图会完全不同 —— 而是换算成**相对屏幕中心的固定像素偏移**：
+   * (user decision, 2026-10-23): "Align with the center of the fill-screen version." So the two light
+   * orbs are not placed by current viewport ratio, which would make mobile and widescreen compositions
+   * completely different, but converted to **fixed pixel offsets relative to screen center**:
    *
-   *     中心 = 视口中心 + (位置 - 0.5) × 基准视口
+   *     center = viewport center + (position - 0.5) × reference viewport
    *
-   * 视口正好是基准尺寸时，这一式就还原成「位置 × 基准视口」，和调参台上看到的一模一样；
-   * 屏幕小了就是同一张构图的中心裁切，大了就是往外多露一圈。半径本来就是固定像素，不跟着缩放。
+   * When the viewport is exactly the reference size, this formula reduces to "position × reference
+   * viewport", identical to what was seen on the tuning console; smaller screens get a center crop of
+   * the same composition, while larger screens expose an extra margin. The radius is inherently fixed
+   * pixels and does not scale.
    *
-   * 559×1290 是调参台那块「铺满宽屏」预览当时的实际尺寸。
+   * 559×1290 was the actual size of the "fill widescreen" preview on the tuning console at the time.
    */
   refW: 559,
   refH: 1290,
 
-  /** 第一团（冷色，从左上压进来） */
+  /** First orb (cool color, pressing in from top-left) */
   ax: 0.41,
   ay: -0.1,
   arx: 1900,
@@ -72,7 +77,7 @@ export const LOOK = {
   aAlpha: 0.225,
   aStop: 0.43,
 
-  /** 第二团（暖色，从右下压进来） */
+  /** Second orb (warm color, pressing in from bottom-right) */
   bx: 1.08,
   by: 0.68,
   brx: 2400,
@@ -80,26 +85,28 @@ export const LOOK = {
   bAlpha: 0.025,
   bStop: 0.13,
 
-  /** 抖动：打散色带用的噪声强度（0.004 ≈ 1/255）。grainSize 调大就从抖动变成看得见的颗粒 */
+  /** Dither: noise intensity to break up color banding (0.004 ≈ 1/255). Increasing grainSize turns dither into visible grain */
   grain: 0.008,
   grainSize: 2,
 
   /**
-   * 颜色。留空就跟着皮肤走（底色 `--ui-bg`、光 `--ui-accent`），填了就用填的。
+   * Color. Left empty, it follows the skin (base color `--ui-bg`, light `--ui-accent`); if filled,
+   * uses the specified value.
    *
-   * 底色和冷的那团留空：换皮肤、在设置里改强调色，这一层要跟着变。
-   * 暖的那团是用户 2026-10-23 挑定的橘色，和皮肤无关，所以写死
-   * —— 和 `BrandCanvas.tsx` 那边「冷侧跟皮肤、暖侧写死」是同一套做法。
+   * Base color and the cool orb are left empty: when switching skins or changing accent color in
+   * settings, this layer follows. The warm orb is the orange chosen by the user (user decision, 2026-10-23)
+   * and has nothing to do with skin, so it is hardcoded: the same pattern as `BrandCanvas.tsx`
+   * where "cool side follows skin, warm side is hardcoded".
    */
   bg: "",
   colA: "",
   colB: "#FF7B00",
 
-  /** 内部分辨率 = min(设备像素比, 2) × 这个数。渐变很便宜，给到 1 就是一比一 */
+  /** Internal resolution = min(device pixel ratio, 2) × this number. Gradients are cheap; 1 gives 1:1 */
   resScale: 1,
 };
 
-/** 皮肤读不到时的兜底：流光深色的 `--ui-bg` #111016 和 `--ui-accent` #00dbdb */
+/** Fallback when the skin cannot be read: `--ui-bg` #111016 and `--ui-accent` #00dbdb of Streamlight dark */
 const BG_FALLBACK: [number, number, number] = [0.067, 0.063, 0.086];
 const ACCENT_FALLBACK: [number, number, number] = [0, 0.859, 0.859];
 
@@ -110,9 +117,9 @@ export const FRAG = `#version 300 es
 precision highp float;
 out vec4 fragColor;
 
-uniform vec2 uRes;      // 画布的内部像素
-uniform float uPxScale; // 内部像素 / CSS 像素
-/* 循环相位，0→1 走满一圈回到起点 */
+uniform vec2 uRes;      // internal pixels of the canvas
+uniform float uPxScale; // internal pixels / CSS pixels
+/* loop phase: 0→1 runs one full cycle and returns to the start */
 uniform float uLoop;
 
 uniform vec3 uBg;
@@ -131,9 +138,10 @@ float hash(vec2 p) {
 }
 
 /*
- * 一团 CSS 式的径向光：radial-gradient(rx ry at cx cy, 色 浓度 a0, transparent stop)。
- * CSS 的渐变是在**预乘**的空间里线性插值的，所以色相一路不变，只有 alpha 从 a0 直线降到 0，
- * 到 stop（相对椭圆半径的比例）就没了。这里照这个算，不用 smoothstep，不然和官网对不上。
+ * A CSS-style radial glow: radial-gradient(rx ry at cx cy, color density a0, transparent stop).
+ * CSS gradients interpolate linearly in **premultiplied** space, so the hue stays constant and only alpha falls
+ * in a straight line from a0 to 0, reaching nothing at stop (a ratio of the ellipse radius). This computes it the same way,
+ * without smoothstep, otherwise it would not match the website.
  */
 float glow(vec2 px, vec2 c, vec2 r, float stop, float a0) {
   float t = length((px - c) / max(r, vec2(1.0)));
@@ -145,23 +153,23 @@ void main() {
   vec2 cssPx = gl_FragCoord.xy / s;
   float wCss = uRes.x / s;
   float hCss = uRes.y / s;
-  // gl_FragCoord 的 y 从下往上数，CSS 从上往下：翻过来，位置参数才和官网写的那组数一个意思
+  // gl_FragCoord counts y from the bottom up, CSS from the top down: flip it so the position parameters mean the same as the numbers on the website
   cssPx.y = hCss - cssPx.y;
 
-  // 两团朝相反方向飘，错开一点才看得出是两团；drift = 0 时这一项是 0
+  // The two blobs drift in opposite directions, offset a little so they read as two blobs; when drift = 0 this term is 0
   /*
-   * 两团朝相反方向飘，错开一点才看得出是两团；drift = 0 时这一项是 0。
+   * The two blobs drift in opposite directions, offset a little so they read as two blobs; when drift = 0 this term is 0.
    *
-   * 两个频率取 4 和 3（原来是 1 和 0.75，比值一样是 0.75，但不是整数倍频）：
-   * 整数倍频才保证 uLoop 走满一圈时两项同时回到出发点 —— 预渲染成视频要靠这一条接上循环。
-   * 快慢没变：一圈的秒数由 LOOK.loopSeconds 定。
+   * The two frequencies are 4 and 3 (originally 1 and 0.75, same ratio of 0.75, but not integer multiples):
+   * only integer multiples guarantee both terms return to the start together when uLoop completes a full cycle. Prerendering to video relies on this to close the loop.
+   * Speed is unchanged: the seconds per cycle are set by LOOK.loopSeconds.
    */
   vec2 d = uDrift * vec2(sin(uLoop * 6.2831853 * 4.0), cos(uLoop * 6.2831853 * 3.0));
 
   /*
-   * 以屏幕中心对齐：位置不按当前视口的比例算，而是换算成相对中心的固定像素偏移
-   * （基准视口见组件里的 refW / refH）。视口正好是基准尺寸时结果和「位置 × 视口」相同；
-   * 屏幕小了就是同一张构图的中心裁切。
+   * Aligned to the screen center: positions are not computed from the current viewport's proportions, but converted to fixed pixel offsets from the center
+   * (see refW / refH in the component for the reference viewport). When the viewport is exactly the reference size the result equals "position × viewport";
+   * on a smaller screen it is a center crop of the same composition.
    */
   vec2 mid = vec2(wCss, hCss) * 0.5;
   vec2 ref = vec2(max(uRefW, 1.0), max(uRefH, 1.0));
@@ -169,19 +177,19 @@ void main() {
   float aA = glow(cssPx, mid + (vec2(uAx, uAy) - 0.5) * ref + d, vec2(uArx, uAry), uAStop, uAAlpha);
   float aB = glow(cssPx, mid + (vec2(uBx, uBy) - 0.5) * ref - d, vec2(uBrx, uBry), uBStop, uBAlpha);
 
-  // 叠的顺序同官网：CSS 里先写的那层在上面，所以 B 先压在底色上，A 再压上去
+  // Layer order matches the website: in CSS the layer written first is on top, so B goes onto the base color first, then A on top
   vec3 col = uBg;
   col = mix(col, uColB, aB);
   col = mix(col, uColA, aA);
 
-  // 抖动：深色上的大面积渐变在 8 位里会起一圈圈色带，撒一点噪声把台阶打散
+  // Dithering: large gradients on dark colors show banding in 8 bits, so add a little noise to break up the steps
   float n = hash(floor(gl_FragCoord.xy / max(uGrainSize, 1.0)) + 0.5);
   col += (n - 0.5) * uGrain;
 
   fragColor = vec4(max(col, 0.0), 1.0);
 }`;
 
-/** 十六进制 → 0..1 的 RGB */
+/** Hex → RGB in 0..1 */
 function hexToRgb(hex: string, fallback: [number, number, number]): [number, number, number] {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
   if (!m) return fallback;
@@ -189,7 +197,7 @@ function hexToRgb(hex: string, fallback: [number, number, number]): [number, num
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
 
-/** 把一个 CSS 变量解析成 0..1 的 RGB。读不到就用兜底 —— 变量可能是 color-mix()，所以让浏览器自己算 */
+/** Resolve a CSS variable into RGB in 0..1. If it cannot be read, use the fallback: the variable may be color-mix(), so let the browser compute it itself */
 function readColor(name: string, fallback: [number, number, number]): [number, number, number] {
   try {
     const probe = document.createElement("span");
@@ -213,15 +221,15 @@ function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLSh
   gl.shaderSource(sh, src);
   gl.compileShader(sh);
   if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
-    // 编译不过就退回 CSS 那一版；把原因留在控制台，不然只看到一块底色没法查。
-    // 开发期有一个常见原因：改这个文件触发热更新会反复重挂组件，每次新建一个 WebGL 上下文，
-    // 用满浏览器的上限（Chrome 约 16 个）之后新上下文一建就是坏的 —— 这时日志会是 null。
-    // 整页刷新一下就好，不是着色器写错了。
+    // If it does not compile, fall back to the CSS version; leave the reason in the console, otherwise we only see a base color and cannot investigate.
+    // A common cause in development: editing this file triggers hot reload, which remounts the component repeatedly and creates a new WebGL context each time,
+    // until the browser limit (about 16 in Chrome) is used up, after which every new context is broken, and then the log will be null.
+    // A full page refresh fixes it; it is not a shader bug.
     console.warn(
-      "[BrandGlow] 着色器编译失败：",
+      "[BrandGlow] shader compile failed:",
       gl.getShaderInfoLog(sh),
       "gl.getError=", gl.getError(),
-      "（开发期若日志为 null，多半是热更新累积的 WebGL 上下文超了上限，整页刷新即可）",
+      "(in development, if the log is null, the WebGL context limit was most likely exceeded by accumulated hot reloads; refresh the whole page)",
     );
     gl.deleteShader(sh);
     return null;
@@ -231,7 +239,7 @@ function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLSh
 
 export function BrandGlow(): JSX.Element {
   const host = useRef<HTMLCanvasElement>(null);
-  /** 起不来就退回官网原样的 CSS 渐变 */
+  /** If it cannot start, fall back to the official website's original CSS gradient */
   const [dead, setDead] = useState(false);
 
   useEffect(() => {
@@ -239,13 +247,13 @@ export function BrandGlow(): JSX.Element {
     if (!canvas) return;
 
     const gl = canvas.getContext("webgl2", {
-      // 这一层是不透明的背景（底色也由它画），不用混合
+      // This layer is an opaque background (it also draws the base color), so no blending is needed
       alpha: false,
       antialias: false,
       depth: false,
       stencil: false,
       powerPreference: "low-power",
-      // 之后要截这一帧做成静态图，不保留就读不到像素
+      // Later we will capture this frame as a static image; without preserving, the pixels cannot be read
       preserveDrawingBuffer: true,
     });
     if (!gl) {
@@ -268,7 +276,7 @@ export function BrandGlow(): JSX.Element {
     gl.attachShader(prog, fs);
     gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-      console.warn("[BrandGlow] 着色器链接失败：", gl.getProgramInfoLog(prog));
+      console.warn("[BrandGlow] shader link failed:", gl.getProgramInfoLog(prog));
       setDead(true);
       return;
     }
@@ -282,7 +290,7 @@ export function BrandGlow(): JSX.Element {
     const uColA = at("uColA");
     const uColB = at("uColB");
 
-    // 几何和浓度不随帧变，设一遍就够
+    // Geometry and density do not change per frame, setting them once is enough
     for (const [name, value] of [
       ["uAx", LOOK.ax], ["uAy", LOOK.ay], ["uArx", LOOK.arx], ["uAry", LOOK.ary],
       ["uAAlpha", LOOK.aAlpha], ["uAStop", LOOK.aStop],
@@ -295,7 +303,7 @@ export function BrandGlow(): JSX.Element {
     }
 
     const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-    /** 不飘就是一张静止的画：画一帧就够，不开逐帧循环 —— 手机上这点电省得值 */
+    /** Without drift it is a still picture: drawing one frame is enough, no per-frame loop; the battery saved on phones is worth it */
     const animated = LOOK.drift > 0.0001 && !still;
 
     let raf = 0;
@@ -319,13 +327,13 @@ export function BrandGlow(): JSX.Element {
 
     const draw = () => {
       resize();
-      // 换皮肤、改强调色都要跟着变。每半秒重读一次就够；不逐帧画的时候每次 draw 都读
+      // Changing skin or accent color must carry through. Re-reading every half second is enough; when not drawing per frame, read on every draw
       if (frames % 30 === 0) {
         gl.uniform3f(uBg, ...(LOOK.bg ? hexToRgb(LOOK.bg, BG_FALLBACK) : readColor("--ui-bg", BG_FALLBACK)));
         gl.uniform3f(uColA, ...(LOOK.colA ? hexToRgb(LOOK.colA, ACCENT_FALLBACK) : readColor("--ui-accent", ACCENT_FALLBACK)));
         gl.uniform3f(uColB, ...(LOOK.colB ? hexToRgb(LOOK.colB, ACCENT_FALLBACK) : readColor("--ui-accent", ACCENT_FALLBACK)));
       }
-      // 取小数部分：走满一圈回到 0，屏幕上这一版也就跟着无缝接上了
+      // Take the fractional part: after a full circle it returns to 0, so the on-screen version also joins up seamlessly
       const secs = (performance.now() - started) / 1000;
       gl.uniform1f(uLoop, animated ? (secs / LOOK.loopSeconds) % 1 : 0);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -348,10 +356,10 @@ export function BrandGlow(): JSX.Element {
       raf = 0;
     };
 
-    draw(); // 先画一帧：不飘的时候这一帧就是全部
+    draw(); // Draw one frame first: when there is no drift, this one frame is everything
     start();
 
-    // 切到后台、滚出视野就停（不飘的时候本来就没有循环，这两条只是兜着）
+    // Stop when switched to the background or scrolled out of view (with no drift there is no loop anyway; these two only act as a safeguard)
     const io = new IntersectionObserver((entries) => {
       visible = entries.some((e) => e.isIntersecting);
       if (visible) start();
@@ -362,14 +370,15 @@ export function BrandGlow(): JSX.Element {
     const onVisibility = () => (document.hidden ? stop() : start());
     document.addEventListener("visibilitychange", onVisibility);
 
-    // 窗口变了要重画：不飘的时候没有循环，全靠这里补一帧
+    // The window changed so we must redraw: with no drift there is no loop, so this alone supplies the frame
     const ro = new ResizeObserver(() => {
       draw();
       start();
     });
     ro.observe(canvas);
 
-    // 显卡驱动重置、切换独显集显都会丢上下文；丢了就退回 CSS 那一版，别留一块黑的
+    // A GPU driver reset or switching between the discrete and integrated GPU loses the context; if lost,
+    // fall back to the CSS version rather than leaving a black block
     const onLost = (e: Event) => {
       e.preventDefault();
       stop();
@@ -390,7 +399,7 @@ export function BrandGlow(): JSX.Element {
     };
   }, []);
 
-  // 兜底就是官网那段 CSS 本身（见 brandGlow.css），和原版一致，只是没有抖动
+  // The fallback is the website's own CSS (see brandGlow.css), identical to the original, just without the jitter
   if (dead) return <div className="ps-brand-glow ps-brand-glow--css" aria-hidden="true" />;
   return <canvas ref={host} className="ps-brand-glow" data-pc="start-brand-glow" aria-hidden="true" />;
 }

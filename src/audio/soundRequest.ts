@@ -1,7 +1,9 @@
 /**
- * 把一次 sound_generate 的参数变成「合成什么、放到哪」的计划。纯函数:只读传进来的项目,不碰 store、不碰页面。
- * 桌面版(`src/editor/io/soundGeneration.ts`)与云端 Agent(`server/agent/service/hosted-sound.mjs`,经 `ssr-host.mjs`)
- * 用的是同一份,所以同一组参数在两边得到同一份配方,合成出的 WAV 逐样本相同。
+ * Turns the parameters of a sound_generate call into a plan of "what to synthesize and where to put
+ * it". A pure function: it only reads the project passed in and touches neither the store nor the page.
+ * The desktop app (`src/editor/io/soundGeneration.ts`) and the Cloud Agent
+ * (`server/agent/service/hosted-sound.mjs`, via `ssr-host.mjs`) use the same copy, so the same
+ * parameters get the same recipe on both sides, and the synthesized WAV is identical sample by sample.
  */
 import { findClip, type Project, type TrackClip, type Track } from "../kernel/project";
 import { createNotificationRecipe, createTypingSoundRecipe, validateSoundEffectRecipe, type SoundEffectRecipe, type TypingScheduleOptions } from "../kernel/soundEffects";
@@ -25,30 +27,33 @@ export interface GenerateSoundOptions {
 
 export interface SoundGenerationPlan {
   recipe: SoundEffectRecipe;
-  /** 要重生成的音效片段(给了 clipId 时) */
+  /** The sound effect clip to regenerate (when clipId is given) */
   target: { clip: TrackClip; track: Track } | null;
-  /** 提供文字与节奏的打字机卡片片段 */
+  /** The typewriter card clip that provides text and rhythm */
   source: { clip: TrackClip; track: Track } | null;
   sourceClipId?: string;
-  /** 新片段的起点;重生成或只进素材库时是 undefined */
+  /** The start of the new clip; undefined when regenerating or when only going into the media library */
   start?: number;
   duration: number;
   mediaOffset: number;
-  /** 素材名(带 .wav) */
+  /** Media name (with .wav) */
   name: string;
-  /** 计划时目标片段、来源片段的整段取值:提交前再比一次,变了就不应用 */
+  /**
+   * The full values of the target clip and the source clip at planning time: compared once more
+   * before committing, and not applied if they changed
+   */
   expectedClip?: string;
   expectedSource?: string;
 }
 
 export function planSoundGeneration(p: Project, options: GenerateSoundOptions): SoundGenerationPlan {
   const target = options.clipId ? findClip(p, options.clipId) : null;
-  if (options.clipId && !target?.clip.soundEffect) throw new Error("找不到可重生成的音效片段");
-  if (target?.track.locked) throw new Error("请先解锁音效序列");
+  if (options.clipId && !target?.clip.soundEffect) throw new Error("No regenerable sound effect clip found");
+  if (target?.track.locked) throw new Error("Unlock the sound effect track first");
   const requestedSourceId = options.sourceClipId ?? target?.clip.soundEffect?.sourceClipId;
   const candidate = requestedSourceId ? findClip(p, requestedSourceId) : null;
   const source = candidate?.clip.cardId === "mu-typing" ? candidate : null;
-  if ((options.sourceClipId || options.refreshSource) && !source) throw new Error("sourceClipId 必须指向当前剪辑中的打字机卡片");
+  if ((options.sourceClipId || options.refreshSource) && !source) throw new Error("sourceClipId must point to a typing card in the current cut");
   // Removing the visual card does not erase the persisted sound recipe; ordinary regeneration detaches the orphan link.
   const sourceClipId = source?.clip.id;
   const previous = target?.clip.soundEffect?.recipe;
@@ -77,7 +82,7 @@ export function planSoundGeneration(p: Project, options: GenerateSoundOptions): 
     }
   } else if (preset === "keyboard") {
     const typing = source ? typingScheduleOptionsFromParams(source.clip.params) : options.typing ?? (previous?.preset === "keyboard" ? previous.typingSource?.source : undefined);
-    if (!typing) throw new Error("键盘声需要 sourceClipId 或 typing.text 与节奏");
+    if (!typing) throw new Error("Keyboard sound requires sourceClipId, or typing.text with a rhythm");
     recipe = createTypingSoundRecipe(typing, { ...(previous?.preset === "keyboard" ? previous.params : {}), ...options.params }, { seed: options.seed ?? previous?.seed ?? typing.seed ?? 0 });
   } else recipe = createNotificationRecipe(options.params, { seed: options.seed ?? 0 });
   // A caller-owned object must not change while an async render is in flight.
@@ -87,9 +92,9 @@ export function planSoundGeneration(p: Project, options: GenerateSoundOptions): 
   const start = target ? undefined : options.start ?? source?.clip.start;
   const mediaOffset = source && recipe.preset === "keyboard" ? Math.max(0, source.clip.mediaOffset ?? 0) : 0;
   const available = recipe.frames / recipe.sampleRate - mediaOffset;
-  if (!target && start !== undefined && available <= 0) throw new Error("这段打字范围没有剩余声音,请检查素材偏移");
-  if (start !== undefined && (!Number.isFinite(start) || start < 0 || start >= p.duration)) throw new Error("start 必须在项目时间范围内");
+  if (!target && start !== undefined && available <= 0) throw new Error("This typing range has no audio left, please check the media offset");
+  if (start !== undefined && (!Number.isFinite(start) || start < 0 || start >= p.duration)) throw new Error("start must be within the project time range");
   const duration = source && recipe.preset === "keyboard" ? Math.min(available, source.clip.end - source.clip.start) : available;
-  const name = `${(options.name || (recipe.preset === "keyboard" ? "键盘声" : "提示音")).replace(/\.wav$/i, "").slice(0, 100)}.wav`;
+  const name = `${(options.name || (recipe.preset === "keyboard" ? "Keyboard sound" : "Notification sound")).replace(/\.wav$/i, "").slice(0, 100)}.wav`;
   return { recipe, target, source, sourceClipId, start, duration, mediaOffset, name, expectedClip, expectedSource };
 }

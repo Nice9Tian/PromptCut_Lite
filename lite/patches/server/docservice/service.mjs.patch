@@ -1,8 +1,8 @@
 diff --git a/server/docservice/service.mjs b/server/docservice/service.mjs
-index f72da1392a62429445ce5b705fc986bd4b666953..7533dc98497175831e1deade8a942374e48120f9 100644
+index 72141ac7c1fe6d997358ef1224bd0bc9ff196d41..280ad0f24031426a1f090b532d0445dd22f8c114 100644
 --- a/server/docservice/service.mjs
 +++ b/server/docservice/service.mjs
-@@ -31,7 +31,6 @@ import { acceptUpgrade, rejectUpgrade, CLOSE } from './ws.mjs';
+@@ -46,7 +46,6 @@ import { acceptUpgrade, rejectUpgrade, CLOSE } from './ws.mjs';
  import { createRouter, CORE_DEFAULTS } from './router.mjs';
  import { PROTOCOL, offeredProtocols } from './auth.mjs';
  import { createSessionLayer, parseSessionItem, SESSION_TYPE_PREFIX } from './session.mjs';
@@ -10,7 +10,7 @@ index f72da1392a62429445ce5b705fc986bd4b666953..7533dc98497175831e1deade8a942374
  import { QUEUE_DEFAULTS } from '../render-queue/constants.mjs';
  import { renderQueueModule, renderQueuePlaceholder, RENDER_QUEUE_MODULE } from './modules/render-queue.mjs';
  import { spacedModule } from './spaces.mjs';
-@@ -253,15 +252,7 @@ export function createDocService(options = {}) {
+@@ -292,15 +291,7 @@ export function createDocService(options = {}) {
    }
  
    sessions = createSessionLayer({ router, nextConnId: () => `conn-${++seq}`, now, log, retainMs, tombstoneMs, resumeGate: options.resumeGate });

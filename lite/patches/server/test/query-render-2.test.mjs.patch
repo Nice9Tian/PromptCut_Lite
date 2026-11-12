@@ -1,12 +1,12 @@
 diff --git a/server/test/query-render-2.test.mjs b/server/test/query-render-2.test.mjs
-index 326ead23167c3d24052a8d3a3b395da78be72cc1..2e94f3cac8071f9d119ac2863d4717893d69f52b 100644
+index 178b5993cf022d86565e901778cb2e4afb3c753e..b9d46baf6876a4840844d63264b5ab1003862ed3 100644
 --- a/server/test/query-render-2.test.mjs
 +++ b/server/test/query-render-2.test.mjs
-@@ -224,7 +224,6 @@ test('QR2-M-6 源码核对:编辑器拉起预渲染进程时传 PROMPTCUT_PREREN
+@@ -229,7 +229,6 @@ test('QR2-M-6 source check: when the editor launches the prerender process it pa
    assert.match(frames, /if \(servesPrerender\) void startArtifactPush/);
    assert.match(frames, /if \(servesPrerender && queueNodeSwitch\(\)\) void startQueueNode/);
    assert.match(frames, /url\.pathname === "\/preload" && !servesPrerender\) \{\s*\/\/[^\n]*\n\s*return json\(200, \{ ok: true, skipped: prerenderMode/);
--  assert.match(frames, /reason: `prerender-mode-\$\{prerenderMode\}`/, 'agent 模式不当自动渲染节点');
+-  assert.match(frames, /reason: `prerender-mode-\$\{prerenderMode\}`/, 'agent mode does not act as an automatic render node');
  });
  
- /* ------------------------------------------------------------------ 认领闸 */
+ /* ------------------------------------------------------------------ Claim gate */

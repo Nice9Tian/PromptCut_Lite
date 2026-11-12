@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useStore, getState } from "../../store/project";
 import { importVideoFiles } from "../io";
+import { tr } from "../../i18n/index.ts";
 
 export interface SpeakerPickerProps {
   open: boolean;
@@ -17,12 +18,16 @@ function fmtDuration(sec?: number): string {
 }
 
 /**
- * 口播视频选择器弹窗:
- * 支持从现有素材库选取视频，或直接从本地上传并写入 clip 参数。
+ * Narration video picker dialog:
+ * supports choosing a video from the existing media library, or uploading directly from local and
+ * writing it into the clip parameters.
  *
- * 交出去的是素材的身份 `m.url`(`/@media/<hash>`,项目数据),不是取字节的地址:在线页面也照旧交它,
- * 不能换成带票据的远程地址写进项目(票据会过期、别的成员用不了)。取字节时由消费方按档换地址。
- * 在线浏览器模式没有页面侧上传(C10 契约第 10 节),「从本地文件导入」置灰。
+ * What it hands out is the media identity `m.url` (`/@media/<hash>`, project data), not the
+ * address that fetches bytes: online pages hand it out the same way, and it must not be swapped
+ * for a remote address carrying a ticket and written into the project (tickets expire and other
+ * members cannot use them). When fetching bytes, the consumer swaps the address by tier.
+ * Online browser mode has no page-side upload (C10 contract, section 10), so "Import from local
+ * file" is greyed out.
  */
 export function SpeakerPicker({ open, onClose, onSelect }: SpeakerPickerProps) {
   const media = useStore((s) => s.project.media);
@@ -56,12 +61,12 @@ export function SpeakerPicker({ open, onClose, onSelect }: SpeakerPickerProps) {
           onSelect(m.url);
           onClose();
         } else {
-          alert("导入成功但未能获取素材信息");
+          alert(tr("Import succeeded but media info could not be retrieved"));
         }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      alert(`导入视频失败: ${msg}`);
+      alert(tr("Video import failed: {0}", msg));
     } finally {
       e.target.value = "";
     }
@@ -80,7 +85,7 @@ export function SpeakerPicker({ open, onClose, onSelect }: SpeakerPickerProps) {
         className="w-96 max-h-[85vh] rounded-lg border border-neutral-700 bg-neutral-900 p-4 text-sm shadow-2xl flex flex-col gap-3"
       >
         <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
-          <div className="font-medium text-neutral-100 text-sm">选择口播视频</div>
+          <div className="font-medium text-neutral-100 text-sm">{tr("Choose narration video")}</div>
           <button
             type="button"
             onClick={onClose}
@@ -90,13 +95,13 @@ export function SpeakerPicker({ open, onClose, onSelect }: SpeakerPickerProps) {
           </button>
         </div>
 
-        {/* 来源一：已导入素材 */}
+        {/* Source 1: imported media */}
         <div className="flex flex-col gap-1.5 min-h-0">
-          <div className="text-xs text-neutral-400 font-medium">从项目素材库选择</div>
+          <div className="text-xs text-neutral-400 font-medium">{tr("Choose from project media library")}</div>
           <div className="max-h-48 overflow-y-auto pc-left-scrollborder border-neutral-800 rounded bg-neutral-950/60 p-1 flex flex-col gap-1">
             {videoMedia.length === 0 ? (
               <div className="p-3 text-center text-xs text-neutral-500">
-                还没有素材，用下面的选择文件导入
+                {tr("No media yet, import with Choose file below")}
               </div>
             ) : (
               videoMedia.map((m) => (
@@ -119,9 +124,9 @@ export function SpeakerPicker({ open, onClose, onSelect }: SpeakerPickerProps) {
           </div>
         </div>
 
-        {/* 来源二：本地文件导入 */}
+        {/* Source 2: local file import */}
         <div className="flex flex-col gap-1.5 pt-2 border-t border-neutral-800">
-          <div className="text-xs text-neutral-400 font-medium">从本地文件导入</div>
+          <div className="text-xs text-neutral-400 font-medium">{tr("Import from local file")}</div>
           <input
             ref={fileInputRef}
             type="file"
@@ -135,7 +140,7 @@ export function SpeakerPicker({ open, onClose, onSelect }: SpeakerPickerProps) {
             className="w-full h-8 flex items-center justify-center gap-1.5 rounded border border-neutral-700 bg-neutral-800 hover:bg-neutral-700 text-xs text-neutral-200 transition-colors"
           >
             <span>+</span>
-            <span>选择本地视频文件…</span>
+            <span>{tr("Choose local video file…")}</span>
           </button>
         </div>
 
@@ -145,7 +150,7 @@ export function SpeakerPicker({ open, onClose, onSelect }: SpeakerPickerProps) {
             onClick={onClose}
             className="px-3 py-1 rounded border border-neutral-700 text-xs text-neutral-300 hover:bg-neutral-800 transition-colors"
           >
-            取消
+            {tr("Cancel")}
           </button>
         </div>
       </div>

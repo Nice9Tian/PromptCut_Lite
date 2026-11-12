@@ -9,24 +9,27 @@ import {
   qrStart, qrPoll, collectLogin, collectLoginCheck, collectLogout, cookieStatus,
   type QrPollResult, type SiteCookieStatus,
 } from "../../ai/collect";
+import { tr } from "../../i18n/index.ts";
 
-const SITE_NAMES: Record<string, string> = { bilibili: "哔哩哔哩" };
+const SITE_NAMES: Record<string, string> = { bilibili: tr("Bilibili") };
 
 /**
- * 站点登录弹窗。两条路,结果一样(登录态存成 cookies.txt,之后素材收集自动带上):
+ * Site login dialog. Two paths with the same result (the login state is stored as cookies.txt, and media
+ * collection picks it up automatically afterwards):
  *
- *   - 扫码:服务端调站点的二维码登录接口,二维码就画在这个弹窗里,不开浏览器。
- *     最快,但只能扫码。
- *   - 浏览器:打开站点真正的登录页(agent 用的那个 Chrome),账号密码、短信、
- *     扫码都行,验证码也能过 —— 那页是站点自己的,我们不碰用户输入的任何东西。
- *     登录完弹窗轮询到登录态就把窗口收回去。
+ *   - QR code: the server calls the site's QR code login interface, and the QR code is drawn right in this
+ *     dialog, without opening a browser. Fastest, but only supports scanning.
+ *   - Browser: opens the site's real login page (the Chrome the agent uses); account and password, SMS and
+ *     QR scan all work, and CAPTCHAs can be passed too: that page belongs to the site itself, and we never
+ *     touch anything the user types. Once the login is done, the dialog polls the login state and closes
+ *     the window.
  *
- * 挂在 body 上(portal),右栏 overflow:hidden 会裁。
+ * Mounted on body (portal), because overflow:hidden on the right rail would clip it.
  */
 export function CollectLoginDialog() {
   const st = useCollectLoginState();
   if (!st.open) return null;
-  // key 用 seq:每次打开都是一个全新的实例,不会带着上次的二维码或状态
+  // key uses seq: every open is a brand-new instance, which does not carry over the last QR code or state
   return <Dialog key={st.seq} site={st.site} initialMethod={st.method} onClose={closeCollectLogin} />;
 }
 
@@ -37,7 +40,7 @@ function Dialog(props: { site: string; initialMethod: LoginMethod; onClose: () =
   const name = SITE_NAMES[site] ?? site;
 
   const refreshSaved = useCallback(async () => {
-    try { setSaved((await cookieStatus())[site] ?? null); } catch { /* 查不到就不显示 */ }
+    try { setSaved((await cookieStatus())[site] ?? null); } catch { /* If it cannot be found, show nothing */ }
   }, [site]);
   useEffect(() => { void refreshSaved(); }, [refreshSaved]);
 
@@ -51,14 +54,13 @@ function Dialog(props: { site: string; initialMethod: LoginMethod; onClose: () =
 
   return createPortal(
     <div className="cl-backdrop" onClick={onClose}>
-      <div className="cl-dialog" role="dialog" aria-modal="true" aria-label={`登录${name}`} onClick={(e) => e.stopPropagation()}>
+      <div className="cl-dialog" role="dialog" aria-modal="true" aria-label={tr("Log in to {0}", name)} onClick={(e) => e.stopPropagation()}>
         <div className="cl-head">
-          <div className="cl-title">登录{name}</div>
-          <button className="cl-x" onClick={onClose} aria-label="关闭">×</button>
+          <div className="cl-title">{tr("Log in to {0}", name)}</div>
+          <button className="cl-x" onClick={onClose} aria-label={tr("Close")}>×</button>
         </div>
         <div className="cl-hint">
-          登录后能下到需要登录才有的清晰度（{name === "哔哩哔哩" ? "1080p60 / 4K 等，需大会员" : "站点规定的那些"}）。
-          登录态只存在本机，删掉即退出。
+          {tr("Logging in unlocks the resolutions that require a login ({0}). The login state is stored only on this machine; delete it to log out.", name === tr("Bilibili") ? tr("1080p60 / 4K etc., premium membership required") : tr("those the site specifies"))}
         </div>
 
         {loggedIn ? (
@@ -66,8 +68,8 @@ function Dialog(props: { site: string; initialMethod: LoginMethod; onClose: () =
         ) : (
           <>
             <div className="cl-tabs" role="tablist">
-              <button role="tab" aria-selected={method === "qr"} className={method === "qr" ? "is-active" : ""} onClick={() => setMethod("qr")}>扫码登录</button>
-              <button role="tab" aria-selected={method === "browser"} className={method === "browser" ? "is-active" : ""} onClick={() => setMethod("browser")}>账号密码 / 短信</button>
+              <button role="tab" aria-selected={method === "qr"} className={method === "qr" ? "is-active" : ""} onClick={() => setMethod("qr")}>{tr("Log in with QR code")}</button>
+              <button role="tab" aria-selected={method === "browser"} className={method === "browser" ? "is-active" : ""} onClick={() => setMethod("browser")}>{tr("Password / SMS")}</button>
             </div>
             {method === "qr"
               ? <QrPane site={site} onLoggedIn={refreshSaved} />
@@ -76,7 +78,7 @@ function Dialog(props: { site: string; initialMethod: LoginMethod; onClose: () =
         )}
 
         <div className="cl-actions">
-          <button className="cl-btn" onClick={onClose}>{loggedIn ? "完成" : "取消"}</button>
+          <button className="cl-btn" onClick={onClose}>{loggedIn ? tr("Done") : tr("Cancel")}</button>
         </div>
       </div>
     </div>,
@@ -84,7 +86,7 @@ function Dialog(props: { site: string; initialMethod: LoginMethod; onClose: () =
   );
 }
 
-/** 已登录:显示账号和过期时间,给个退出 */
+/** Logged in: show the account and expiry time, and offer a logout */
 function LoggedIn(props: { saved: SiteCookieStatus; site: string; onChanged: () => void }) {
   const { saved, site, onChanged } = props;
   const [busy, setBusy] = useState(false);
@@ -92,18 +94,18 @@ function LoggedIn(props: { saved: SiteCookieStatus; site: string; onChanged: () 
     <div className="cl-done">
       <div className="cl-check" aria-hidden="true">✓</div>
       <div>
-        <div className="cl-done-line">已登录，用户 {saved.userId ?? "?"}</div>
-        <div className="cl-done-sub">{saved.expiresAt ? `登录态到 ${new Date(saved.expiresAt).toLocaleDateString()} 过期` : "会话有效"}。之后的探测和下载会自动带上。</div>
+        <div className="cl-done-line">{tr("Logged in, user {0}", saved.userId ?? "?")}</div>
+        <div className="cl-done-sub">{tr("{0}. Later probes and downloads will include it automatically.", saved.expiresAt ? tr("Login state expires on {0}", new Date(saved.expiresAt).toLocaleDateString()) : tr("Session valid"))}</div>
       </div>
       <button className="cl-btn" disabled={busy} onClick={async () => {
         setBusy(true);
         try { await collectLogout(site); } finally { setBusy(false); onChanged(); }
-      }}>退出登录</button>
+      }}>{tr("Log out")}</button>
     </div>
   );
 }
 
-/** 扫码:start 拿一张,2 秒轮询一次;过期了给「换一张」 */
+/** QR code: start fetches one, polled every 2 seconds; when it expires, offer "Get a new one" */
 function QrPane(props: { site: string; onLoggedIn: () => void }) {
   const { site, onLoggedIn } = props;
   const [svgUrl, setSvgUrl] = useState<string | null>(null);
@@ -124,7 +126,8 @@ function QrPane(props: { site: string; onLoggedIn: () => void }) {
       keyRef.current = r.key;
       setSvgUrl(`${r.svgUrl}&t=${Date.now()}`);
       setState("waiting");
-      // 服务端挂了 / 断网时轮询会一直失败,不能无限转下去:连着失败几次就停,让用户点「换一张」
+      // When the server is down / offline the polling keeps failing, and it must not spin forever: stop after
+      // several failures in a row and let the user click "Get a new one"
       let failures = 0;
       timer.current = window.setInterval(async () => {
         const key = keyRef.current;
@@ -151,20 +154,20 @@ function QrPane(props: { site: string; onLoggedIn: () => void }) {
   useEffect(() => { void start(); return stop; }, [start]);
 
   const label = {
-    loading: "生成二维码…",
-    waiting: "用手机客户端扫码",
-    scanned: "已扫码，请在手机上点确认",
-    expired: `二维码已过期${message ? `：${message}` : ""}`,
-    ok: "登录成功",
-    error: `拿不到二维码：${message}`,
+    loading: tr("Generating QR code…"),
+    waiting: tr("Scan with the mobile app"),
+    scanned: tr("Scanned, confirm on your phone"),
+    expired: tr("QR code expired{0}", message ? tr(": {0}", message) : ""),
+    ok: tr("Login successful"),
+    error: tr("Couldn't get a QR code: {0}", message),
   }[state];
 
   return (
     <div className="cl-qr">
       <div className={`cl-qr-box${state === "expired" || state === "error" ? " is-dim" : ""}`}>
-        {svgUrl ? <img src={svgUrl} alt="登录二维码" /> : <span className="cl-qr-ph">…</span>}
+        {svgUrl ? <img src={svgUrl} alt={tr("Login QR code")} /> : <span className="cl-qr-ph">…</span>}
         {(state === "expired" || state === "error") && (
-          <button className="cl-btn is-primary cl-qr-retry" onClick={() => void start()}>换一张</button>
+          <button className="cl-btn is-primary cl-qr-retry" onClick={() => void start()}>{tr("Get a new one")}</button>
         )}
       </div>
       <div className={`cl-status is-${state}`}>{label}</div>
@@ -172,12 +175,12 @@ function QrPane(props: { site: string; onLoggedIn: () => void }) {
   );
 }
 
-/** 浏览器:打开站点登录页,3 秒轮询一次登录态;登录完服务端会把窗口收回去 */
+/** Browser: open the site login page and poll the login state every 3 seconds; once logged in the server closes the window */
 function BrowserPane(props: { site: string; onLoggedIn: () => void }) {
   const { site, onLoggedIn } = props;
   const [phase, setPhase] = useState<"idle" | "opening" | "waiting" | "ok" | "error">("idle");
   const [message, setMessage] = useState("");
-  /** 桌面壳模式:登录页是主窗口里的子 webview,摆进下面那块空里 */
+  /** Shell mode: the login page is a child webview in the main window, placed into the empty area below */
   const [shell, setShell] = useState(false);
   const hole = useRef<HTMLDivElement>(null);
   const timer = useRef<number | null>(null);
@@ -189,7 +192,7 @@ function BrowserPane(props: { site: string; onLoggedIn: () => void }) {
     setMessage("");
     try {
       const r = await collectLogin(site, true);
-      if (!r.ok) throw new Error(r.error || "打不开登录页");
+      if (!r.ok) throw new Error(r.error || tr("Can't open the login page"));
       setShell(!!r.shell);
       setPhase("waiting");
       timer.current = window.setInterval(async () => {
@@ -209,7 +212,8 @@ function BrowserPane(props: { site: string; onLoggedIn: () => void }) {
 
   useEffect(() => stop, []);
 
-  // 壳模式:等待登录期间把子 webview 摆到空位上;登录完 / 关掉就挪回去
+  // Shell mode: while waiting for login, place the child webview over the empty spot; when login finishes /
+  // it is closed, move it back
   const showing = shell && phase === "waiting";
   useEffect(() => {
     if (!showing) return;
@@ -230,18 +234,18 @@ function BrowserPane(props: { site: string; onLoggedIn: () => void }) {
     <div className="cl-browser">
       <div className="cl-hint">
         {shell
-          ? <>下面就是站点自己的登录页：账号密码、短信、扫码都可以，验证码也在这里过。<b>账号密码只在那个页面里输</b>，PromptCut 不经手。</>
-          : <>会打开站点自己的登录页：账号密码、短信、扫码都可以，验证码也在那里过。<b>账号密码只在那个页面里输</b>，PromptCut 不经手。登录完会自动收起。</>}
+          ? <>{tr("Below is the site's own login page: account and password, SMS, or QR code all work, and the CAPTCHA is handled here too.")}<b>{tr("Enter your account and password only in that page")}</b>{tr(", PromptCut never handles them.")}</>
+          : <>{tr("This opens the site's own login page: account and password, SMS, or QR code all work, and the CAPTCHA is handled there too.")}<b>{tr("Enter your account and password only in that page")}</b>{tr(", PromptCut never handles them. It closes automatically after you log in.")}</>}
       </div>
       {phase === "idle" || phase === "error" ? (
-        <button className="cl-btn is-primary" onClick={() => void open()}>{phase === "error" ? "重试" : "打开登录页"}</button>
+        <button className="cl-btn is-primary" onClick={() => void open()}>{phase === "error" ? tr("Retry") : tr("Open login page")}</button>
       ) : null}
       {showing && <div className="cl-shell-hole" ref={hole} aria-hidden="true" />}
       <div className={`cl-status is-${phase}`}>
-        {phase === "opening" && "正在打开登录页…"}
-        {phase === "waiting" && (shell ? "在上面的页面里登录，登录完这里会自动更新" : "请在弹出的窗口里登录，登录完这里会自动更新")}
-        {phase === "ok" && "登录成功"}
-        {phase === "error" && `失败：${message}`}
+        {phase === "opening" && tr("Opening login page…")}
+        {phase === "waiting" && (shell ? tr("Log in on the page above; this updates automatically when you are done") : tr("Log in in the pop-up window; this updates automatically when you are done"))}
+        {phase === "ok" && tr("Login successful")}
+        {phase === "error" && tr("Failed: {0}", message)}
         {phase === "waiting" && message && <div className="cl-sub">{message}</div>}
       </div>
     </div>

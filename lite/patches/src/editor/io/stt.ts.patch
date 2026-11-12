@@ -1,43 +1,48 @@
 diff --git a/src/editor/io/stt.ts b/src/editor/io/stt.ts
-index 60ef636be1e4732b51f2c82d1923c8817fac9601..df9e94ee11563a406872bff369fc49e255ed3ab2 100644
+index edfcd25f6203b6f6f87523d1e661b41ee3bf3cad..ca0d35fb4ab14f16c69ba1b7b6f5ae4a7ce863d5 100644
 --- a/src/editor/io/stt.ts
 +++ b/src/editor/io/stt.ts
-@@ -1,13 +1,6 @@
+@@ -1,18 +1,8 @@
  import type { Transcript, TranscriptSegment } from "../../kernel/project";
  import { getMediaFile } from "./index";
  import { actions } from "../../store/project";
--import { onlineUnsupported } from "../../online/pageFlag";
--
+-import { onlineUnsupported } from "../../online/onlineUnsupported";
+ import { tr } from "../../i18n/index.ts";
+ 
 -/**
-- * 在线构建的编译期常量(写法与用意见 `src/online/pageFlag.ts` 的「在线构建剪枝」)。在线浏览器模式没有本机语音识别
-- * (那要编辑器进程与内置 Python;入口都已置灰),三个入口一进来就报「暂不支持」,在线构建里后面的 /api/stt 调用整段剪掉(M8 遗留 L24)。
+- * Compile-time constant of the online build (for how it is written and why, see "online build pruning" in
+- * `src/online/pageFlag.ts`). The online browser mode has no local speech recognition (that needs the
+- * editor process and the built-in Python; the entry points are all greyed out), so all three entry points
+- * report "not supported yet" as soon as they are entered, and in the online build the /api/stt calls after
+- * that are pruned away entirely (M8 leftover L24).
 - */
 -const ONLINE_BUILD = typeof import.meta.env !== "undefined" && import.meta.env.VITE_PC_ONLINE === "1";
- 
+-
  export interface SttEngineStatus {
    installed: boolean;
-@@ -52,8 +45,6 @@ export interface SttStatus {
+   version?: string;
+@@ -56,8 +46,6 @@ export interface SttStatus {
  
- /** 查询 STT 服务状态(Python 版本、引擎是否安装、可用模型等) */
+ /** Query the STT service status (Python version, whether the engine is installed, available models, etc.) */
  export async function sttStatus(): Promise<SttStatus> {
--  // 在线浏览器模式没有本机语音识别(那要编辑器进程与内置 Python)
--  if (ONLINE_BUILD) throw new Error(onlineUnsupported("语音识别"));
+-  // The online browser mode has no local speech recognition (that needs the editor process and the built-in Python)
+-  if (ONLINE_BUILD) throw new Error(onlineUnsupported(tr("Speech recognition")));
    const res = await fetch("/api/stt/status");
    if (res.status === 503) {
      const data = await res.json().catch(() => ({}));
-@@ -70,7 +61,6 @@ export async function sttInstall(
+@@ -74,7 +62,6 @@ export async function sttInstall(
    engine: string,
    onLog?: (line: string) => void
  ): Promise<{ ok: boolean; log: string[] }> {
--  if (ONLINE_BUILD) throw new Error(onlineUnsupported("语音识别"));
+-  if (ONLINE_BUILD) throw new Error(onlineUnsupported(tr("Speech recognition")));
    const res = await fetch("/api/stt/install", {
      method: "POST",
      headers: { "Content-Type": "application/json" },
-@@ -110,7 +100,6 @@ export async function transcribeMedia(
+@@ -114,7 +101,6 @@ export async function transcribeMedia(
      p: { done: number; total: number } | { log: string } | { segment: TranscriptSegment }
    ) => void
  ): Promise<Transcript> {
--  if (ONLINE_BUILD) throw new Error(onlineUnsupported("语音识别"));
+-  if (ONLINE_BUILD) throw new Error(onlineUnsupported(tr("Speech recognition")));
    const file = getMediaFile(mediaId);
    if (!file) {
-     throw new Error("素材文件不在内存里(可能是打开的项目),请重新导入");
+     throw new Error(tr("The media file is not in memory (it may be from an opened project), please import it again"));

@@ -1,39 +1,42 @@
+import { tr } from "../i18n/index.ts";
 /**
- * 主题。每套主题是一组 CSS 变量,挂在舞台根元素(.pc-stage)和编辑器根元素上。
- * 卡片只读变量、不写死颜色:
- *   --pc-accent           主色
- *   --pc-fg               前景文字
- *   --pc-fg-muted         次级文字
- *   --pc-fg-faint         更弱的文字/分隔线
- *   --pc-glass-bg         玻璃底(带透明度的颜色)
- *   --pc-glass-border     玻璃边线
- *   --pc-glass-blur       backdrop-filter 模糊量,如 "16px"
- *   --pc-radius           卡片圆角
- *   --pc-font             标题字体栈
- *   --pc-font-mono        等宽字体栈
- *   --pc-shadow           卡片投影
- *   --pc-border-width     玻璃边框宽度(新增)
- *   --pc-on-accent        主色块上面的文字/图标颜色(新增)
- *   --pc-text-shadow      无玻璃底的卡片的文字描边/投影(新增)
- * 说明:5 套主题已填充
+ * Themes. Each theme is a set of CSS variables attached to the stage root element (.pc-stage)
+ * and the editor root element. Cards only read variables and do not hardcode colors:
+ *   --pc-accent           Accent color
+ *   --pc-fg               Foreground text
+ *   --pc-fg-muted         Secondary text
+ *   --pc-fg-faint         Fainter text / divider
+ *   --pc-glass-bg         Glass background (color with transparency)
+ *   --pc-glass-border     Glass border
+ *   --pc-glass-blur       backdrop-filter blur amount, e.g. "16px"
+ *   --pc-radius           Card border radius
+ *   --pc-font             Heading font stack
+ *   --pc-font-mono        Monospace font stack
+ *   --pc-shadow           Card shadow
+ *   --pc-border-width     Glass border width (new)
+ *   --pc-on-accent        Text / icon color on top of accent color blocks (new)
+ *   --pc-text-shadow      Text stroke / shadow for cards without glass background (new)
+ * Note: 5 themes populated
  *
- * 等宽字体栈里的 "Segoe UI Symbol":Consolas 没有 ✓ 这类符号,落进系统回退后,Chrome 和
- * chrome-headless-shell 会选不同的字体(实测 ✓ 一边 Noto Sans SC、一边 Segoe UI Symbol),
- * 字宽不同,整行平移。显式写上它,这类符号就不再交给系统去挑。见 docs/archive/topics/render-rebuild-plan.md 阶段 0。
+ * "Segoe UI Symbol" in the monospace font stack: Consolas lacks symbols like ✓; when falling back
+ * to the system, Chrome and chrome-headless-shell choose different fonts (in testing, ✓ resolved
+ * to Noto Sans SC on one side and Segoe UI Symbol on the other), causing different glyph widths
+ * and shifting the whole line. Specifying it explicitly avoids leaving such symbols to system
+ * selection. See docs/archive/topics/render-rebuild-plan.md Phase 0.
  */
 export interface Theme {
   id: string;
   name: string;
   description: string;
-  /** 变量名 → 值,不带 "--pc-" 前缀 */
+  /** Variable name → value, without the "--pc-" prefix */
   vars: Record<string, string>;
 }
 
 export const themes: Theme[] = [
   {
     id: "midnight",
-    name: "午夜",
-    description: "深色玻璃底、冷蓝主色",
+    name: tr("Midnight"),
+    description: tr("Dark glass base, cool blue primary color"),
     vars: {
       accent: "#4f8cff",
       fg: "#f5f7fa",
@@ -53,8 +56,8 @@ export const themes: Theme[] = [
   },
   {
     id: "ivory",
-    name: "象牙",
-    description: "浅色纸感、暖灰字、琥珀主色",
+    name: tr("Ivory"),
+    description: tr("Light paper feel, warm gray text, amber primary color"),
     vars: {
       accent: "#d97706",
       fg: "#45403c",
@@ -74,8 +77,8 @@ export const themes: Theme[] = [
   },
   {
     id: "neon",
-    name: "霓虹",
-    description: "纯黑底、荧光青/品红主色、发光投影",
+    name: tr("Neon"),
+    description: tr("Pure black base, fluorescent cyan/magenta primary colors, glowing shadows"),
     vars: {
       accent: "#00ffcc",
       fg: "#ffffff",
@@ -95,8 +98,8 @@ export const themes: Theme[] = [
   },
   {
     id: "sunrise",
-    name: "暖阳",
-    description: "奶油底、橙主色、大圆角",
+    name: tr("Warm sun"),
+    description: tr("Cream base, orange primary color, large rounded corners"),
     vars: {
       accent: "#f97316",
       fg: "#431407",
@@ -116,8 +119,8 @@ export const themes: Theme[] = [
   },
   {
     id: "forest",
-    name: "墨绿",
-    description: "深绿玻璃、金色主色、衬线标题字",
+    name: tr("Dark green"),
+    description: tr("Deep green glass, gold primary color, serif headings"),
     vars: {
       accent: "#eab308",
       fg: "#fefce8",
@@ -142,13 +145,14 @@ export function getTheme(id: string | undefined): Theme {
 }
 
 /**
- * 转成 style 对象,挂到舞台根(以及卡片预览的根)上。
+ * Convert to a style object and attach to the stage root (and the card preview root).
  *
- * 顺带把 Tailwind 的 `--font-mono` 接到主题的等宽字体上。`font-mono` 这个类读的是 `--font-mono`,
- * 而 src/skins/skins.css 在 :root 上把它指向了**编辑器界面皮肤**的等宽栈
- * (`ui-monospace, SFMono-Regular, monospace`,没有 Consolas)—— 界面皮肤漏进了成片:
- * rank-bars / growth-curve 的数字在 Chrome 里落到 NSimSun(衬线体),在 headless-shell 里落到 Courier New。
- * 在舞台根上覆盖掉,卡片里的 font-mono 就和 `var(--pc-font-mono)` 是同一套字。
+ * Also connects Tailwind's `--font-mono` to the theme's monospace font. The `font-mono` class
+ * reads `--font-mono`, which src/skins/skins.css points to the **editor skin** monospace stack on
+ * :root (`ui-monospace, SFMono-Regular, monospace`, without Consolas): the UI skin leaked into
+ * the final video: numbers in rank-bars / growth-curve fell back to NSimSun (serif) in Chrome and
+ * Courier New in headless-shell. Overriding it on the stage root ensures that font-mono in cards
+ * uses the exact same font as `var(--pc-font-mono)`.
  */
 export function themeStyle(id: string | undefined): Record<string, string> {
   const t = getTheme(id);

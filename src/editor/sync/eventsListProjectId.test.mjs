@@ -1,5 +1,5 @@
 /**
- * 页面向文档服务补取工具调用记录的 `events.list` 必须带项目号。
+ * Every `events.list` sent by the page to the document service to catch up on tool call history must carry `projectId`.
  *   node --test src/editor/sync/eventsListProjectId.test.mjs
  */
 import test from "node:test";
@@ -11,14 +11,15 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../../..");
 
-test("EVL-01 syncManager.ts 里每一条 events.list 消息都带 projectId", () => {
+test("EVL-01 every events.list message in syncManager.ts carries projectId", () => {
   const src = fs.readFileSync(path.join(here, "syncManager.ts"), "utf8");
+  // Find all `{ type: 'events.list' ... }` object literals (up to the closing brace at the same level)
   const sends = [...src.matchAll(/\{\s*type:\s*["']events\.list["'][^}]*\}/g)].map((m) => m[0]);
-  assert.ok(sends.length >= 1, `找到的 events.list 消息太少(${sends.length}),源码改了写法就更新这条测试`);
-  for (const s of sends) assert.match(s, /projectId\s*:/, `这条 events.list 没带 projectId:${s}`);
+  assert.ok(sends.length >= 1, `too few events.list messages found (${sends.length}); if the source's style changed, update this test`);
+  for (const s of sends) assert.match(s, /projectId\s*:/, `this events.list does not carry projectId: ${s}`);
 });
 
-test("EVL-02 文档服务的 events.list:不带 projectId 回 bad-message,带了回 events.listing", async () => {
+test("EVL-02 the document service's events.list: without projectId it returns bad-message, with it returns events.listing", async () => {
   const { eventsModule } = await import(pathToFileURL(path.join(root, "server/docservice/modules/events.mjs")).href);
   const m = eventsModule({ project: { publishToProject: () => {} } });
   const sent = [];

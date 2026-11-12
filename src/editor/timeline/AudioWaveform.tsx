@@ -2,12 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import type { MediaAsset, TrackClip } from "../../kernel/project";
 import { mediaSpanOf } from "../../kernel/clipTime.mjs";
 import { previewCacheKey, usePreviewMediaUrl } from "../media/previewUrl";
+import { tr } from "../../i18n/index.ts";
 
 type Wave = { peaks: number[]; duration: number };
 // Share decoding across all cuts of a source, keeping only compact peaks.
 const cache = new Map<string, Promise<Wave | null>>();
 export function loadWave(url: string): Promise<Wave | null> {
-  // 按去掉查询串的地址缓存:在线页面的地址带轮换的只读票据,换票据不该重下、重解一遍(桌面的 /@media 地址没有查询串)
+  // Cache by the address with the query string removed: online page addresses carry a rotating
+  // read-only ticket, and a changed ticket should not trigger a re-download and re-decode (desktop
+  // /@media addresses have no query string)
   const key = previewCacheKey(url);
   const existing = cache.get(key);
   if (existing) return existing;
@@ -44,7 +47,9 @@ export function loadWave(url: string): Promise<Wave | null> {
 
 export function AudioWaveform({ media, clip, width }: { media: MediaAsset; clip: TrackClip; width: number }) {
   const [wave, setWave] = useState<Wave | null>(null);
-  // 桌面是 media.url;在线浏览器模式经取档判据换成远程素材服务的地址(只用小尺寸的素材只给小尺寸),没就绪时是 "" 不取
+  // On desktop it is media.url; in online browser mode the tier check swaps in the address of the
+  // remote asset service (media used only at a small size gets only the small size); when not ready it
+  // is "" and nothing is fetched
   const url = usePreviewMediaUrl(media);
   const urlRef = useRef(url);
   urlRef.current = url;
@@ -59,7 +64,8 @@ export function AudioWaveform({ media, clip, width }: { media: MediaAsset; clip:
   if (!wave) return null;
   const count = Math.max(1, Math.min(1500, Math.ceil(width / 3)));
   const paths: string[] = [];
-  // 这一段用到的那截素材有多长(变速段 = 时间轴时长 × 速度,kernel/clipTime.mjs)
+  // How long the stretch of media used by this segment is (speed-changed clip = timeline duration ×
+  // speed, kernel/clipTime.mjs)
   const span = mediaSpanOf(clip);
   for (let i = 0; i < count; i++) {
     const from = (clip.mediaOffset ?? 0) + i / count * span;
@@ -69,5 +75,5 @@ export function AudioWaveform({ media, clip, width }: { media: MediaAsset; clip:
     const h = Math.max(0.3, peak * 9);
     paths.push(`M${(i + 0.5) / count * 1000},${10 - h}v${h * 2}`);
   }
-  return <svg className="pc-audio-waveform" viewBox="0 0 1000 20" preserveAspectRatio="none" aria-label="音频波形"><path d={paths.join(" ")} stroke="currentColor" strokeWidth="1" vectorEffect="non-scaling-stroke" /></svg>;
+  return <svg className="pc-audio-waveform" viewBox="0 0 1000 20" preserveAspectRatio="none" aria-label={tr("Audio waveform")}><path d={paths.join(" ")} stroke="currentColor" strokeWidth="1" vectorEffect="non-scaling-stroke" /></svg>;
 }

@@ -1,17 +1,27 @@
 diff --git a/src/start/ChatView.tsx b/src/start/ChatView.tsx
-index cc63fe4e499be3f7b8859095656ad40685171b14..18451e22a8ea3ede299ce77b86509076e8d13874 100644
+index 07958a08cf281fad267ae1509b7131835de0fb50..981254989908a5797ecac666a4a93c5fb583d0f7 100644
 --- a/src/start/ChatView.tsx
 +++ b/src/start/ChatView.tsx
-@@ -8,7 +8,7 @@
-  * 调用方按 `vibeAgent.ts` 的 `VibeAgent` 给 —— 在线浏览器是云端 Agent(`useVibeCloud.ts`),桌面版是本机的
-  * CLI / API Agent(`useVibeLocal.ts`,和编辑界面 AI 栏同一套)。这一页对两种一视同仁,不认具体是哪一种。
-  *   - 一轮回复按 `product/agent.md`「汇报」拆:气泡里只放 Agent 说的「在做什么」,做过的操作列在「Agent 操作」那一块
-- *     (拆法与手机版共用 `src/mobile/agentView.ts` 的 `roundView`);
-+ *     (`src/start/agentView.ts` 的 `roundView`);
-  *   - 自己的消息云端还没收下之前写明发送状态,没发出去写原因;共有对话里别人发的标上是谁;
-  *   - 对话是空的时候只有一条示例句(`workflow/production.md`「用户发送指令」),点它填进输入框;
-  *   - 发不了(只读成员、创建者看别人的私有对话、开关关着)时输入框置灰,下面那一行写为什么。
-@@ -17,11 +17,9 @@ import { useEffect, useRef, useState } from "react";
+@@ -9,14 +9,12 @@
+  *
+  * 2026-10-23: connected to the business layer (`docs/reports/AGENT-claude-vibe-wire.md`): messages, send
+  * and stop are all real, and the data and actions are supplied by the caller per `VibeAgent` in
+- * `vibeAgent.ts`: the online browser uses the Cloud Agent (`useVibeCloud.ts`), and the desktop app uses
+- * the local CLI / API Agent (`useVibeLocal.ts`, the same set as the editor's AI panel). This page treats
+- * both alike and does not care which one it is.
++ * `vibeAgent.ts`: the desktop app uses the local CLI / API Agent (`useVibeLocal.ts`, the same set as
++ * the editor's AI panel).
+  *   - A round of reply is split per "Report" in `product/agent.md`: the bubble holds only what the Agent
+  *     says about "what it is doing", and the operations done are listed in the "Agent actions" block
+- *     (the split is shared with the mobile app via `roundView` in `src/mobile/agentView.ts`);
+- *   - Before the cloud has accepted your own message, its sending status is shown, and if it was not
+- *     sent the reason is shown; in a shared chat, messages sent by others are labeled with who sent them;
++ *     (`roundView` in `src/start/agentView.ts`);
++ *   - If sending fails, the reason is shown; in a shared chat, messages sent by others are labeled with who sent them;
+  *   - When the chat is empty there is only one example sentence (`workflow/production.md`, "User sends an
+  *     instruction"); click it to fill it into the input box;
+  *   - When sending is impossible (read-only member, the creator viewing someone else's private chat, the
+@@ -26,11 +24,9 @@ import { useEffect, useRef, useState } from "react";
  import type { JSX } from "react";
  import { LiveMarkdown } from "../ai/Markdown";
  import type { ChatMessage } from "../ai/types";
@@ -24,7 +34,7 @@ index cc63fe4e499be3f7b8859095656ad40685171b14..18451e22a8ea3ede299ce77b86509076
  import { selectionPresenceStatus } from "../editor/sync/selectionPresence";
  import { ChatSidePanel } from "./ChatSidePanel";
  import { Composer } from "./Composer";
-@@ -46,7 +44,6 @@ function AgentAvatar(): JSX.Element {
+@@ -56,7 +52,6 @@ function AgentAvatar(): JSX.Element {
  function MyMessage(props: { m: ChatMessage; sender: string | null }): JSX.Element {
    const { m } = props;
    const { quotes, rest } = splitQuotes(m.text);
@@ -32,12 +42,12 @@ index cc63fe4e499be3f7b8859095656ad40685171b14..18451e22a8ea3ede299ce77b86509076
    return (
      <div className="ps-msg is-me" data-pc="start-chat-msg" data-from="me" data-send={m.sendState}>
        <div className="ps-me-col">
-@@ -55,15 +52,7 @@ function MyMessage(props: { m: ChatMessage; sender: string | null }): JSX.Elemen
+@@ -65,15 +60,7 @@ function MyMessage(props: { m: ChatMessage; sender: string | null }): JSX.Elemen
            {quotes.map((q) => `@${q.label} `).join("")}
            {rest}
          </div>
--        {m.sendState === "sending" && <span className="ps-msg-state">发送中…</span>}
--        {m.sendState === "accepted" && <span className="ps-msg-state">已发出，等待云端开始处理…</span>}
+-        {m.sendState === "sending" && <span className="ps-msg-state">{tr("Sending…")}</span>}
+-        {m.sendState === "accepted" && <span className="ps-msg-state">{tr("Sent, waiting for the cloud to start processing…")}</span>}
 -        {m.sendState === "queued" && <span className="ps-msg-state">{OUTBOX_TEXT.queued}</span>}
          {m.error && <span className="ps-msg-state is-err" data-pc="start-chat-send-error">{m.error}</span>}
 -        {failed && m.resendable && (
@@ -48,7 +58,7 @@ index cc63fe4e499be3f7b8859095656ad40685171b14..18451e22a8ea3ede299ce77b86509076
        </div>
      </div>
    );
-@@ -293,8 +282,6 @@ export function ChatView(props: {
+@@ -307,8 +294,6 @@ export function ChatView(props: {
            />
          )}
        </div>

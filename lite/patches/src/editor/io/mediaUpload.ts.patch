@@ -1,34 +1,39 @@
 diff --git a/src/editor/io/mediaUpload.ts b/src/editor/io/mediaUpload.ts
-index b10ab21e0c1e91f5a0aa0bf304f6c3336628d886..37eeb2b3acb8cc94898f327ee36a002d077db56e 100644
+index 92b9aa3a6240bae4cb20a31ffe31fd662319d6f5..4f0d6b84e96d60cf86706a88631a5d334bf1d2f2 100644
 --- a/src/editor/io/mediaUpload.ts
 +++ b/src/editor/io/mediaUpload.ts
-@@ -3,19 +3,8 @@ import type { MediaAsset } from "../../kernel/project";
+@@ -3,23 +3,9 @@ import type { MediaAsset } from "../../kernel/project";
  import { isViewOnly } from "./viewOnly";
- import { confirmedMissing } from "../../audio/missingMaterialRecord";
+ import { confirmedMissing, MISSING_NAME_MARK, hasMissingMark, withoutMissingMark } from "../../audio/missingMaterialRecord";
  import { publishMissingMaterials, type MissingMaterialNotice } from "./missingMaterialBus";
 -import { onGoneConversion } from "../sync/recoveryAssociation";
 -import { transcodeVideoSmall, sha256Blob } from "../../online/mediaTranscode";
 -import { enqueueOnlineMedia } from "../../online/mediaUploadQueue";
 -import { onlinePage } from "../../online/pageFlag";
  import { classifyFileDetailed } from "./mediaKinds";
+ import { tr } from "../../i18n/index.ts";
  
 -/**
-- * 在线构建的编译期常量(写法与用意见 `src/online/pageFlag.ts` 的「在线构建剪枝」)。在线浏览器模式没有本机内容库与转码:
-- * 导入媒体置灰(C10 契约第 10 节),素材小尺寸补转也不跑(`Preview` 按 `ONLINE` 不起)。下面几个入口在在线构建里直接回空,
-- * 背后的 /api/media/upload、adopt、tiers 调用一起剪掉(M8 遗留 L24)。
+- * Compile-time constant of the online build (usage and rationale in "online build pruning" of
+- * `src/online/pageFlag.ts`). Online browser mode has no local content store and no transcoding:
+- * import media is grayed out (C10 contract, section 10), and the small-variant backfill of media does not
+- * run either (`Preview` does not start it under `ONLINE`). The entry points below simply return empty in
+- * the online build, and the /api/media/upload, adopt and tiers calls behind them are pruned together
+- * (M8 leftover L24).
 - */
 -const ONLINE_BUILD = typeof import.meta.env !== "undefined" && import.meta.env.VITE_PC_ONLINE === "1";
 -
  /**
-  * 导入 = 先入库再引用(A1)。
+  * Import = ingest first, then reference (A1).
   *
-@@ -60,98 +49,10 @@ function tiersOf(data: { tiers?: { original?: unknown; small?: unknown }; small?
+@@ -69,99 +55,10 @@ function tiersOf(data: { tiers?: { original?: unknown; small?: unknown }; small?
    };
  }
  
 -/**
-- * 在线浏览器端导入素材：页面直接计算内容哈希并分片上传到素材服务，
-- * 视频在浏览器内转出小尺寸 MP4，按「所有小尺寸先传、再传原尺寸」入队。
+- * Import media on the online browser side: the page computes the content hash directly and uploads in
+- * chunks to the asset service; videos are transcoded in the browser into a small MP4, and queued as
+- * "all small variants first, then the original".
 - */
 -export async function uploadOnlineMediaFile(
 -  file: File,
@@ -86,7 +91,7 @@ index b10ab21e0c1e91f5a0aa0bf304f6c3336628d886..37eeb2b3acb8cc94898f327ee36a002d
 -        };
 -      }
 -    } else {
--      // 图片与音频：没有小尺寸档，直接算 SHA-256 并进上传队列
+-      // Images and audio: no small tier, compute SHA-256 directly and enter the upload queue
 -      const originalHash = await sha256Blob(file);
 -      const tiers = { original: originalHash, small: null };
 -      await enqueueOnlineMedia({
@@ -105,12 +110,12 @@ index b10ab21e0c1e91f5a0aa0bf304f6c3336628d886..37eeb2b3acb8cc94898f327ee36a002d
 -      };
 -    }
 -  } catch (err) {
--    console.warn(`[io] 在线导入素材异常: ${file.name}`, err);
+-    console.warn(`[io] Online media import error: ${file.name}`, err);
 -    return null;
 -  }
 -}
 -
- /** 把一个 File 流进本地内容库,拿回它的内容哈希。失败给 null(调用方负责提示) */
+ /** Stream a File into the local content store and get back its content hash. Gives null on failure (the caller is responsible for notifying) */
  export async function uploadMediaFile(
    file: File,
 -  opts?: { transcode?: typeof transcodeVideoSmall; forceOnline?: boolean },
@@ -119,46 +124,46 @@ index b10ab21e0c1e91f5a0aa0bf304f6c3336628d886..37eeb2b3acb8cc94898f327ee36a002d
 -    return uploadOnlineMediaFile(file, opts);
 -  }
    try {
-     // tiers=1:视频在服务端做 faststart 判定(缺了就同容器重封装),并在后台生成素材小尺寸(C6.6)
-     const res = await fetch(`/api/media/upload/${encodeURIComponent(file.name)}?tiers=1`, { method: "POST", body: file });
-@@ -208,7 +109,6 @@ const HTML_TYPE = new RegExp("text/html", "i");
+     // tiers=1: for video the server does the faststart check (remux in the same container if missing) and
+     // generates the small variant in the background (C6.6)
+@@ -223,7 +120,6 @@ const HTML_TYPE = new RegExp("text/html", "i");
  
- /** 同 adoptServerMedia,另带判词:没拿到时分得清是「没有」还是「说不清」 */
+ /** Same as adoptServerMedia, with an extra verdict: when nothing is obtained, it tells "does not exist" from "cannot tell" */
  export async function adoptServerMediaVerdict(filePath: string): Promise<{ up: UploadedMedia | null; verdict: MediaVerdict }> {
 -  if (ONLINE_BUILD) return { up: null, verdict: "unsure" };
    try {
      const res = await fetch(`/api/media/adopt?path=${encodeURIComponent(filePath)}&tiers=1`, { method: "POST" });
      if (!res.ok) {
-@@ -283,7 +183,6 @@ const watching = new Set<string>();
-  * 只是这条素材的项目记录里没有 small,别的设备按「还没有素材小尺寸时直接拉素材原尺寸」处理)。
+@@ -304,7 +200,6 @@ const watching = new Set<string>();
+  * there is no small variant yet").
   */
  export function watchSmallTier(mediaId: string, original: string): void {
 -  if (ONLINE_BUILD || onlinePage()) return;
    const key = `${mediaId}:${original}`;
    if (watching.has(key)) return;
    watching.add(key);
-@@ -323,7 +222,7 @@ const backfillAsked = new Set<string>();
-  * 回这次问了几份。
+@@ -347,7 +242,7 @@ const backfillAsked = new Set<string>();
+  * Returns how many were asked this time.
   */
  export async function backfillSmallTiers(project = getState().project): Promise<number> {
--  if (ONLINE_BUILD || onlinePage() || isViewOnly()) return 0; // 在线页面没有本机转码;只读页面不改项目
+-  if (ONLINE_BUILD || onlinePage() || isViewOnly()) return 0; // Online pages have no local transcoding; read-only pages do not change the project
 +  if (isViewOnly()) return 0;
    const want: { mediaId: string; hash: string; name: string }[] = [];
    for (const m of project.media ?? []) {
-     // 认定过「确认缺失」的不问:内容库里没有它,转不出小尺寸
-@@ -369,7 +268,6 @@ function writeSmallTier(mediaId: string, original: string, small: string): void
-  * 做完交给 `hooks.afterIngest`(放云端时补上哈希的进上传队列,见 `sync/backfillUpload.ts`)。
+     // Those already judged "confirmed missing" are not asked: the content store does not have them, so no small variant can be made
+@@ -395,7 +290,6 @@ function writeSmallTier(mediaId: string, original: string, small: string): void
+  * (those whose hash was filled in while hosted in the cloud enter the upload queue, see `sync/backfillUpload.ts`).
   */
  export function startTierBackfill(hooks: BackfillHooks = {}): () => void {
 -  if (ONLINE_BUILD) return () => {};
    const myImportHook = hooks.afterImport ?? null;
    importHook = myImportHook;
    const background = async () => {
-@@ -397,15 +295,9 @@ export function startTierBackfill(hooks: BackfillHooks = {}): () => void {
+@@ -425,15 +319,9 @@ export function startTierBackfill(hooks: BackfillHooks = {}): () => void {
    };
    const unsub = subscribe(check);
    check();
--  // 过期的云端项目刚转成本地项目:素材表没换(内容原样),但它现在是本机项目了,重新判一遍
+-  // A stale cloud project was just turned into a local project: the media table did not change (content as is), but it is now a local project, so judge again
 -  const again = () => { lastMedia = null; ingestBackgroundFailed.clear(); check(); };
 -  recheckers.add(again);
 -  return () => { recheckers.delete(again); unsub(); if (timer) clearTimeout(timer); if (importHook === myImportHook) importHook = null; };
@@ -168,24 +173,24 @@ index b10ab21e0c1e91f5a0aa0bf304f6c3336628d886..37eeb2b3acb8cc94898f327ee36a002d
 -const recheckers = new Set<() => void>();
 -onGoneConversion(() => { for (const again of [...recheckers]) again(); });
 -
- /** 这一刻载入的是哪个项目(`loadProject` 每次加一);后台检查跨着几次请求,回来时用它看项目换没换 */
+ /** Which project is loaded at this moment (`loadProject` adds one each time); the background check spans several requests, and uses this on return to see whether the project changed */
  const loadMark = () => ({ token: getState().projectLoadToken, id: getState().project.id });
  const sameLoad = (mark: ReturnType<typeof loadMark>) => getState().projectLoadToken === mark.token && getState().project.id === mark.id;
-@@ -549,7 +441,7 @@ const ingestBackgroundFailed = new Set<string>();
+@@ -597,7 +485,7 @@ const ingestBackgroundFailed = new Set<string>();
   */
  export async function ingestUnhashedMedia(opts: { background?: boolean; markMissing?: boolean; allowed?: () => boolean } = {}): Promise<IngestResult> {
    const out: IngestResult = { ingested: [], failed: [] };
 -  if (ONLINE_BUILD || isViewOnly()) return out;
 +  if (isViewOnly()) return out;
-   // 等请求的那一阵项目可能换了:回来再认定缺失之前先看一眼还许不许(`allowed`),并且始终不跨项目写
+   // The project may have changed while waiting for requests: before judging missing again, check whether it is still allowed (`allowed`), and never write across projects
    const mark = loadMark();
    const mayMark = () => !!opts.markMissing && sameLoad(mark) && (opts.allowed?.() ?? true);
-@@ -625,7 +517,7 @@ const hashPresent = new Set<string>();
+@@ -678,7 +566,7 @@ const hashPresent = new Set<string>();
   */
  export async function checkHashedMedia(opts: { allowed?: () => boolean } = {}): Promise<{ missing: string[]; restored: string[] }> {
    const out = { missing: [] as string[], restored: [] as string[] };
 -  if (ONLINE_BUILD || isViewOnly()) return out;
 +  if (isViewOnly()) return out;
-   // 下面要等好几次请求;期间换了项目(或不再许认定)就停手,不把这一轮的结论写进别的项目
+   // Several requests must be awaited below; if the project changes in the meantime (or judging is no longer allowed), stop and do not write this round's conclusions into another project
    const mark = loadMark();
    const go = () => sameLoad(mark) && (opts.allowed?.() ?? true);

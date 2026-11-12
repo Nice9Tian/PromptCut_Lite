@@ -1,21 +1,22 @@
 diff --git a/src/editor/left/CaptionsTab.tsx b/src/editor/left/CaptionsTab.tsx
-index d6dc400f77b8996f04828a260332ad07b6e6b02e..49a867bbe5f6f7af97d00a790eefebc6c26db72d 100644
+index 4504c8d828a7f281336a1adf3ebe8dca66b96fc8..e33efdc87e906a130051a64d83370e0d5cb84a38 100644
 --- a/src/editor/left/CaptionsTab.tsx
 +++ b/src/editor/left/CaptionsTab.tsx
-@@ -3,7 +3,6 @@ import { actions, useStore } from "../../store/project";
+@@ -3,8 +3,6 @@ import { actions, useStore } from "../../store/project";
  import type { MediaAsset, Project, TranscriptSegment } from "../../kernel/project";
  import { timelineTimeAt } from "../../kernel/clipTime.mjs";
  import { TranscribePanel } from "./TranscribePanel";
--import { onlinePage, onlineUnsupported } from "../../online/pageFlag";
+-import { onlinePage } from "../../online/pageFlag";
+-import { onlineUnsupported } from "../../online/onlineUnsupported";
  import { ReadOnlyFence } from "../ReadOnlyFence";
  import { useReadOnly } from "../readOnly";
- 
-@@ -279,7 +278,7 @@ function MediaNode({
+ import { tr as trText } from "../../i18n/index.ts";
+@@ -283,7 +281,7 @@ function MediaNode({
                >
-                 铺成字幕轨
+                 {trText("Lay out as captions track")}
                </button>
--              <button type="button" className="pc-left-btn is-sm" onClick={onRetranscribe} disabled={onlinePage() || ro.locked} title={ro.locked ? ro.why : onlinePage() ? onlineUnsupported("语音识别") : undefined}>
+-              <button type="button" className="pc-left-btn is-sm" onClick={onRetranscribe} disabled={onlinePage() || ro.locked} title={ro.locked ? ro.why : onlinePage() ? onlineUnsupported(trText("Speech recognition")) : undefined}>
 +              <button type="button" className="pc-left-btn is-sm" onClick={onRetranscribe} disabled={ro.locked} title={ro.locked ? ro.why : undefined}>
-                 重新转写
+                 {trText("Transcribe again")}
                </button>
              </div>

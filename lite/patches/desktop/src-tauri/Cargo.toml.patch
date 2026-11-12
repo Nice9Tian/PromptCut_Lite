@@ -1,5 +1,5 @@
 diff --git a/desktop/src-tauri/Cargo.toml b/desktop/src-tauri/Cargo.toml
-index 7af420d22d3c694688b2a89f59b8e3ee097b5384..a5167a2874b07e440fd53fdcad8db3c88b8ea0d1 100644
+index 6d3797188fd6f879cce9494f00718a01905622ec..3595482e2aca01a46cc25cebb3511fd28f306895 100644
 --- a/desktop/src-tauri/Cargo.toml
 +++ b/desktop/src-tauri/Cargo.toml
 @@ -13,7 +13,6 @@ name = "promptcut_lib"

@@ -1,13 +1,20 @@
 diff --git a/src/start/ExtChatPanel.tsx b/src/start/ExtChatPanel.tsx
-index 27001ff0adfc39584c5d6ef83a35911568cc017f..e505917dad5a9e50afffc26182867489ebb4465b 100644
+index d786caa74d98d468ffe19ca3be7f1f706b19f863..1c9061644142ded55bff5dfda9e7d60aa44fb677 100644
 --- a/src/start/ExtChatPanel.tsx
 +++ b/src/start/ExtChatPanel.tsx
-@@ -20,7 +20,7 @@ import { useLayoutEffect, useRef, useState } from "react";
+@@ -22,13 +22,13 @@
+  * `.ps-msg` of the chat column: that one is a 760px-wide reading layout, while this one is 250px at the
+  * narrowest (`EXT_WIDTH.min` in `sideWidth.ts`), with font size, padding and avatar all one size smaller.
+  * How a round of reply is split into "what was said + operations" is shared by both sides through
+- * `roundView` in `src/mobile/agentView.ts`; no second copy is written.
++ * `roundView` in `src/start/agentView.ts`; no second copy is written.
+  */
+ import { useLayoutEffect, useRef, useState } from "react";
  import type { JSX, ReactNode } from "react";
  import type { ChatMessage } from "../ai/types";
  import { activityText, runningTool } from "../editor/right/chat/AgentBubble";
 -import { isUserBubble, ordinals, partsOf, roundView, splitQuotes } from "../mobile/agentView";
 +import { isUserBubble, ordinals, partsOf, roundView, splitQuotes } from "./agentView";
+ import { tr } from "../i18n/index.ts";
  
  const MARK: Record<string, string> = { done: "✓", run: "…", todo: "·", err: "!", ask: "!" };
- 

@@ -1,35 +1,45 @@
 diff --git a/server/vite-plugin-prerender.ts b/server/vite-plugin-prerender.ts
-index d3017a54c44de3223f9f8058e6cfb2e3f22473a2..dfbed7554bbfc2446a3723c3acb68ffb1b71f3f2 100644
+index 4ba224d39dd4439e38318d5ce3e9600968a4f9e0..d3b0e9fc5dba637349b850c119d0c3bc99273f36 100644
 --- a/server/vite-plugin-prerender.ts
 +++ b/server/vite-plugin-prerender.ts
-@@ -12,8 +12,6 @@ import { repushMirror, replayReadySessions } from "./vite-plugin-mirror";
+@@ -12,11 +12,7 @@ import { repushMirror, replayReadySessions } from "./vite-plugin-mirror";
  import { stageOriginsOf, stagePortsOf } from "./stage-ports.mjs";
  import { listenSafe } from "./safe-port.mjs";
  import { createSessionLineForwarder } from "./render-node/session-diag.mjs";
 -import { autoRenderNodeOffReason, normalizeBinding, ticketOk } from "./auto-render-node.mjs";
 -import { createBindingMemory, createTicketRelay } from "./render-node-relay.mjs";
+-import { createRenderServerPool } from "./render-server-pool.mjs";
  import { localPrerenderMode } from "./prerender-mode.mjs";
+-import { tr } from "./i18n.mjs";
  
  /**
-@@ -110,102 +108,6 @@ export function prerenderPlugin(): Plugin {
+  * Spawns and supervises the prerender process (docs/archive/topics/decoupling-plan.md
+@@ -127,198 +123,6 @@ export function prerenderPlugin(): Plugin {
        let closing = false;
        const tail: string[] = [];
  
 -      /*
--       * ---------------- 桌面应用自动成为共享项目的渲染节点(编辑器进程一侧,`server/render-node-relay.mjs`) ----------------
+-       * ---- Desktop app auto-becomes render node for shared projects (editor process side, `server/render-node-relay.mjs`) ----
 -       *
--       *   POST /api/render-node/bind            页面:进入共享项目 { url, projectId, assetBase?, contentId?, ticket? };记下(票据不记)转给预渲染进程
--       *   POST /api/render-node/unbind          页面:离开项目 / 取消协作 { projectId };转过去撤掉
--       *   POST /api/render-node/ticket          页面:交回连接票据 { reqId, ticket | error }
--       *   POST /api/render-node/ticket-request  预渲染进程(本机、不带 Origin):{ projectId } → { ticket };经 HMR `pc:render-node` 向页面要
--       *   GET  /api/render-node/status          诊断(不含票据)
--       * 预渲染进程崩溃重启、健康检查通过后,照记下的配置再转一次(不带票据)。
--       * 开关 `PROMPTCUT_AUTO_RENDER_NODE=0`(或环境变量已经配好节点)时 bind 回 `{ enabled: false, reason }`,什么都不转。
+-       *   POST /api/render-node/bind            Page: enters shared project { url, projectId, assetBase?, contentId?, ticket? };
+-       *                                         records (excluding ticket) and forwards to prerender process
+-       *   POST /api/render-node/unbind          Page: leaves project / cancels collaboration { projectId };
+-       *                                         forwards to tear down
+-       *   POST /api/render-node/ticket          Page: returns connection ticket { reqId, ticket | error }
+-       *   POST /api/render-node/ticket-request  Prerender process (local, no Origin): { projectId } → { ticket };
+-       *                                         requests from page via HMR `pc:render-node`
+-       *   GET  /api/render-node/status          Diagnostics (excluding ticket)
+-       *
+-       * After the prerender process crashes, restarts, and passes health checks, forward recorded
+-       * config again (without ticket).
+-       * When switch `PROMPTCUT_AUTO_RENDER_NODE=0` (or a node is already configured via environment
+-       * variables), bind returns `{ enabled: false, reason }` and forwards nothing.
 -       */
 -      const rnLog = (event: string, fields: object = {}) => {
 -        try { console.info("[render-node]", event, JSON.stringify(fields)); } catch { console.info("[render-node]", event); }
 -      };
 -      const rnMemory = createBindingMemory();
+-      const rsPool = createRenderServerPool();
 -      const rnRelay = createTicketRelay({
 -        send: (data: object) => server.ws.send({ type: "custom", event: "pc:render-node", data }),
 -        hasPage: () => { const n = (server.ws as any)?.clients?.size; return typeof n === "number" ? n > 0 : true; },
@@ -42,11 +52,13 @@ index d3017a54c44de3223f9f8058e6cfb2e3f22473a2..dfbed7554bbfc2446a3723c3acb68ffb
 -      };
 -      const rnBody = (req: any, limit = 16 * 1024) => new Promise<any>((resolve, reject) => {
 -        let body = "";
--        req.on("data", (c: Buffer) => { body += c; if (body.length > limit) { req.destroy(); reject(new Error("请求体太大")); } });
--        req.on("end", () => { try { resolve(JSON.parse(body || "{}")); } catch { reject(new Error("请求体不是 JSON")); } });
+-        req.on("data", (c: Buffer) => { body += c; if (body.length > limit) { req.destroy(); reject(new Error(tr("Request body too large"))); } });
+-        req.on("end", () => { try { resolve(JSON.parse(body || "{}")); } catch { reject(new Error("Request body is not JSON")); } });
 -        req.on("error", reject);
 -      });
--      /** 转给预渲染进程;它没就绪就算了(就绪后照记下的再转) */
+-      /**
+-       * Forward to prerender process; ignore if not ready (re-forward from recorded config once ready)
+-       */
 -      const rnForward = async (pathname: string, body: object) => {
 -        const s = prerenderState();
 -        if (!s.ready || !s.url) return { ok: true, pending: true };
@@ -54,7 +66,7 @@ index d3017a54c44de3223f9f8058e6cfb2e3f22473a2..dfbed7554bbfc2446a3723c3acb68ffb
 -          const headers: Record<string, string> = { "Content-Type": "application/json" };
 -          if (process.env.PROMPTCUT_INTERNAL_TOKEN) headers["x-pc-internal-token"] = process.env.PROMPTCUT_INTERNAL_TOKEN;
 -          const r = await fetch(s.url + pathname, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) });
--          return await r.json().catch(() => ({ ok: false, error: `预渲染进程回了非 JSON(HTTP ${r.status})` }));
+-          return await r.json().catch(() => ({ ok: false, error: `The prerender process returned non-JSON (HTTP ${r.status})` }));
 -        } catch (e: any) {
 -          return { ok: false, pending: true, error: String(e?.message ?? e) };
 -        }
@@ -80,6 +92,7 @@ index d3017a54c44de3223f9f8058e6cfb2e3f22473a2..dfbed7554bbfc2446a3723c3acb68ffb
 -            try { binding = normalizeBinding(input); } catch (e: any) { return rnSend(res, 400, { ok: false, error: e?.message || String(e) }); }
 -            const prev = rnMemory.get();
 -            rnMemory.set(binding);
+-            rsPool.syncCurrentBinding(binding, { name: typeof input?.name === "string" ? input.name : undefined });
 -            if (!prev || prev.projectId !== binding.projectId || prev.url !== binding.url) rnLog("bind", { projectId: binding.projectId, url: binding.url, assetBase: binding.assetBase, contentId: binding.contentId });
 -            const r = await rnForward("/api/frames/render-node", { ...binding, ...(ticketOk(input.ticket) ? { ticket: input.ticket } : {}) });
 -            return rnSend(res, 200, { enabled: true, ...r });
@@ -87,6 +100,7 @@ index d3017a54c44de3223f9f8058e6cfb2e3f22473a2..dfbed7554bbfc2446a3723c3acb68ffb
 -          if (route === "/unbind") {
 -            const projectId = typeof input?.projectId === "string" ? input.projectId : null;
 -            const cleared = rnMemory.clear(projectId);
+-            rsPool.syncCurrentBinding(rnMemory.get());
 -            if (cleared) rnLog("unbind", { projectId, reason: typeof input?.reason === "string" ? input.reason.slice(0, 40) : null });
 -            const r = await rnForward("/api/frames/render-node/unbind", { projectId, reason: typeof input?.reason === "string" ? input.reason.slice(0, 40) : "page-left" });
 -            return rnSend(res, 200, { cleared, ...r });
@@ -95,11 +109,12 @@ index d3017a54c44de3223f9f8058e6cfb2e3f22473a2..dfbed7554bbfc2446a3723c3acb68ffb
 -            return rnSend(res, rnRelay.answer(input) ? 200 : 404, { ok: true });
 -          }
 -          if (route === "/ticket-request") {
--            // 只给本机的预渲染进程(不带 Origin 的服务端请求);浏览器里的页面发来的一律拒(api 守卫之外再挡一道)
--            if (req.headers.origin) return rnSend(res, 403, { ok: false, error: "只给本机进程" });
+-            // Only for the local prerender process (server-side requests without Origin); reject all requests
+-            // from pages in the browser (an extra guard beyond the api guard)
+-            if (req.headers.origin) return rnSend(res, 403, { ok: false, error: "Local processes only" });
 -            const projectId = typeof input?.projectId === "string" ? input.projectId : "";
 -            const b = rnMemory.get();
--            if (!b || b.projectId !== projectId) return rnSend(res, 409, { ok: false, code: "not-bound", error: "编辑器没有绑这个项目" });
+-            if (!b || b.projectId !== projectId) return rnSend(res, 409, { ok: false, code: "not-bound", error: "The editor is not bound to this project" });
 -            try {
 -              const ticket = await rnRelay.request(projectId);
 -              return rnSend(res, 200, { ok: true, ticket });
@@ -111,16 +126,111 @@ index d3017a54c44de3223f9f8058e6cfb2e3f22473a2..dfbed7554bbfc2446a3723c3acb68ffb
 -        })();
 -      });
 -
+-      const fetchPrerenderJson = async (pathname: string) => {
+-        const s = prerenderState();
+-        if (!s.ready || !s.url) return null;
+-        try {
+-          const headers: Record<string, string> = {};
+-          if (process.env.PROMPTCUT_INTERNAL_TOKEN) headers["x-pc-internal-token"] = process.env.PROMPTCUT_INTERNAL_TOKEN;
+-          const r = await fetch(s.url + pathname, { headers, signal: AbortSignal.timeout(2500) });
+-          return r.ok ? await r.json().catch(() => null) : null;
+-        } catch {
+-          return null;
+-        }
+-      };
+-
+-      server.middlewares.use("/api/render-server", (req, res, next) => {
+-        const route = (req.url || "/").split("?")[0];
+-        if (req.method === "GET" && route === "/status") {
+-          void (async () => {
+-            rsPool.syncCurrentBinding(rnMemory.get());
+-            const s = prerenderState();
+-            const [nodeStatus, queueSummary, diag] = await Promise.all([
+-              fetchPrerenderJson("/api/frames/render-node"),
+-              fetchPrerenderJson("/api/frames/queue"),
+-              fetchPrerenderJson("/api/frames/diagnostics"),
+-            ]);
+-            const claims = Array.isArray(diag?.queue?.claims) ? diag.queue.claims : [];
+-            for (const c of claims) {
+-              if (!c || typeof c.id !== "string") continue;
+-              rsPool.recordTask({
+-                id: `claim:${c.id}`,
+-                projectId: c.projectId || nodeStatus?.projectId || rnMemory.get()?.projectId || "local",
+-                kind: c.kind || "render",
+-                status: c.outcome === "failed" ? "failed" : c.outcome ? "completed" : "running",
+-                frames: Number(c.frames) || 0,
+-                segments: Number(c.segments) || (c.kind === "stream" ? 1 : 0),
+-                startedAt: Number.isFinite(c.claimedAt) ? c.claimedAt : undefined,
+-                finishedAt: Number.isFinite(c.finishedAt) ? c.finishedAt : undefined,
+-                durationMs: Number.isFinite(c.durationMs) ? c.durationMs : undefined,
+-              });
+-            }
+-            return rnSend(res, 200, {
+-              ...rsPool.status({
+-                nodeStatus: nodeStatus ?? { enabled: autoRenderNodeOffReason(process.env) === null, bound: !!rnMemory.get(), ...(rnMemory.get() ?? {}) },
+-                queueSummary,
+-                prerenderReady: s.ready,
+-              }),
+-              mode,
+-            });
+-          })();
+-          return;
+-        }
+-        if (req.method !== "POST") return next();
+-        void (async () => {
+-          let input: any;
+-          try { input = await rnBody(req, 32 * 1024); } catch (e: any) { return rnSend(res, 400, { ok: false, error: e?.message || String(e) }); }
+-          if (route === "/add") {
+-            try {
+-              const project = input?.kind === "invite"
+-                ? await rsPool.addInviteProject(input)
+-                : await rsPool.addJoinedProject(input);
+-              return rnSend(res, 200, { ok: true, project });
+-            } catch (e: any) {
+-              const code = e?.code ?? e?.reason ?? "bad-request";
+-              const status = Number.isInteger(e?.status) ? e.status : code === "password-required" ? 401 : 400;
+-              return rnSend(res, status, {
+-                ok: false,
+-                code,
+-                error: e?.message || String(e),
+-                ...(e?.project ? { project: e.project } : {}),
+-                ...(e?.retryAfter ? { retryAfter: e.retryAfter } : {}),
+-              });
+-            }
+-          }
+-          if (route === "/remove") {
+-            const removed = await rsPool.removeProject(input?.projectId);
+-            return rnSend(res, 200, { ok: true, removed });
+-          }
+-          if (route === "/record") {
+-            const record = rsPool.recordTask(input);
+-            return rnSend(res, 200, { ok: true, record });
+-          }
+-          return rnSend(res, 404, { ok: false, error: "Unknown render-server operation" });
+-        })();
+-      });
+-
        const start = async () => {
          const port = await freePort();
          const url = `http://127.0.0.1:${port}`;
-@@ -311,8 +213,7 @@ export function prerenderPlugin(): Plugin {
+@@ -436,10 +240,7 @@ export function prerenderPlugin(): Plugin {
+               void repushMirror(url)
                  .then(() => replayReadySessions(url, () => child === me))
-                 .then((results) => { if (results.length) console.log(`[prerender] 重启后重放 preload:${JSON.stringify(results)}`); })
-                 .catch(() => {})
--                // 页面交过共享配置(自动渲染节点):它刚起来,手里没有,照记下的再转一次(不带票据,建会话时它自己来要)
+                 .then((results) => { if (results.length) console.log(`[prerender] Replaying preload after restart: ${JSON.stringify(results)}`); })
+-                .catch(() => {})
+-                // The page submitted shared config (auto render node): it just started up and has none, so
+-                // forward again based on the recorded config (without ticket; it requests one when creating a session)
 -                .then(() => { if (child === me) rnDeliverRemembered(); });
-+;
++                .catch(() => {});
                return;
              }
-           } catch { /* 还没起来 */ }
+           } catch { /* Not up yet */ }
+@@ -450,7 +251,7 @@ export function prerenderPlugin(): Plugin {
+       server.httpServer?.once("listening", () => {
+         start().catch((e) => setPrerender({ ready: false, error: e?.message || String(e) }));
+       });
+-      const stop = () => { closing = true; void rsPool.close(); killTree(child); };
++      const stop = () => { closing = true; killTree(child); };
+       server.httpServer?.on("close", stop);
+       process.once("exit", stop);
+     },

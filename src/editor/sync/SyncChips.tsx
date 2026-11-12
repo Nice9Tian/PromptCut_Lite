@@ -1,12 +1,17 @@
 /**
- * 顶栏上的同步小部件:
- * - 「冲突合并」:待合并表里还有待处理的项时一直显示,点它打开冲突合并窗口(`ConflictMerge.tsx`;2026-10-18 用户定);
- * - 「同步已暂停」:离线批次逐项转表算不出基准、退回整份处理时才会出现(c65-design.md 第 8 节),点它重新打开离线对话框;
- * - 「离线」:连不上文档服务时的提示(修改照常,先攒在本机)。
+ * Sync widgets on the top bar:
+ * - "Conflict merge": always shown while the pending merge items list still has items to handle; click it
+ *   to open the conflict merge window (`ConflictMerge.tsx`; user decision, 2026-10-18);
+ * - "Sync paused": appears only when the offline batch cannot work out a baseline item by item in the
+ *   transform table and falls back to handling the whole copy (c65-design.md section 8); click it to
+ *   reopen the offline dialog;
+ * - "Offline": the prompt when the document service cannot be reached (edits continue as usual and pile
+ *   up on this machine).
  */
 import { setOfflineOpen, useSync } from "./syncManager";
 import "./sync.css";
 import { ConflictMergeButton } from "./ConflictMerge";
+import { tr } from "../../i18n/index.ts";
 
 export function SyncChips() {
   const status = useSync((v) => v.status);
@@ -17,14 +22,14 @@ export function SyncChips() {
     <>
       {merge}
       {status === "paused" ? (
-        <button type="button" className="pc-sync-chip pc-sync-chip--paused" data-pc="sync-paused" title="断网期间项目有新改动，点开决定怎么处理" onClick={() => setOfflineOpen(true)}>
+        <button type="button" className="pc-sync-chip pc-sync-chip--paused" data-pc="sync-paused" title={tr("The project changed while you were offline. Click to decide how to handle it")} onClick={() => setOfflineOpen(true)}>
           <span className="pc-sync-chip-dot" />
-          同步已暂停
+          {tr("Sync paused")}
         </button>
       ) : status === "offline" ? (
-        <span className="pc-sync-chip pc-sync-chip--offline" data-pc="sync-offline" title="连不上文档服务：修改照常，先攒在本机，恢复后按顺序提交">
+        <span className="pc-sync-chip pc-sync-chip--offline" data-pc="sync-offline" title={tr("Cannot reach the document service: edits work as usual and are held on this machine, then submitted in order once it recovers")}>
           <span className="pc-sync-chip-dot" />
-          离线
+          {tr("Offline")}
         </span>
       ) : null}
     </>

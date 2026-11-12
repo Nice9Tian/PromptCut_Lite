@@ -1,13 +1,13 @@
 diff --git a/server/test/card-authoring-guide.test.mjs b/server/test/card-authoring-guide.test.mjs
-index a1390708bdc7af0b2a7ae974662104cde3532227..9c9dd25735e501a06b15e8e11a3ccf27982e58a3 100644
+index 19fd2aad153837305b3d201484cba4b9f6ee3845..3aa9a43dfb7c55e608a2073b56ec22fdc63efe77 100644
 --- a/server/test/card-authoring-guide.test.mjs
 +++ b/server/test/card-authoring-guide.test.mjs
-@@ -366,8 +366,6 @@ test('GA-07 工具说明与 Agent 提示词里讲怎么写卡的地方和指南
-   assert.match(prompt, /remotion 式/);
+@@ -382,8 +382,6 @@ test('GA-07 the parts of the tool descriptions and Agent prompts that explain ho
+   assert.match(prompt, /remotion-style/);
    assert.match(prompt, /frameMode/);
-   assert.doesNotMatch(prompt, /动画交给 `?motion\/react`?/, '提示词不再一律劝人动画交给 motion/react');
+   assert.doesNotMatch(prompt, /leave animation to `?motion\/react`?/, 'the prompt no longer advises leaving animation to motion/react in every case');
 -  const cloud = read('server/agent/service/cloud-tools.mjs');
--  assert.match(cloud, /frameMode/, '云端 Agent 的提示词要提到 frameMode');
+-  assert.match(cloud, /frameMode/, 'the Cloud Agent prompt must mention frameMode');
  });
  
- test('GA-08 指南里「第 N.M 节」「N.M 节」「第 N 节」的引用都指向真有的标题', () => {
+ test('GA-08 references in the guide such as "section N.M" and "section N" all point to headings that really exist', () => {

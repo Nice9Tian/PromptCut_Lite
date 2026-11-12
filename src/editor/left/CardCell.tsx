@@ -7,15 +7,20 @@ import { DEFAULT_CARD_DUR } from "../../kernel/project";
 import { clearDragPayload, MIME_CARD, setDragPayload } from "../dnd";
 import { PreviewCard } from "./PreviewCard";
 import { usePreviewZoom, zoomFor } from "./previewZoom";
+import { AnimationThumb } from "./AnimationThumb";
+import { tr } from "../../i18n/index.ts";
 
 /**
- * 卡片库里的一格:方形预览卡(PreviewCard)。不悬停显示名字和说明,悬停 180ms 后
- * 在卡里跑一遍动画;点一下加到播放头,拖动拖到时间轴。
+ * One cell in the card library: a square preview card (PreviewCard). When not hovered it shows the name and
+ * description; after 180ms of hovering it plays the animation once inside the card; click to add it at the
+ * playhead, drag to drop it onto the timeline.
  *
- * 预览的缩放不按整个画幅,按**动效跑完整段时内容最大的包围盒**(previewZoom.ts):
- * 第一次悬停先藏着舞台倍速跑一遍量出盒子并缓存,再一步到位推近、从头正常播;
- * 之后每次悬停直接用缓存,不再量、不再晃。1920×1080 的画幅里一个 400px 的标题,
- * 按整幅缩进 130px 的卡只剩一粒,按盒子缩就能看清。
+ * The preview zoom is not based on the whole aspect ratio but on **the largest bounding box of the content
+ * over the full run of the motion graphics** (previewZoom.ts): the first hover runs it once on a hidden stage
+ * at accelerated speed to measure the box and caches it, then zooms in in one step and plays from the start
+ * at normal speed; every later hover uses the cache directly, with no more measuring and no jitter. In a
+ * 1920×1080 frame, a 400px title shrinks to a speck in a 130px card when scaled to the whole frame, but
+ * scaling to the box keeps it readable.
  */
 export function CardCell({ def, fill, aspect }: { def: CardDef<any>; fill?: boolean; aspect?: number }) {
   const [hot, setHot] = useState(false);
@@ -26,14 +31,14 @@ export function CardCell({ def, fill, aspect }: { def: CardDef<any>; fill?: bool
 
   const project = useStore((s) => s.project);
 
-  // 动画多长:卡片声明的落定时刻(按默认参数算),没有就按 1.5s
+  // How long the animation is: the settle time declared by the card (computed with default parameters), or 1.5s if there is none
   const animMs = animMsOf(def);
   /*
-   * 素材效果卡(`card` / `audio`)没有 React 组件,库里跑不起来:悬停不换成动画预览,
-   * 一直显示名字 + 说明那张静态占位。量包围盒也一并跳过(没有 DOM 可量)。
+   * Media effect cards (`card` / `audio`) and non-DOM canvas cards (`webgl` / `2d`) cannot mount bare inside a DOM
+   * preview stage without their GPU host, so hovering keeps their rendered representative-frame thumbnail visible.
    */
-  const live = hot && typeof def.Component === "function";
-  // `live` 为真时它必然是函数;JSX 里写不了非空断言,所以在这里取一次
+  const live = hot && typeof def.Component === "function" && (!def.canvas || def.canvas.kind === "dom2d");
+  // When `live` is true it must be a function; JSX can't hold a non-null assertion, so take it once here
   const Live = def.Component!;
   const zoom = usePreviewZoom(`card:${def.id}`, stageRef, live, animMs);
 
@@ -69,12 +74,7 @@ export function CardCell({ def, fill, aspect }: { def: CardDef<any>; fill?: bool
 
   const preview = (
     <div ref={viewRef} className="absolute inset-0">
-      {!live && (
-        <div className="pc-lib-card-text">
-          <div className="pc-lib-card-name">{def.name}</div>
-          <div className="pc-lib-card-desc">{def.description}</div>
-        </div>
-      )}
+      {!live && <AnimationThumb kind="card" def={def} />}
       {live && box.w > 0 && box.h > 0 && (
         <div data-pc="preview" className="absolute inset-0 overflow-hidden bg-black/60 pointer-events-none" style={{ ...themeStyle(project.themeId) }}>
           <div
@@ -86,8 +86,8 @@ export function CardCell({ def, fill, aspect }: { def: CardDef<any>; fill?: bool
               height: project.height,
               transform: `scale(${scale})`,
               transformOrigin: "0 0",
-              // 测量跑的时候不给人看:那一遍是倍速的,量完再从头正常播。
-              // 藏起来要用 opacity 而不是 visibility:visibility 会继承到每个子元素,量包围盒的人看谁都是 hidden,什么都量不到
+              // Don't show the measurement run to people: that pass is at accelerated speed, and after measuring it plays again from the start at normal speed.
+              // Hide it with opacity rather than visibility: visibility is inherited by every child, so whoever measures the bounding box sees everything as hidden and can't measure anything
               opacity: zoom.measuring ? 0 : 1,
             }}
           >
@@ -105,9 +105,8 @@ export function CardCell({ def, fill, aspect }: { def: CardDef<any>; fill?: bool
   return (
     <PreviewCard
       attrs={{ "data-pc-card": def.id }}
-      title={def.name}
-      // 不悬停时名字已经在画面区里,标题条只在动画跑起来之后压在底边
-      caption="hover"
+      title={tr(def.name)}
+      caption="always"
       preview={preview}
       hoverDelayMs={180}
       onHover={setHot}
@@ -116,20 +115,20 @@ export function CardCell({ def, fill, aspect }: { def: CardDef<any>; fill?: bool
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onClick={onClick}
-      error={error ? "没有动效轨,先在时间轴新建一条" : null}
-      titleAttr="点击 = 加到播放头;拖动 = 拖到时间轴的位置"
+      error={error ? tr("No motion track, create one on the timeline first") : null}
+      titleAttr={tr("Click = add at the playhead; drag = drop at a position on the timeline")}
       fill={fill}
       aspect={aspect}
     />
   );
 }
 
-/** 卡片的动画时长(毫秒):timing 按默认参数算 > lifecycle 静态值 > 1500 */
+/** Animation duration of the card (milliseconds): timing computed with default parameters > static lifecycle value > 1500 */
 function animMsOf(def: CardDef<any>): number {
   try {
     const dyn = def.timing?.(def.defaults)?.settleMs;
     if (typeof dyn === "number" && Number.isFinite(dyn)) return dyn;
-  } catch { /* 算炸了按静态值 */ }
+  } catch { /* If the computation blows up, use the static value */ }
   const st = def.lifecycle?.settleMs;
   return typeof st === "number" && Number.isFinite(st) ? st : 1500;
 }

@@ -1,24 +1,28 @@
 /**
  * Shared sound/AV WAV ingest. Bytes go through the ordinary asset-service media protocol.
  *
- * 写票据从哪来:旧共享项目在页面的文档连接上签(`auth.ticket { kind: 'asset', access: 'rw' }`);
- * 账号云端项目里那条消息被拒,用账号会话签发的素材票据(进项目时已经接好,`assetTiers.ts` 的 `remoteAssetTicketInfo`,
- * 读写同一张,只读成员拿它写会被素材服务拒)。账号项目的请求不带网站的登录 Cookie(素材服务见到 Cookie 就拒)。
+ * Where the write ticket comes from: an old shared project signs it on the page's document connection
+ * (`auth.ticket { kind: 'asset', access: 'rw' }`); in an account cloud project that message is rejected, so use the
+ * asset ticket issued by the account session (already set up when entering the project, `remoteAssetTicketInfo` in
+ * `assetTiers.ts`, one ticket for both read and write; a read-only member writing with it is rejected by the asset
+ * service). Requests of an account project do not carry the website's login cookie (the asset service rejects
+ * a request as soon as it sees the cookie).
  */
 import { getState } from "../../store/project";
 import { createSnapUploader, sha256Hex } from "../../render/snapUploader";
 import { docRequest, hasDocLink, remoteAccountProjectId, remoteAssetBase, remoteAssetTicketInfo } from "../media/assetTiers";
+import { tr } from "../../i18n/index.ts";
 
 function generatedAudioService(signal: AbortSignal) {
   const projectId = getState().project.id;
   const remoteBase = remoteAssetBase();
   const accountProject = remoteBase ? remoteAccountProjectId() : null;
   const base = remoteBase ?? "/api/asset";
-  if (!base) throw new Error("尚未连接素材服务,请连接项目后重试");
-  if (hasDocLink() && !remoteBase) throw new Error("共享项目素材服务尚未就绪,请稍后重试");
+  if (!base) throw new Error(tr("The asset service is not connected yet, connect a project and try again"));
+  if (hasDocLink() && !remoteBase) throw new Error(tr("The shared project asset service is not ready yet, try again later"));
   const stillCurrent = () => {
     signal.throwIfAborted();
-    if (getState().project.id !== projectId || remoteAssetBase() !== remoteBase || (remoteBase ? remoteAccountProjectId() : null) !== accountProject) throw new Error("素材服务或项目已切换,取消上传");
+    if (getState().project.id !== projectId || remoteAssetBase() !== remoteBase || (remoteBase ? remoteAccountProjectId() : null) !== accountProject) throw new Error(tr("The asset service or project has changed, upload canceled"));
   };
   const uploader = createSnapUploader({
     base: () => base,
@@ -28,12 +32,12 @@ function generatedAudioService(signal: AbortSignal) {
       if (accountProject) {
         const info = await remoteAssetTicketInfo(force === true);
         stillCurrent();
-        if (!info?.ticket) throw new Error("无法取得素材写入票据");
+        if (!info?.ticket) throw new Error(tr("Cannot get the asset write ticket"));
         return info.ticket;
       }
       const response = await docRequest({ type: "auth.ticket", kind: "asset", access: "rw" });
       stillCurrent();
-      if (response.type !== "auth.ticket.ok" || typeof response.ticket !== "string") throw new Error("无法取得素材写入票据");
+      if (response.type !== "auth.ticket.ok" || typeof response.ticket !== "string") throw new Error(tr("Cannot get the asset write ticket"));
       return response.ticket;
     },
     fetch: (url, init) => { stillCurrent(); return fetch(url, { ...init, signal, ...(accountProject ? { credentials: "omit" as const } : {}) }); },
@@ -41,7 +45,7 @@ function generatedAudioService(signal: AbortSignal) {
   return { uploader, stillCurrent };
 }
 
-/** 缓存复用也必须核对当前素材服务字节，不只相信项目内的旧引用。 */
+/** A cache hit must also check the bytes in the current asset service, not just trust the old reference in the project. */
 export async function hasGeneratedAudio(hash: string, signal: AbortSignal): Promise<boolean> {
   const { uploader, stillCurrent } = generatedAudioService(signal);
   const exists = await uploader.has("media", hash);

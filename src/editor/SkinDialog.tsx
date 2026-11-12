@@ -12,12 +12,15 @@ import {
   subscribeOverrides,
 } from "../skins/overrides";
 import "./SkinDialog.css";
+import { tr } from "../i18n/index.ts";
 
 /**
- * 皮肤对话框:上面挑预设,下面逐项调。
+ * Skin dialog: pick a preset above, fine-tune item by item below.
  *
- * 预设给一整套协调的配色,自定义是压在它上面的一层覆盖——换预设不会把改过的
- * 强调色冲掉,不想要了点「全部恢复默认」。改动即时生效,所见即所得,没有「应用」按钮。
+ * A preset gives a full coordinated color scheme; customizations are an override layer on top of
+ * it, so switching presets does not wipe out an accent color you changed. If you no longer want
+ * them, click "Restore all defaults". Changes take effect immediately, WYSIWYG, with no "Apply"
+ * button.
  */
 export function SkinDialog(props: { open: boolean; onClose: () => void }): JSX.Element | null {
   const { open, onClose } = props;
@@ -37,7 +40,8 @@ export function SkinDialog(props: { open: boolean; onClose: () => void }): JSX.E
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  // 遮罩:按下和松开都落在遮罩上才关,在输入框里拖着选文字不会误关(见 ui/backdropClose.ts)
+  // Backdrop: close only when both press and release land on the backdrop, so dragging to select text inside an
+  // input does not close it by mistake (see ui/backdropClose.ts)
   const backdrop = useBackdropClose(onClose);
   if (!open) return null;
 
@@ -56,12 +60,12 @@ export function SkinDialog(props: { open: boolean; onClose: () => void }): JSX.E
         onClick={(e) => e.stopPropagation()}
       >
         <div id="pc-dialog-title-skin" className="pc-dialog-title">
-          皮肤
+          {tr("Skin")}
         </div>
 
         <div className="pc-skin-body">
           <section>
-            <h3 className="pc-skin-h">预设风格</h3>
+            <h3 className="pc-skin-h">{tr("Preset styles")}</h3>
             {groups.map((g) => (
               <div key={g.group} className="pc-skin-group">
                 <div className="pc-skin-group-name">{g.group}</div>
@@ -74,7 +78,7 @@ export function SkinDialog(props: { open: boolean; onClose: () => void }): JSX.E
                       title={s.description}
                       onClick={() => setSkin(s.id)}
                     >
-                      {/* 直接用这套皮肤自己的变量画预览条,不用另外维护缩略图 */}
+                      {/* Draw the preview strip directly with this skin's own variables, so no separate thumbnails need to be maintained */}
                       <span
                         className="pc-skin-chip"
                         style={{
@@ -96,18 +100,18 @@ export function SkinDialog(props: { open: boolean; onClose: () => void }): JSX.E
 
           <section>
             <div className="pc-skin-custom-head">
-              <h3 className="pc-skin-h">自定义</h3>
+              <h3 className="pc-skin-h">{tr("Custom")}</h3>
               <button
                 type="button"
                 className="pc-btn"
                 disabled={Object.keys(overrides).length === 0}
                 onClick={() => clearOverrides()}
               >
-                全部恢复默认
+                {tr("Reset all to defaults")}
               </button>
             </div>
             <p className="pc-skin-note">
-              改哪项就盖哪项，其余仍跟着预设走；换预设时这些改动会保留。
+              {tr("Whatever you change overrides only that item; the rest keep following the preset. These changes are kept when you switch presets.")}
             </p>
             {Object.entries(slotGroups).map(([group, slots]) => (
               <div key={group} className="pc-skin-group">
@@ -122,7 +126,7 @@ export function SkinDialog(props: { open: boolean; onClose: () => void }): JSX.E
 
         <div className="pc-dialog-foot">
           <button type="button" className="pc-btn pc-btn--primary" onClick={onClose}>
-            完成
+            {tr("Done")}
           </button>
         </div>
       </div>
@@ -132,10 +136,11 @@ export function SkinDialog(props: { open: boolean; onClose: () => void }): JSX.E
 }
 
 /**
- * 一行槽位。
+ * One row of slots.
  *
- * 取色器要 #rrggbb,而皮肤里存的可能是 color-mix(...) 或 rgba(...),没法直接喂进去。
- * 所以拿一个探针元素把 var 解析成计算值再转成 hex——用户看到的就是眼前真实的颜色。
+ * The color picker needs #rrggbb, but the skin may store color-mix(...) or rgba(...), which can't be
+ * fed in directly. So a probe element resolves the var to a computed value and converts it to
+ * hex: what the user sees is the real color in front of them.
  */
 function SlotRow({
   slot,
@@ -166,7 +171,7 @@ function SlotRow({
       <button
         type="button"
         className="pc-skin-reset"
-        title={overridden ? "恢复这一项的默认值" : "还没改过这一项"}
+        title={overridden ? tr("Reset this item to its default") : tr("This item hasn't been changed")}
         disabled={!overridden}
         onClick={() => setOverride(slot.key, null)}
       >
@@ -176,7 +181,7 @@ function SlotRow({
   );
 }
 
-/** 把 --ui-* 的当前生效值解析成 #rrggbb(取色器只吃这个格式) */
+/** Resolve the currently effective value of --ui-* to #rrggbb (the color picker only accepts this format) */
 function resolveVarToHex(key: string): string {
   const probe = document.createElement("span");
   probe.style.cssText = `position:absolute;visibility:hidden;color:var(--${key})`;

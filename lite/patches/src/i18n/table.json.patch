@@ -1,0 +1,26 @@
+diff --git a/src/i18n/table.json b/src/i18n/table.json
+index 984f80713148fcd1027e7c19849cf60a0a3166af..41a3ef1245046366d4fb92d8383dd9ff418c68db 100644
+--- a/src/i18n/table.json
++++ b/src/i18n/table.json
+@@ -7539,6 +7539,10 @@
+   "zh": "尺寸、帧率、多用户协作",
+   "ja": "サイズ、フレームレート、共同編集"
+  },
++ "Size, frame rate, rendering and creativity": {
++  "zh": "尺寸、帧率、渲染与创造力",
++  "ja": "サイズ、フレームレート、レンダリングと創造性"
++ },
+  "Skin": {
+   "zh": "皮肤",
+   "ja": "スキン"
+@@ -14063,6 +14067,10 @@
+   "zh": "在线浏览器模式暂不支持{0}，请在电脑上的 PromptCut 里使用。",
+   "ja": "オンラインブラウザモードでは{0}はまだ使えません。パソコンの PromptCut でご利用ください。"
+  },
++ "{0} is not supported yet": {
++  "zh": "暂不支持{0}",
++  "ja": "{0}はまだ使えません"
++ },
+  "Type": {
+   "zh": "类型",
+   "ja": "種類"

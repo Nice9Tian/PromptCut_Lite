@@ -1,0 +1,21 @@
+diff --git a/src/ThumbStageView.tsx b/src/ThumbStageView.tsx
+index 6090081470ccd81b65abd3acd9ce0f3e12f08a5d..df1c1c8a5ee8c0764e21d531f1c28eecbdbd950e 100644
+--- a/src/ThumbStageView.tsx
++++ b/src/ThumbStageView.tsx
+@@ -11,7 +11,6 @@ import { getPart } from "./kernel/partRegistry";
+ import { clipFrameMode } from "./kernel/frameMode.mjs";
+ import { CARD_RUNTIME_ABI, validateCardGraph } from "./kernel/cardGraph.mjs";
+ import { setOnlineBrowserMode, unsupportedHere } from "./render/placeholderHost";
+-import { ONLINE } from "./online/mode";
+ import { themeStyle } from "./themes";
+ import { measureContentBox, unionBox, type Box } from "./render/contentBox";
+ import type { ThumbStageApi, ThumbStageRequest, ThumbStageResult } from "./render/thumbStageTypes";
+@@ -41,7 +40,7 @@ import "./cards";
+  */
+ 
+ try {
+-  setOnlineBrowserMode(ONLINE || new URLSearchParams(location.search).get("platform") === "browser");
++  setOnlineBrowserMode(new URLSearchParams(location.search).get("platform") === "browser");
+ } catch { /* Non-browser environment */ }
+ 
+ const isThumbStageRoute = typeof window !== "undefined"

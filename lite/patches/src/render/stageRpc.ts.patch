@@ -1,8 +1,8 @@
 diff --git a/src/render/stageRpc.ts b/src/render/stageRpc.ts
-index bc0ce02974c37e3299a81dce49fa018cc6d52f1f..f5f3c07b2a1a49e8308ec9231b40edd966bfabbe 100644
+index f51697dc4cd969a2996f799480011e93ae23ee06..4966205dff9513fb0496cb78e342f2a2e9220d5b 100644
 --- a/src/render/stageRpc.ts
 +++ b/src/render/stageRpc.ts
-@@ -17,7 +17,6 @@ import type { RectWithBounds, RectsWithBoundsOptions, StageHit } from "./solid";
+@@ -22,7 +22,6 @@ import type { RectWithBounds, RectsWithBoundsOptions, StageHit } from "./solid";
  import type { ProjectPatch } from "./changedClips.mjs";
  import type { CardCostRecord } from "./cardCostKey.mjs";
  import type { StreamPlaneRequest } from "./streamPlayer";
@@ -10,7 +10,7 @@ index bc0ce02974c37e3299a81dce49fa018cc6d52f1f..f5f3c07b2a1a49e8308ec9231b40edd9
  import { SETTLE_MAX_MS, SETTLE_RPC_CAP_MS } from "./settleFrame.ts";
  import type { SettleResult } from "./settleFrame";
  import type { CardRunState } from "../kernel/registry.ts";
-@@ -560,22 +559,10 @@ export function createStageRpc(target: Window, targetOrigin: string = location.o
+@@ -671,22 +670,10 @@ export function createStageRpc(target: Window, targetOrigin: string = location.o
        if (!p) return;
        pending.delete(d.id);
        if (p.timer) clearTimeout(p.timer);

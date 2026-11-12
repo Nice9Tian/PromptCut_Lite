@@ -1,10 +1,14 @@
 /**
- * 音频效果库的工具:list_audio_fx / create_audio_fx / update_audio_fx / remove_audio_fx / apply_audio_fx。
- * Agent(MCP)和素材库「音频效果」页、编辑页的效果那一栏共用这一份校验和门槛。
+ * Tools for the audio effects library: list_audio_fx / create_audio_fx / update_audio_fx /
+ * remove_audio_fx / apply_audio_fx.
+ * The Agent (MCP), the media library "Audio effects" tab and the effects column of the editor page
+ * share this one set of validation and gates.
  *
- * 和 filterTools.ts 一个路数:效果是项目级的对象(project.audioFx),片段用 clip.audioFx 引用它 ——
- * 改效果,挂着它的片段全跟着变;同一个效果挂到哪一段都一样用,因为表达式里的 t 是片段内时间。
- * 数值在 kernel/audioFx.mjs,节点图在 src/audio/fxChain.ts(预览和导出同一份)。
+ * Same approach as filterTools.ts: an effect is a project-level object (project.audioFx), and clips
+ * reference it through clip.audioFx. Change the effect and every clip attached to it changes too;
+ * the same effect works the same on any clip, because t in the expression is the time within the
+ * clip. The values are in kernel/audioFx.mjs, and the node graph is in src/audio/fxChain.ts
+ * (preview and export use the same one).
  */
 
 import { findClip, newId, type Project } from "../../kernel/project";
@@ -12,6 +16,7 @@ import {
   AUDIO_EXPR_HELP, AUDIO_FX_KINDS, AUDIO_FX_PRESETS, describeAudioFx, isAudioFxAnimated, normalizeAudioClipParams, normalizeAudioFxDef,
   type AudioFxDef, type ClipAudioFx,
 } from "../../kernel/audioFx.mjs";
+import { tr } from "../../i18n/index.ts";
 
 export interface AudioFxStore {
   getState(): { project: Project };
@@ -23,7 +28,7 @@ export interface AudioFxStore {
   };
 }
 
-/** 哪些片段挂着这个效果:激活剪辑的 + 停放剪辑里的(带剪辑名) */
+/** Which clips have this effect attached: those in the active cut + those in parked cuts (with the cut name) */
 export function audioFxUsesOf(p: Project, fxId: string): { clipId: string; cut?: string }[] {
   const out: { clipId: string; cut?: string }[] = [];
   for (const t of p.tracks) for (const c of t.clips) if (c.audioFx?.id === fxId) out.push({ clipId: c.id });
@@ -54,21 +59,21 @@ export function createAudioFxTools(store: AudioFxStore) {
     const id = str(fxId);
     const f = (p.audioFx ?? []).find((x) => x.id === id);
     if (!f) {
-      const known = (p.audioFx ?? []).map((x) => `${x.id}「${x.name}」`).join("、") || "(效果库是空的)";
-      throw new Error(`音频效果库里没有 ${id || "(没给 fxId)"}。现有:${known}`);
+      const known = (p.audioFx ?? []).map((x) => tr("{0}\"{1}\"", x.id, x.name)).join(tr(", ")) || tr("(effects library is empty)");
+      throw new Error(tr("The audio effects library has no {0}. Available: {1}", id || tr("(no fxId given)"), known));
     }
     return f;
   };
 
-  /** 能挂效果的片段:出声的素材段(视频 / 声音),序列没锁 */
+  /** Clips that can take an effect: media clips that produce sound (video / audio), on an unlocked track */
   const soundClip = (p: Project, clipId: unknown) => {
     const id = str(clipId);
     const hit = id ? findClip(p, id) : null;
-    if (!hit) throw new Error(`当前剪辑里没有片段 ${id || "(没给 clipId)"}`);
-    if (!hit.clip.mediaId || hit.clip.cardId) throw new Error("音频效果只挂视频 / 声音片段;卡片没有声音");
+    if (!hit) throw new Error(tr("The current cut has no clip {0}", id || tr("(no clipId given)")));
+    if (!hit.clip.mediaId || hit.clip.cardId) throw new Error(tr("Audio effects can only be attached to video / sound clips; card clips have no sound"));
     const media = p.media.find((m) => m.id === hit.clip.mediaId);
-    if (!media || media.kind === "image") throw new Error("这一段是图片,没有声音,挂不了音频效果");
-    if (hit.track.locked) throw new Error(`这一段所在的序列「${hit.track.name}」锁定着,先解锁`);
+    if (!media || media.kind === "image") throw new Error(tr("This clip is an image with no sound, so an audio effect cannot be attached"));
+    if (hit.track.locked) throw new Error(tr("The track \"{0}\" containing this clip is locked; unlock it first", hit.track.name));
     return hit;
   };
 
@@ -89,7 +94,7 @@ export function createAudioFxTools(store: AudioFxStore) {
       };
     },
 
-    /** 建一个放进库里;给了 clipId 就顺手挂上(先校验片段,不合规就什么都不建) */
+    /** Create one and put it in the library; if clipId is given, attach it too (validate the clip first, and create nothing if it does not qualify) */
     createAudioFx(args: any) {
       const base = normalizeAudioFxDef(args);
       const def: AudioFxDef = { id: newId("afx"), ...base, createdBy: args?.createdBy === "user" ? "user" : "agent", createdAt: Date.now() };
@@ -98,18 +103,18 @@ export function createAudioFxTools(store: AudioFxStore) {
         soundClip(project(), args.clipId);
         clipParams = normalizeAudioClipParams(def, args.clipParams);
       }
-      // 入库和挂上是同一步(一步撤销)
+      // Adding to the library and attaching are one step (one undo)
       store.actions.addAudioFx(def, args?.clipId !== undefined ? { clipId: str(args.clipId), fx: { id: def.id, ...(clipParams ? { params: clipParams } : null) } } : undefined);
       return {
         ok: true,
         fxId: def.id,
         effect: summary(project(), def),
-        note: "已放进素材库「音频效果」页,用户能看到、能复用",
+        note: tr("Added to the \"Audio effects\" tab of the media library, where the user can see and reuse it"),
         ...(args?.clipId !== undefined ? { appliedTo: str(args.clipId) } : null),
       };
     },
 
-    /** 改库里的一条:没给的项沿用原来的,给了的整项替换;挂着它的片段全跟着变 */
+    /** Edit one entry in the library: omitted fields keep their old values, given ones are replaced whole; clips attached to it all change with it */
     updateAudioFx(args: any) {
       const cur = findDef(project(), args?.fxId);
       const merged = normalizeAudioFxDef({
@@ -128,12 +133,12 @@ export function createAudioFxTools(store: AudioFxStore) {
       return {
         ok: true,
         effect: summary(p, next),
-        ...(uses.length ? { note: `挂着它的 ${uses.length} 段都跟着变了` } : null),
-        ...(stale.length ? { warning: `${stale.map((c) => c.id).join("、")} 上覆盖的参数有些已经不在声明里了,不会生效;用 apply_audio_fx 重新给` } : null),
+        ...(uses.length ? { note: tr("The {0} clips using it have all changed with it", uses.length) } : null),
+        ...(stale.length ? { warning: tr("Some parameters overridden on {0} are no longer in the declaration and will not take effect; reassign with apply_audio_fx", stale.map((c) => c.id).join(tr(", "))) } : null),
       };
     },
 
-    /** 删:还挂着就要 force + reason(理由回显给用户),所有剪辑里的挂载一起摘掉 */
+    /** Delete: if still attached, force + reason are required (the reason is echoed back to the user), and the attachments in all cuts are removed together */
     removeAudioFx(args: any) {
       const p = project();
       const f = findDef(p, args?.fxId);
@@ -141,23 +146,23 @@ export function createAudioFxTools(store: AudioFxStore) {
       const reason = str(args?.reason);
       if (uses.length && !args?.force) {
         throw new Error(
-          `「${f.name}」还挂在 ${uses.length} 段上(${uses.map((u) => (u.cut ? `${u.cut} 的 ${u.clipId}` : u.clipId)).join("、")}),删了这些段的效果就没了。` +
-            "确实要删就传 force:true 并在 reason 里写明理由;只想摘某一段用 apply_audio_fx 传空的 fxId",
+          tr("\"{0}\" is still attached to {1} clips ({2}); deleting it removes the effect from those clips.", f.name, uses.length, uses.map((u) => (u.cut ? tr("{1} of {0}", u.cut, u.clipId) : u.clipId)).join(tr(", "))) +
+            tr("If you really want to delete it, pass force:true and state the reason in reason; to detach it from a single clip only, call apply_audio_fx with an empty fxId"),
         );
       }
-      if (uses.length && args?.force && !reason) throw new Error("force 删除必须在 reason 里写明理由,用户会看到这句话");
+      if (uses.length && args?.force && !reason) throw new Error(tr("A force delete must state the reason in reason; the user will see this sentence"));
       store.actions.removeAudioFx(f.id);
       return { ok: true, removed: f.id, name: f.name, ...(uses.length ? { detached: uses, reason } : null) };
     },
 
-    /** 挂 / 换 / 摘(fxId 空 = 摘) */
+    /** Attach / swap / detach (empty fxId = detach) */
     applyAudioFx(args: any) {
       const p = project();
       const hit = soundClip(p, args?.clipId);
       const clipId = hit.clip.id;
       const fid = str(args?.fxId);
       if (!fid) {
-        if (!hit.clip.audioFx) return { ok: true, clipId, note: "这一段本来就没挂音频效果" };
+        if (!hit.clip.audioFx) return { ok: true, clipId, note: tr("This clip had no audio effect attached to begin with") };
         store.actions.setClipAudioFx(clipId, null);
         return { ok: true, clipId, removed: true };
       }
@@ -170,8 +175,8 @@ export function createAudioFxTools(store: AudioFxStore) {
         fxId: def.id,
         summary: describeAudioFx(def),
         ...(params ? { params } : null),
-        ...(hit.clip.audioFx && hit.clip.audioFx.id !== def.id ? { note: "替换了这一段原来挂的效果(每段只挂一个;要叠多种就在一个效果里写多步 ops)" } : null),
-        ...(hit.clip.audioMuted || hit.track.muted ? { warning: "这一段现在是静音的(片段 audioMuted 或序列 muted),效果挂上了但听不见" } : null),
+        ...(hit.clip.audioFx && hit.clip.audioFx.id !== def.id ? { note: tr("Replaced the effect previously attached to this clip (only one per clip; to stack several, write multi-step ops in one effect)") } : null),
+        ...(hit.clip.audioMuted || hit.track.muted ? { warning: tr("This clip is currently muted (clip audioMuted or track muted); the effect is attached but inaudible") } : null),
       };
     },
   };

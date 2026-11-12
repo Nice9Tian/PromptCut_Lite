@@ -1,5 +1,5 @@
 diff --git a/src/editor/left/importAssets.ts b/src/editor/left/importAssets.ts
-index c6cc3d682b78fea6de645154fb46d89388f2341f..42fed1363bb20fdc7889e2981c6370d67f32aad5 100644
+index 09c5691dcf1e4167bfb2e125288b69e4dedf2836..91b53d8c4cc91e1d3a347944c10f4fc879fdcfff 100644
 --- a/src/editor/left/importAssets.ts
 +++ b/src/editor/left/importAssets.ts
 @@ -3,7 +3,6 @@ import { actions } from "../../store/project";
@@ -10,15 +10,15 @@ index c6cc3d682b78fea6de645154fb46d89388f2341f..42fed1363bb20fdc7889e2981c6370d6
  import { blockedByReadOnly } from "../readOnlyCore";
  import { viewOnlyText } from "../io/viewOnly";
  
-@@ -114,7 +113,6 @@ export interface ImportResult {
- export async function importMediaFiles(files: FileList | File[]): Promise<ImportResult> {
-   // 只读项目(游客):导入素材是写。按钮已置灰,走到这里是拖放之类没盖到的路
+@@ -122,7 +121,6 @@ export async function importMediaFiles(files: FileList | File[]): Promise<Import
+   // Read-only project (guest): importing media is a write. The button is already greyed out; reaching here means a
+   // path not covered, such as drag and drop
    if (blockedByReadOnly()) throw new Error(viewOnlyText());
 -  const releaseHold = holdOnlineQueueOriginals();
    try {
      const counts: Record<AssetKind, number> = { video: 0, audio: 0, image: 0 };
      const skipped: string[] = [];
-@@ -146,6 +144,6 @@ export async function importMediaFiles(files: FileList | File[]): Promise<Import
+@@ -154,6 +152,6 @@ export async function importMediaFiles(files: FileList | File[]): Promise<Import
  
      return { counts, skipped, firstKind, rejected };
    } finally {

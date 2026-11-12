@@ -1,6 +1,7 @@
 import React from "react";
 import type { ChatSummary } from "../../ai/chatStore";
 import "./ChatHistoryDrawer.css";
+import { tr } from "../../i18n/index.ts";
 
 export interface ChatHistoryDrawerProps {
   open: boolean;
@@ -12,11 +13,11 @@ export interface ChatHistoryDrawerProps {
   currentId: string;
   onPick(id: string): void;
   onDelete(id: string): void;
-  /** 头部的「新对话」:清掉当前分页的消息、另起一段会话归档(「✦」菜单里也有同一项) */
+  /** The "New chat" in the header: clears the messages of the current tab and starts a new session archive (the same item is also in the "✦" menu) */
   onNewChat?(): void;
 }
 
-/** 格式化会话更新时间：今天的显示 HH:MM，今年的显示 M月D日，更早显示 YYYY-M-D */
+/** Format a session's update time: today shows HH:MM, this year shows M/D, earlier shows YYYY-M-D */
 function formatChatTime(timestamp: number): string {
   const d = new Date(timestamp);
   if (isNaN(d.getTime())) return "";
@@ -32,7 +33,7 @@ function formatChatTime(timestamp: number): string {
   }
   const isThisYear = d.getFullYear() === now.getFullYear();
   if (isThisYear) {
-    return `${d.getMonth() + 1}月${d.getDate()}日`;
+    return tr("{0}/{1}", d.getMonth() + 1, d.getDate());
   }
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 }
@@ -54,21 +55,21 @@ export function ChatHistoryDrawer(props: ChatHistoryDrawerProps) {
   if (!open) return null;
 
   return (
-    <div className="chat-history-drawer" role="dialog" aria-label="对话历史">
-      {/* 头部:标题、新对话、关闭 */}
+    <div className="chat-history-drawer" role="dialog" aria-label={tr("Chat history")}>
+      {/* Header: title, new chat, close */}
       <div className="chat-drawer-header">
-        <span className="chat-drawer-title">对话历史</span>
+        <span className="chat-drawer-title">{tr("Chat history")}</span>
         <div className="chat-drawer-head-actions">
           {onNewChat && (
             <button type="button" className="chat-drawer-new-btn" data-pc="chat-new" onClick={onNewChat}>
-              新对话
+              {tr("New chat")}
             </button>
           )}
           <button
             type="button"
             className="chat-drawer-close-btn"
-            title="关闭"
-            aria-label="关闭"
+            title={tr("Close")}
+            aria-label={tr("Close")}
             onClick={onClose}
           >
             ✕
@@ -76,23 +77,23 @@ export function ChatHistoryDrawer(props: ChatHistoryDrawerProps) {
         </div>
       </div>
 
-      {/* 搜索框 */}
+      {/* Search box */}
       <div className="chat-drawer-search-wrap">
         <input
           type="text"
           className="chat-drawer-search-input"
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
-          placeholder="搜索对话…"
+          placeholder={tr("Search chats…")}
         />
       </div>
 
-      {/* 会话列表 */}
+      {/* Session list */}
       <div className="chat-drawer-list">
         {loading ? (
-          <div className="chat-drawer-empty">读取中…</div>
+          <div className="chat-drawer-empty">{tr("Loading…")}</div>
         ) : items.length === 0 ? (
-          <div className="chat-drawer-empty">还没有历史对话</div>
+          <div className="chat-drawer-empty">{tr("No chat history yet")}</div>
         ) : (
           items.map((item) => {
             const isCurrent = item.id === currentId;
@@ -107,13 +108,13 @@ export function ChatHistoryDrawer(props: ChatHistoryDrawerProps) {
                     {item.title}
                   </div>
                   <div className="chat-drawer-item-meta">
-                    {formatChatTime(item.updatedAt)} · {item.messageCount} 条消息
+                    {tr("{0} · {1} messages", formatChatTime(item.updatedAt), item.messageCount)}
                   </div>
                 </div>
                 <button
                   className="chat-drawer-delete-btn"
-                  title="删除对话"
-                  aria-label="删除对话"
+                  title={tr("Delete chat")}
+                  aria-label={tr("Delete chat")}
                   onClick={(e) => {
                     e.stopPropagation();
                     onDelete(item.id);

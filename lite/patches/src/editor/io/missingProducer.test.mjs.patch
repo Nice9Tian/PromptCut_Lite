@@ -1,17 +1,18 @@
 diff --git a/src/editor/io/missingProducer.test.mjs b/src/editor/io/missingProducer.test.mjs
-index d2f8186388e2756e5913140cd8f3c74325e57219..6aa20a0beefd9b91ac311869c9ed13969e6d0424 100644
+index 7f76e2909b09f162f26e9e4a6361dd3ffc114903..c90a65a50a7d3a903b8c668ee37fe680ae8a7904 100644
 --- a/src/editor/io/missingProducer.test.mjs
 +++ b/src/editor/io/missingProducer.test.mjs
-@@ -1,8 +1,6 @@
- /**
-  * 谁把一份素材认定为「确认缺失」(`mediaUpload.ts` 打开本机项目后的后台检查),以及认定之后:
-  * 弹窗列项的通知、保存重开后记录还对得上、素材找回来以后记录清掉。
-- * 对应 `docs/plan/account-binding-task.md`「逐项验收」的「缺失视觉/音频素材」一行里不需要页面的部分;
-- * 素材全在 / 部分缺 / 全缺三格在最后一条。
+@@ -2,9 +2,6 @@
+  * Who identifies an asset as "confirmed missing" (background check after opening local project in
+  * `mediaUpload.ts`), and after identification: dialog notification listing items, records still
+  * matching after save and reopen, and records cleared once assets are recovered.
+- * Corresponds to the part not requiring pages in the "Missing visual/audio assets" row of
+- * `docs/plan/account-binding-task.md` "Item-by-item acceptance checks"; the three cells for all
+- * assets present / partially missing / all missing are in the last test.
   *
-  * `fetch` 换成假的编辑器进程:`/api/media/local`(内容库里有哪些哈希)、`/api/media/adopt`(按原路径找)、读接口。
-  */
-@@ -11,7 +9,7 @@ import test, { beforeEach, afterEach } from "node:test";
+  * Replace `fetch` with mock editor process: `/api/media/local` (hashes existing in content store),
+  * `/api/media/adopt` (find by original path), read endpoints.
+@@ -14,7 +11,7 @@ import test, { beforeEach, afterEach } from "node:test";
  import assert from "node:assert/strict";
  
  const { actions, getState } = await import(srcUrl("store/project.ts"));
@@ -20,84 +21,52 @@ index d2f8186388e2756e5913140cd8f3c74325e57219..6aa20a0beefd9b91ac311869c9ed1396
  const { restoreMediaUrls } = await import(srcUrl("editor/io/mediaUrls.ts"));
  const { takeMissingMaterials, onMissingMaterials } = await import(srcUrl("editor/io/missingMaterialBus.ts"));
  const { confirmedMissing, confirmedMissingAudio, confirmedMissingVisual, missingMaterialLabel } = await import(srcUrl("audio/missingMaterialRecord.ts"));
-@@ -177,41 +175,11 @@ test("素材全在 / 部分缺 / 全缺", async () => {
+@@ -203,37 +200,7 @@ test("All media present / partly missing / all missing", async () => {
    }
  });
  
--/* ---------------- 还带着协作关联的文件不认定;检查中途换了项目不乱写 ---------------- */
+-/* ---------------- Files still linked to collaboration are not identified; project switched midway through check does not write errantly ---------------- */
 -
 -const { startTierBackfill } = await import(srcUrl("editor/io/mediaUpload.ts"));
 -const { publishGoneConversion, takeGoneNotices } = await import(srcUrl("editor/sync/recoveryAssociation.ts"));
 -const waitFor = async (cond, ms = 6000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await new Promise((r) => setTimeout(r, 25)); return cond(); };
 -
--test("还带着协作关联、只是没连上(断网、要认证、等主机):不认定、不弹窗、项目不被改;被证明转成本地项目后才判", async () => {
--  actions.newProject("带着关联");
--  const hashed = actions.addMedia({ kind: "video", name: "只在远端.mp4", url: `/@media/${H("a")}`, hash: H("a") });
--  const old = actions.addMedia({ kind: "audio", name: "只在远端.mp3", url: fileUrl("C:/remote/a.mp3"), path: "C:/remote/a.mp3" });
+-test("Still carries a collaboration link but just isn't connected (offline, needs authentication, waiting for the host): not declared missing, no dialog, project unchanged; it is judged only after being proven to have become a local project", async () => {
+-  actions.newProject("With link");
+-  const hashed = actions.addMedia({ kind: "video", name: "remote-only.mp4", url: `/@media/${H("a")}`, hash: H("a") });
+-  const old = actions.addMedia({ kind: "audio", name: "remote-only.mp3", url: fileUrl("C:/remote/a.mp3"), path: "C:/remote/a.mp3" });
 -  const ed = editor({});
 -  let associated = true, seen = 0;
 -  const before = getState().project;
 -  const stop = startTierBackfill({ shared: () => false, associated: () => associated, afterIngest: () => { seen++; } });
 -  try {
 -    assert.equal(await waitFor(() => seen === 1), true);
--    assert.equal(getState().project, before, "项目对象没换:没有任何写入(也就没有东西会在重连后同步给别的成员)");
+-    assert.equal(getState().project, before, "The project object was not replaced: nothing was written (so nothing will sync to other members after reconnecting)");
 -    for (const m of [hashed, old]) { assert.equal(get(m.id).missingMaterial, undefined); assert.equal(get(m.id).name, m.name); }
--    assert.deepEqual(takeMissingMaterials(), [], "不弹窗");
--    assert.equal(ed.calls.some((u) => u.startsWith("/api/media/local?")), false, "带哈希的连问都不问");
--    // 文档服务证明项目已不存在、转成了本地项目:素材表没换,但要重新判一遍
+-    assert.deepEqual(takeMissingMaterials(), [], "No dialog");
+-    assert.equal(ed.calls.some((u) => u.startsWith("/api/media/local?")), false, "Hashed media is not even queried");
+-    // Document service proves project no longer exists and was converted to a local project:
+-    // asset table unchanged, but must re-evaluate
 -    associated = false;
--    publishGoneConversion({ projectId: getState().project.id, name: "带着关联", from: { v: 1, roomId: `sp_${"a".repeat(26)}`, service: "https://x.example", authorityId: "doc", tombstoneRevision: 1, kid: "k", convertedAt: "t" } });
+-    publishGoneConversion({ projectId: getState().project.id, name: "With link", from: { v: 1, roomId: `sp_${"a".repeat(26)}`, service: "https://x.example", authorityId: "doc", tombstoneRevision: 1, kid: "k", convertedAt: "t" } });
 -    takeGoneNotices();
--    assert.equal(await waitFor(() => confirmedMissing(get(hashed.id)) && confirmedMissing(get(old.id))), true, "转成本地项目之后认定");
+-    assert.equal(await waitFor(() => confirmedMissing(get(hashed.id)) && confirmedMissing(get(old.id))), true, "Declared missing after conversion to a local project");
 -    assert.equal(takeMissingMaterials().length, 2);
 -  } finally { stop(); }
 -});
 -
--test("检查到一半换了项目(同一份文件进了云端项目、素材号相同):这一轮的结论不写进新项目", async () => {
-+test("检查到一半换了项目(同一份文件进了另一个项目、素材号相同):这一轮的结论不写进新项目", async () => {
-   actions.newProject("换项目");
+-test("The project was switched midway through the check (the same file entered a cloud project, with the same media id): this round's conclusions are not written into the new project", async () => {
++test("The project was switched midway through the check (the same file entered another project, with the same media id): this round's conclusions are not written into the new project", async () => {
+   actions.newProject("Switch project");
    const media = { id: "m-same", kind: "video", name: "v.mp4", url: `/@media/${H("a")}`, hash: H("a"), path: "D:/pc/media/v.mp4" };
    const oldMedia = { id: "m-old", kind: "audio", name: "o.mp3", url: fileUrl("C:/gone/o.mp3"), path: "C:/gone/o.mp3" };
-   actions.addMedia(media); actions.addMedia(oldMedia);
--  // 请求挂着不回,趁这时候换项目
-   let release; const gate = new Promise((r) => { release = r; });
-   const real = editor({});
-   const inner = globalThis.fetch;
-@@ -229,10 +197,6 @@ test("检查到一半换了项目(同一份文件进了云端项目、素材号
+@@ -256,9 +223,6 @@ test("The project was switched midway through the check (the same file entered a
    assert.deepEqual(takeMissingMaterials(), []);
  });
  
--/* ---------------- 只有明确的「没有」才认定;没读成(没权限、5xx、限速)不认定 ---------------- */
+-/* ---------------- Identified only on explicit "not found"; not identified on read failure (no permission, 5xx, rate limit) ---------------- */
 -
 -const { mediaVerdictOf } = await import(srcUrl("editor/io/mediaUpload.ts"));
--
- test("判词:404、页面回退、路径不在素材目录里是「没有」;别的非 2xx 都是说不清", () => {
+ 
+ test("Verdict: 404, page fallback, and a path not in the asset catalog mean \"absent\"; any other non-2xx is unclear", () => {
    const res = (status, headers = {}) => ({ ok: status >= 200 && status < 300, status, headers: { get: (k) => headers[k.toLowerCase()] ?? null } });
-   assert.equal(mediaVerdictOf(res(200, { "content-type": "video/mp4" })), "found");
-@@ -255,7 +219,6 @@ test("没读成不认定:原路径 403(不是「不在素材目录」那种)、5
-     for (const m of [hashed, old]) { assert.equal(get(m.id).missingMaterial, undefined, `${m.name} ${status}`); assert.equal(get(m.id).name, m.name); }
-     assert.deepEqual(takeMissingMaterials(), []);
-   }
--  // 对照:同样的两条,回答是明确的「没有」时才认定
-   resetTierBackfillForTest();
-   actions.newProject("明确没有");
-   const hashed = actions.addMedia({ kind: "video", name: "h.mp4", url: `/@media/${H("a")}`, hash: H("a"), path: "D:/pc/media/h.mp4" });
-@@ -264,7 +227,6 @@ test("没读成不认定:原路径 403(不是「不在素材目录」那种)、5
-   assert.deepEqual((await checkHashedMedia()).missing, [hashed.id]);
-   assert.equal((await ingestUnhashedMedia({ markMissing: true })).failed[0].unreachable, true);
-   assert.equal(confirmedMissing(get(hashed.id)) && confirmedMissing(get(old.id)), true);
--  // 原路径没读成、读接口明确没有:仍然说不清(文件可能就在那儿)
-   resetTierBackfillForTest();
-   actions.newProject("一半说不清");
-   const mixed = actions.addMedia({ kind: "audio", name: "m.mp3", url: fileUrl("D:/pc/media/m.mp3"), path: "D:/pc/media/m.mp3" });
-@@ -284,10 +246,8 @@ test("缺失素材改名:记录里的名字跟着改,占位不失效,占位上
-   assert.equal(get(m.id).missingMaterial.original.name, "新名字.mp4");
-   assert.equal(missingMaterialLabel(get(m.id)), "新名字.mp4");
-   assert.equal(confirmedMissing(reopen(true)[0]), true);
--  // 记录与素材对不上的(别处直接改了素材而没带上记录):不算确认缺失,各处一致地照普通素材办
-   const stale = { ...get(m.id), name: "别处改的.mp4" };
-   assert.equal(confirmedMissing(stale), false);
--  // 再检查一轮会重新认定并把记录写对
-   resetTierBackfillForTest(); editor({});
-   await checkHashedMedia();
-   assert.equal(confirmedMissing(get(m.id)), true);

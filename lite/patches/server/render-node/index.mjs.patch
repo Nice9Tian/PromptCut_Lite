@@ -1,8 +1,8 @@
 diff --git a/server/render-node/index.mjs b/server/render-node/index.mjs
-index e9e8dc7906fbca3e83032f14c7bf9dffb26c880f..27618ef71308750c6f6d4b743088d232ff4acf71 100644
+index 993ccf6c8a8693f447cd5d25dcddd2cf46fc6c5f..af28e425edfec23f801af65e6819b8850551cfcb 100644
 --- a/server/render-node/index.mjs
 +++ b/server/render-node/index.mjs
-@@ -35,4 +35,4 @@ export { SESSION_DEFAULTS, createDocEndpoint, transportOf, wsUrlOf, httpUrlOf }
+@@ -51,4 +51,4 @@ export { SESSION_DEFAULTS, createDocEndpoint, transportOf, wsUrlOf, httpUrlOf }
  export { resolveDocservice, watchServiceEndpoints } from './endpoint.mjs';
  export { CONTENT_CLIENT_DEFAULTS, createContentClient } from './content-client.mjs';
  export { PROJECT_CLIENT_DEFAULTS, createProjectClient } from './project-client.mjs';

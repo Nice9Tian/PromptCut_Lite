@@ -1,0 +1,23 @@
+diff --git a/src/start/ProjectSidebar.tsx b/src/start/ProjectSidebar.tsx
+index 92f672bddcd6f5d5c2091eec6b572e2543b8eb9f..bb8ec0a23a62d78410398e281be49939da1e49f5 100644
+--- a/src/start/ProjectSidebar.tsx
++++ b/src/start/ProjectSidebar.tsx
+@@ -87,9 +87,6 @@ export interface TreeOps {
+   reorder: (kind: TreeKind, dragId: string, overId: string, place: Place) => void;
+   /** Move a project to a group (null means move out of the group) */
+   move: (projectId: string, groupId: string | null) => void;
+-  /** Desktop personal local projects: switch to online project or convert to team project (Issue #7) */
+-  switchOnline?: (projectId: string) => void;
+-  convertTeam?: (projectId: string) => void;
+   /** Which items of this row cannot be done, and why */
+   blocked: (kind: TreeKind, id: string) => { rename?: MenuBlock; remove?: MenuBlock; pin?: MenuBlock; archive?: MenuBlock };
+ }
+@@ -775,8 +772,6 @@ export function ProjectSidebar(props: {
+             archiveBlocked={blocked.archive}
+             moveTargets={moveTargets}
+             onMove={(gid) => props.ops.move(menu.id, gid)}
+-            onSwitchOnline={project && !archived && props.ops.switchOnline ? () => props.ops.switchOnline!(menu.id) : undefined}
+-            onConvertTeam={project && !archived && props.ops.convertTeam ? () => props.ops.convertTeam!(menu.id) : undefined}
+             onClose={() => setMenu(null)}
+             onRename={() => setRenaming({ kind: menu.kind, id: menu.id, name: menu.name })}
+             onPin={() => props.ops.pin(menu.kind, menu.id)}

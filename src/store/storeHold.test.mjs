@@ -1,9 +1,10 @@
 /**
- * StoreHold(store/core.ts):停靠栏里看不见的分区页不跟 store 的更新,露出来时按当时的 store 重读。
- * 跑:node --test src/store/storeHold.test.mjs
+ * StoreHold(store/core.ts): hidden section tabs in the dock do not follow store updates, and
+ * re-read from the current store when revealed. Run: node --test src/store/storeHold.test.mjs
  *
- * 来历:tiers-probe T4(docs/archive/agent-reports/AGENT-perf-t4.md)—— 以前每次编辑都把看不见的特效库、
- * 节点图整棵重渲,挤在编辑那个同步任务里。
+ * Origin: tiers-probe T4 (docs/archive/agent-reports/AGENT-perf-t4.md): previously every edit
+ * re-rendered the entire tree of the hidden effects library and node graph, crammed into that
+ * synchronous edit task.
  */
 import { srcUrl } from "../testing/registerTs.mjs";
 import test from "node:test";
@@ -23,7 +24,7 @@ function harness() {
   return { log, App };
 }
 
-test("看不见(StoreHold true)的子树:store 变了不重渲、一直是上一次的值;露出来那一次按当时的 store 重读", async () => {
+test("Invisible (StoreHold true) subtree: does not re-render when the store changes and keeps the last value; when revealed, it rereads from the store as of that moment", async () => {
   actions.newProject("A");
   const { log, App } = harness();
   const root = mount(h(App, { hidden: false }));
@@ -37,37 +38,37 @@ test("看不见(StoreHold true)的子树:store 变了不重渲、一直是上一
   await flush();
   actions.setProjectMeta({ name: "C" });
   await flush();
-  assert.equal(log.live.at(-1), "C", "看得见的照常跟");
-  assert.equal(log.held.length, heldBefore, "看不见的一次都没重渲");
+  assert.equal(log.live.at(-1), "C", "Visible ones keep following as usual");
+  assert.equal(log.held.length, heldBefore, "The invisible one never re-rendered");
   assert.equal(log.held.at(-1), "A");
 
   root.render(h(App, { hidden: false }));
   await flush();
-  assert.equal(log.held.at(-1), "C", "露出来就是当时的值");
+  assert.equal(log.held.at(-1), "C", "When revealed, it holds the value from that moment");
   actions.setProjectMeta({ name: "D" });
   await flush();
-  assert.equal(log.held.at(-1), "D", "露出来之后照常跟");
+  assert.equal(log.held.at(-1), "D", "After being revealed, it keeps following as usual");
   assert.deepEqual(root.errors, []);
   root.unmount();
 });
 
-test("一挂上就是看不见的:第一次照常读当时的值,之后不跟", async () => {
-  actions.newProject("起点");
+test("Invisible as soon as it is mounted: the first read gets the current value as usual, and it does not follow afterwards", async () => {
+  actions.newProject("Starting point");
   const { log, App } = harness();
   const root = mount(h(App, { hidden: true }));
   await flush();
-  assert.deepEqual(log.held, ["起点"]);
-  actions.setProjectMeta({ name: "改过" });
+  assert.deepEqual(log.held, ["Starting point"]);
+  actions.setProjectMeta({ name: "Changed" });
   await flush();
-  assert.deepEqual(log.held, ["起点"]);
-  assert.equal(log.live.at(-1), "改过");
+  assert.deepEqual(log.held, ["Starting point"]);
+  assert.equal(log.live.at(-1), "Changed");
   root.render(h(App, { hidden: false }));
   await flush();
-  assert.equal(log.held.at(-1), "改过");
+  assert.equal(log.held.at(-1), "Changed");
   root.unmount();
 });
 
-test("没包 StoreHold 的地方(缺省 false)行为不变:每次变动都重渲一次", async () => {
+test("Where StoreHold is not wrapped (default false) behavior is unchanged: re-renders once on every change", async () => {
   actions.newProject("x0");
   const seen = [];
   function Plain() {

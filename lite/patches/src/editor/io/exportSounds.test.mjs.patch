@@ -1,5 +1,5 @@
 diff --git a/src/editor/io/exportSounds.test.mjs b/src/editor/io/exportSounds.test.mjs
-index 6b5d69f5499811ddee497080b0c27ba280aedaa4..33cc9128092d5b9020472835434a509e137b99c0 100644
+index 614c07eca9a40bfce768ad9ee165a5c6650ffbdd..bcc0d0692f9a80f349fda63a307d0ae6f2d21161 100644
 --- a/src/editor/io/exportSounds.test.mjs
 +++ b/src/editor/io/exportSounds.test.mjs
 @@ -6,11 +6,9 @@ const { registerCards } = await import('../../kernel/registry.ts');
@@ -13,38 +13,39 @@ index 6b5d69f5499811ddee497080b0c27ba280aedaa4..33cc9128092d5b9020472835434a509e
 -const { configureOnlineSoundJudge, soundTargetOf } = await import('./onlineSoundJudge.ts');
  
  let sourceVersion = 'v1', evaluations = 0, failAudio = null;
- const def = { id: 'av-export', name: '声画导出卡', source: 'native', defaults: { value: .25 }, controls: [], frameMode: 'direct', kind: 'animation', inputs: {}, Component() {},
-@@ -229,33 +227,6 @@ test('A10 音效合成失败同样指出片段;锁住的序列上的有声卡生
+ const def = { id: 'av-export', name: 'Audio-visual export card', source: 'native', defaults: { value: .25 }, controls: [], frameMode: 'direct', kind: 'animation', inputs: {}, Component() {},
+@@ -229,34 +227,6 @@ test('A10 A sound effect synthesis failure also names the clip; an AV card on a
    } finally { setSoundEffectRenderer(null); f.restore(); }
  });
  
--test('A11 在线页面:判轻的在浏览器里生成;判重、又没有产物的不合成,导出失败并指出片段', async () => {
+-test('A11 Online page: sounds classified as light are generated in the browser; those classified as heavy with no output are not synthesized, and export fails naming the clip', async () => {
 -  const f = service();
 -  const store = createMemorySoundCostStore();
 -  const restore = configureOnlineSoundJudge({ online: () => true, store: () => store, device: () => 'test-device' });
 -  try {
 -    sourceVersion = 'v1'; failAudio = null;
--    actions.newProject('在线导出');
+-    actions.newProject('Online export');
 -    const light = actions.addCardClip(def.id, 0, { duration: .2, params: { value: .25 } });
 -    await prepareExportSounds({ signal: signal() });
--    assert.ok(findClip(getState().project, light.id).clip.cardAudio, '判轻:在线页面自己生成');
+-    assert.ok(findClip(getState().project, light.id).clip.cardAudio, 'Classified as light: the online page generates it itself');
 -    const heavy = actions.addCardClip(def.id, 1, { duration: .2, params: { value: .5 } });
 -    const p = getState().project, key = soundTargetOf(p, findClip(p, heavy.id).clip).soundKey;
 -    await store.putCost(soundCostStoreKey(key, 'test-device'), { soundKey: key, kind: 'card', device: 'test-device', blockMs: 300, blockMaxMs: 300, blockFrames: 4096, sampleRate: 48000, samples: 16, measuredAt: 1 });
 -    const before = evaluations, handed = [];
 -    const error = await prepareExportSounds({ signal: signal(), deps: { backfill: async (request) => { handed.push([request.clip.id, request.reason]); return false; } } }).then(() => null, (e) => e);
--    assert.ok(error instanceof ExportSoundError); assert.equal(error.clipId, heavy.id); assert.match(error.message, /判重/);
--    assert.equal(evaluations, before, '判重:一块都不在浏览器里合成');
--    assert.deepEqual(handed, [[heavy.id, 'heavy']], '没有产物:交给渲染节点的接口被调到');
+-    assert.ok(error instanceof ExportSoundError); assert.equal(error.clipId, heavy.id); assert.match(error.message, /too slow to synthesize on this device/);
+-    assert.equal(evaluations, before, 'Classified as heavy: not a single chunk is synthesized in the browser');
+-    assert.deepEqual(handed, [[heavy.id, 'heavy']], 'No output: the interface that hands off to a render node was called');
 -    assert.equal(findClip(getState().project, heavy.id).clip.cardAudio, undefined);
 -  } finally { restore(); f.restore(); }
 -});
 -
 -/*
-- * A12(在线某一档一律不合成)删了:声音不按身份、不按档区分(2026-10-07 用户定,`product/platforms.md`「卡片声音的平台边界」),
-- * 在线页面只按 A11 的轻重判定合成或交给渲染节点。
+- * A12 (never synthesize for a certain tier online) is removed: audio is not distinguished by
+- * identity or tier (user decision, 2026-10-07, `product/platforms.md` "Platform boundaries of card
+- * audio"), and the online page only synthesizes or hands off to render nodes based on A11
+- * light/heavy classification.
 - */
--
+ 
  /*
-  * 剪辑段(`product/rendering.md`「导出时自动生成声音」递归进剪辑段):被引用剪辑里的有声卡,导出前在它自己那条剪辑里生成,
-  * 结果写回那条停放的剪辑;混音按剪辑段的音量、淡入淡出、静音处理。
+  * Cut segment (`product/rendering.md` "Automatically generate audio on export" recursing into cut

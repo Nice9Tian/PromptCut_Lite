@@ -1,5 +1,5 @@
 /**
- * 参数面板与时间轴副标题看的参数视图(`paramsView.ts`)。跑:
+ * Parameter view seen by parameters panel and timeline subtitle (`paramsView.ts`). Run:
  *   node --test src/editor/left/paramsView.test.mjs
  */
 import { srcUrl } from "../../testing/registerTs.mjs";
@@ -8,54 +8,54 @@ import assert from "node:assert/strict";
 
 const V = await import(srcUrl("editor/left/paramsView.ts"));
 
-test("PV-01 先查定义,没有再用同步视图", () => {
-  const built = { id: "b", name: "内置", defaults: {}, controls: [], Component: () => null };
-  const view = { id: "s", name: "同步", defaults: { a: 1 }, controls: [], controlsIncomplete: false, synced: true };
+test("PV-01 Look up the definition first, and fall back to the synced view if there is none", () => {
+  const built = { id: "b", name: "Built-in", defaults: {}, controls: [], Component: () => null };
+  const view = { id: "s", name: "Synced", defaults: { a: 1 }, controls: [], controlsIncomplete: false, synced: true };
   const lookup = { getCard: (id) => (id === "b" ? built : undefined), syncedCardView: (id) => (id === "s" || id === "b" ? view : undefined) };
-  assert.equal(V.paramsCardView("b", lookup), built, "定义优先");
+  assert.equal(V.paramsCardView("b", lookup), built, "The definition takes priority");
   assert.equal(V.paramsCardView("s", lookup), view);
   assert.equal(V.paramsCardView("x", lookup), undefined);
   assert.equal(V.paramsCardView(undefined, lookup), undefined);
 });
 
-test("PV-02 画不出控件时的文案", () => {
-  const unsupported = "暂不支持修改这张卡的参数";
-  assert.equal(V.paramsEmptyText({ name: "s", defaults: {}, controls: [], controlsIncomplete: true }), unsupported, "源码有控件、一个都没认出来");
+test("PV-02 Text shown when controls cannot be drawn", () => {
+  const unsupported = "changing this card's parameters is not supported yet";
+  assert.equal(V.paramsEmptyText({ name: "s", defaults: {}, controls: [], controlsIncomplete: true }), unsupported, "The source has controls but none were recognized");
   assert.equal(V.paramsEmptyText({ name: "s", defaults: {}, controls: [], controlsIncomplete: false }), V.NO_PARAMS_TEXT);
-  assert.equal(V.paramsEmptyText({ name: "b", defaults: {}, controls: [] }), "这张卡没有可调参数", "能跑的定义没有控件");
-  assert.equal(V.paramsEmptyText(undefined), V.NO_PARAMS_TEXT, "未知卡片");
-  assert.equal(V.paramsEmptyText({ name: "s", defaults: {}, controls: [{ key: "t", label: "t", type: "text" }], controlsIncomplete: true }), null, "认出一部分:照常画认出的那些");
+  assert.equal(V.paramsEmptyText({ name: "b", defaults: {}, controls: [] }), "This card has no adjustable parameters", "A runnable definition with no controls");
+  assert.equal(V.paramsEmptyText(undefined), V.NO_PARAMS_TEXT, "Unknown card");
+  assert.equal(V.paramsEmptyText({ name: "s", defaults: {}, controls: [{ key: "t", label: "t", type: "text" }], controlsIncomplete: true }), null, "Partly recognized: draw the recognized ones as usual");
 });
 
-test("PV-03 副标题", () => {
-  const view = { name: "s", description: "说明", defaults: { text: " 默认 " }, controls: [{ key: "n", label: "n", type: "number" }, { key: "text", label: "文字", type: "text" }] };
-  assert.equal(V.clipSubtitleOf(view, { text: "改过" }), "改过");
-  assert.equal(V.clipSubtitleOf(view, {}), "默认");
-  assert.equal(V.clipSubtitleOf({ ...view, defaults: {} }, {}), "说明");
+test("PV-03 Subtitle", () => {
+  const view = { name: "s", description: "Description", defaults: { text: " default " }, controls: [{ key: "n", label: "n", type: "number" }, { key: "text", label: "Text", type: "text" }] };
+  assert.equal(V.clipSubtitleOf(view, { text: "Changed" }), "Changed");
+  assert.equal(V.clipSubtitleOf(view, {}), "default");
+  assert.equal(V.clipSubtitleOf({ ...view, defaults: {} }, {}), "Description");
   assert.equal(V.clipSubtitleOf({ name: "s", defaults: {}, controls: [] }, {}), "");
   assert.equal(V.clipSubtitleOf(undefined, {}), "");
 });
 
-test("PV-04 只认出一部分控件:照常画认出的,下面一行提示其余参数改不了", () => {
+test("PV-04 Only some controls are recognized: draw the recognized ones as usual, and a line below says the remaining parameters cannot be changed", () => {
   const partial = { name: "s", defaults: {}, controls: [{ key: "t", label: "t", type: "text" }], controlsIncomplete: true };
-  assert.equal(V.paramsPartialText(partial), "暂不支持修改这张卡的其余参数");
-  assert.equal(V.paramsEmptyText(partial), null, "认出的照常画");
-  assert.equal(V.paramsPartialText({ ...partial, controlsIncomplete: false }), null, "全认出:不提示");
-  assert.equal(V.paramsPartialText({ ...partial, controls: [] }), null, "一个都没认出:走空态那句,不重复提示");
-  assert.equal(V.paramsPartialText({ name: "b", defaults: {}, controls: [{ key: "t", label: "t", type: "text" }] }), null, "能跑的定义");
+  assert.equal(V.paramsPartialText(partial), "changing this card's remaining parameters is not supported yet");
+  assert.equal(V.paramsEmptyText(partial), null, "Recognized ones render as usual");
+  assert.equal(V.paramsPartialText({ ...partial, controlsIncomplete: false }), null, "All recognized: no notice");
+  assert.equal(V.paramsPartialText({ ...partial, controls: [] }), null, "None recognized: the empty-state message is used, no repeated notice");
+  assert.equal(V.paramsPartialText({ name: "b", defaults: {}, controls: [{ key: "t", label: "t", type: "text" }] }), null, "A definition that can run");
   assert.equal(V.paramsPartialText(undefined), null);
 });
 
-test("PV-05 没认出的控件逐条说明:哪一条、为什么;超过 5 条说「等 N 条」;没有逐条记录回 null", () => {
-  const base = { name: "同步", defaults: {}, controls: [{ key: "a", label: "甲", type: "text" }], controlsIncomplete: true };
-  assert.equal(V.paramsSkippedText({ ...base }), null, "旧页面没有逐条记录");
+test("PV-05 unrecognized controls are explained one by one: which one and why; over 5 items it says \"N in total\"; no per-item records returns null", () => {
+  const base = { name: "Synced", defaults: {}, controls: [{ key: "a", label: "A", type: "text" }], controlsIncomplete: true };
+  assert.equal(V.paramsSkippedText({ ...base }), null, "Old pages have no per-item records");
   assert.equal(V.paramsSkippedText({ ...base, controlsIncomplete: false, skippedControls: [{ reason: "x" }] }), null);
-  const one = V.paramsSkippedText({ ...base, skippedControls: [{ key: "side", label: "位置", type: "select", reason: "下拉缺选项(options)" }] });
-  assert.equal(one, "没认出的参数:「位置」(side):下拉缺选项(options)");
-  const mixed = V.paramsSkippedText({ ...base, skippedControls: [{ key: "k", reason: "r1" }, { label: "只有标签", reason: "r2" }, { reason: "展开的 X 取不到:内容库里没有 ./x 这个文件" }] });
-  assert.equal(mixed, "没认出的参数:k:r1;「只有标签」:r2;一个控件:展开的 X 取不到:内容库里没有 ./x 这个文件");
+  const one = V.paramsSkippedText({ ...base, skippedControls: [{ key: "side", label: "Position", type: "select", reason: "dropdown is missing choices (options)" }] });
+  assert.equal(one, 'Unrecognized parameters: "Position" (side):dropdown is missing choices (options)');
+  const mixed = V.paramsSkippedText({ ...base, skippedControls: [{ key: "k", reason: "r1" }, { label: "Label only", reason: "r2" }, { reason: "spread X could not be fetched: the content store has no ./x file" }] });
+  assert.equal(mixed, 'Unrecognized parameters: k:r1;"Label only":r2;a control:spread X could not be fetched: the content store has no ./x file');
   const many = V.paramsSkippedText({ ...base, skippedControls: Array.from({ length: 7 }, (_, i) => ({ key: `k${i}`, reason: "r" })) });
-  assert.match(many, /k4:r;等 7 条$/);
+  assert.match(many, /k4:r; 7 in total$/);
   assert.ok(!many.includes("k5"));
-  assert.equal(V.paramsEmptyText({ ...base, controls: [], skippedControls: [{ reason: "r" }] }), "暂不支持修改这张卡的参数");
+  assert.equal(V.paramsEmptyText({ ...base, controls: [], skippedControls: [{ reason: "r" }] }), "changing this card's parameters is not supported yet");
 });

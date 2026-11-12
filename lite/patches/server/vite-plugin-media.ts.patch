@@ -1,13 +1,15 @@
 diff --git a/server/vite-plugin-media.ts b/server/vite-plugin-media.ts
-index 2c7f89427d09f3ffc6229cfcd4852b55bf5bd522..b607e99729b73bbc6ce4ad672162d3592d099dd1 100644
+index 4d1ae371549446eb25e9cdc1ae96ed0f1c415042..19efb0f476778eec75f17a93c4b4093f9e938928 100644
 --- a/server/vite-plugin-media.ts
 +++ b/server/vite-plugin-media.ts
-@@ -898,56 +898,6 @@ export function mediaMiddleware(root: string, options: ProjectMediaOptions = {})
+@@ -971,61 +971,6 @@ export function mediaMiddleware(root: string, options: ProjectMediaOptions = {})
        }
      }
  
--    // GET /api/media/storage/config —— 网盘连接器给页面的公开参数(任务书 docs/plan/drive-connector-task.md 第 5 节)。
--    // 没配环境变量就回 configured: false,界面把入口置灰并说明原因,不报错。
+-    // GET /api/media/storage/config: public parameters from the cloud drive connector for the page
+-    // (task brief docs/plan/drive-connector-task.md section 5).
+-    // If env vars are not set, return configured: false; UI grays out the entry with an explanation,
+-    // without throwing an error.
 -    if (req.method === "GET" && req.url.split("?")[0] === "/api/media/storage/config") {
 -      const { buildExtensions }: any = await import("./vite-plugin-hosted-gate");
 -      const storageConfig = buildExtensions.mediaStorage?.storageConfig;
@@ -16,20 +18,23 @@ index 2c7f89427d09f3ffc6229cfcd4852b55bf5bd522..b607e99729b73bbc6ce4ad672162d359
 -      return res.end(JSON.stringify(storageConfig()));
 -    }
 -
--    // GET /oauth2callback —— A2 的授权弹窗落地页:把授权码 postMessage 回开它的页面,然后自己关掉。
--    // 这个地址要和 Google 控制台里登记的重定向 URI 逐字一致;上面那个总入口的前缀过滤也要放它过来。
+-    // GET /oauth2callback: authorization popup landing page for A2: sends auth code back
+-    // to the opening page via postMessage, then closes itself.
+-    // This address must match byte-for-byte with the redirect URI registered in Google Console;
+-    // the prefix filter at the main entry point above must also let it through.
 -    if (req.method === "GET" && req.url.split("?")[0] === OAUTH_CALLBACK_PATH) {
 -      const { buildExtensions }: any = await import("./vite-plugin-hosted-gate");
 -      const callbackHtml = buildExtensions.mediaStorage?.callbackHtml;
 -      if (typeof callbackHtml !== "function") return next();
 -      res.setHeader("Content-Type", "text/html; charset=utf-8");
--      // 授权码在地址栏里,别让它进任何缓存
+-      // The auth code is in the address bar; do not let it enter any cache
 -      res.setHeader("Cache-Control", "no-store");
 -      return res.end(callbackHtml());
 -    }
 -
--    // 网盘连接器的四个口(任务书第 5 节)。A3 把一次性令牌随 import 递进来;A2 先 connect 再 import(不带令牌)。
--    // 令牌与授权码只过手:不落盘、不进日志、不进回包。
+-    // Four endpoints of the cloud drive connector (task brief section 5). A3 passes the one-time
+-    // token in with import; A2 connects first, then imports (without token).
+-    // Tokens and auth codes are pass-through only: not written to disk, not logged, not in responses.
 -    if (req.method && req.url.split("?")[0].startsWith("/api/media/storage/")) {
 -      const route = req.url.split("?")[0].slice("/api/media/storage/".length);
 -      const { buildExtensions }: any = await import("./vite-plugin-hosted-gate");
@@ -56,13 +61,18 @@ index 2c7f89427d09f3ffc6229cfcd4852b55bf5bd522..b607e99729b73bbc6ce4ad672162d359
 -      }
 -    }
 -
-     // POST /api/media/tiers/backfill { items: [{ hash, name? }] } —— 打开项目时补转素材小尺寸(C6.6 设计稿第 9 节第 2 条):
-     // 本地内容库里有这份素材原尺寸的视频排进后台转码,回 { ok, items: { [hash]: { state, small? } } };
-     // 本地没有素材原尺寸的回 state: 'absent'(不为了转素材小尺寸去拉素材原尺寸)
-@@ -1121,7 +1071,7 @@ export function mediaMiddleware(root: string, options: ProjectMediaOptions = {})
-     // `/oauth2callback` 不在前两个前缀里,但必须由这里接:它是网盘连接器 A2 的授权弹窗落地页,
-     // 地址要和 Google 控制台登记的重定向 URI 逐字一致,改不了前缀。漏掉它就被 vite 的 SPA 兜底
-     // 接走、弹窗里渲染出整个编辑器,授权码永远回不到开它的页面(2026-10-24 真这么踩过)。
+     // POST /api/media/tiers/backfill { items: [{ hash, name? }] }: backfill small-size assets when
+     // opening project (C6.6 design doc section 9 item 2):
+     // videos with this original-size asset in local content store are queued for background transcoding,
+@@ -1213,12 +1158,7 @@ export function mediaMiddleware(root: string, options: ProjectMediaOptions = {})
+   };
+   return async function media(req: Connect.IncomingMessage, res: ServerResponse, next: () => void) {
+     const pathname = String(req.url ?? "").split("?")[0];
+-    // `/oauth2callback` is not in the first two prefixes, but must be handled here: it is the
+-    // authorization popup landing page for cloud drive connector A2; the address must match
+-    // byte-for-byte with the redirect URI registered in Google Console, so the prefix cannot be changed.
+-    // Missing it causes vite's SPA fallback to catch it, rendering the entire editor in the popup,
+-    // and the auth code will never return to the page that opened it (actually hit this on 2026-10-24).
 -    if (!pathname.startsWith("/@media/") && !pathname.startsWith("/api/media/") && pathname !== OAUTH_CALLBACK_PATH) return next();
 +    if (!pathname.startsWith("/@media/") && !pathname.startsWith("/api/media/")) return next();
      let context = (req as any)[Symbol.for("promptcut.asset.request.v2")];

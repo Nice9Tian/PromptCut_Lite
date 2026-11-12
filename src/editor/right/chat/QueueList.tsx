@@ -2,11 +2,12 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { useQueue, remove, type QueuedItem } from "../../../ai/chatQueue";
 import { playEnter, prefersReducedMotion } from "../../enterMotion";
 import "./queue.css";
+import { tr } from "../../../i18n/index.ts";
 
-/** 离开队列的那一行淡出、收起的时长,和 queue.css 的 ai-queue-row-leave 一致 */
+/** How long a row leaving the queue takes to fade out and collapse, same as ai-queue-row-leave in queue.css */
 const LEAVE_MS = 160;
 
-/** 刚离开队列的一行:在原来的位置(at)留一会儿演淡出,不带任何按钮和自动化钩子 */
+/** A row that just left the queue: stays at its old position (at) for a while to play the fade-out, with no buttons or automation hooks */
 interface Ghost {
   item: QueuedItem;
   at: number;
@@ -14,37 +15,40 @@ interface Ghost {
 
 export interface QueueListProps {
   tabId: string;
-  /** 这一页此刻在跑(streaming) */
+  /** This page is running right now (streaming) */
   running: boolean;
-  /** 「插入」:从队列拿出这一条立刻发送 —— 正在跑的那一轮会被打断(send 开头的 abort) */
+  /** "Insert": take this item out of the queue and send it immediately. The turn currently running gets interrupted (the abort at the start of send) */
   onInsert: (item: QueuedItem) => void;
-  /** 「编辑」:这一条放回输入框并移出队列。要不要替换输入框里的内容,这里已经问过了 */
+  /** "Edit": put this item back into the input box and remove it from the queue. Whether to replace the input box content has already been asked here */
   onEdit: (item: QueuedItem) => void;
-  /** 「继续」:解除暂停,空闲的话马上发队首 */
+  /** "Resume": lift the pause and, if idle, send the head of the queue immediately */
   onResume: () => void;
-  /** 输入框里此刻有没有内容;有的话「编辑」先确认是否替换 */
+  /** Whether the input box has content right now; if so, "Edit" asks for confirmation before replacing */
   hasDraft: () => boolean;
 }
 
 /**
- * 输入队列,摆在思考条带和输入区之间;队列空着就不渲染。
+ * Input queue, placed between the thinking strip and the input area; not rendered when the queue is empty.
  *
- * Agent 跑着的时候用户交上来的话排在这里,这一轮落定后由 useAiChat 按顺序自动发出。
- * 用户点了「停止」队列就暂停,头部换成「已暂停」和「继续」。
+ * Messages the user submits while the Agent is running are queued here, and once this turn settles
+ * useAiChat sends them automatically in order. When the user clicks "Stop" the queue pauses, and the
+ * header changes to "Paused" and "Resume".
  *
- * 进出有动效:新排进来的行淡入(队列从空变有时整块上浮淡入),发出去 / 删掉 / 拿去编辑的行
- * 在原位淡出并收起;队列清空时头部跟着收起,整块不会「啪」地消失。
+ * Entering and leaving is animated: newly queued rows fade in (when the queue goes from empty to
+ * non-empty the whole block floats up and fades in), and rows that are sent / deleted / taken for
+ * editing fade out in place and collapse; when the queue empties the header collapses with it, so the
+ * whole block doesn't vanish with a "pop".
  */
 export function QueueList(props: QueueListProps) {
   const { tabId, running, onInsert, onEdit, onResume, hasDraft } = props;
   const { items, paused } = useQueue(tabId);
-  /** 正在确认「替换输入框内容」的那一条 */
+  /** The item currently being asked to confirm "replace the input box content" */
   const [confirmEdit, setConfirmEdit] = useState<string | null>(null);
   const [ghosts, setGhosts] = useState<Ghost[]>([]);
   const sectionRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
   const prevItems = useRef(items);
-  /** 队列清空、头部收起时还显示着的那句话(清空前最后一次的头部文字) */
+  /** The sentence still shown while the queue is empty and the header is collapsing (the last header text before it emptied) */
   const lastHead = useRef("");
 
   useLayoutEffect(() => {
@@ -56,12 +60,12 @@ export function QueueList(props: QueueListProps) {
     if (before.length === 0 && items.length > 0) {
       playEnter(sectionRef.current, "pc-enter-rise");
     } else {
-      // 列表自己会滚,行不做位移(多出来的几像素会让滚动条闪一下),只淡入
+      // The list scrolls by itself; rows don't shift (a few extra pixels would make the scrollbar flicker), they only fade in
       for (const it of items) {
         if (!was.has(it.id)) playEnter(listRef.current?.querySelector(`[data-pc-queue="${CSS.escape(it.id)}"]`), "pc-enter-fade");
       }
     }
-    // 系统要求减少动效时不留幽灵行:没有动画的话,那只是一行白白多挂 160ms 的死字
+    // With reduced motion requested by the system, leave no ghost row: without an animation it would just be a row of dead text hanging around for 160ms
     if (prefersReducedMotion()) return;
     const gone: Ghost[] = before.flatMap((item, at) => (now.has(item.id) ? [] : [{ item, at }]));
     if (gone.length === 0) return;
@@ -71,21 +75,21 @@ export function QueueList(props: QueueListProps) {
 
   if (items.length === 0 && ghosts.length === 0) return null;
 
-  /** 只剩幽灵行:队列刚清空,正在收起 */
+  /** Only ghost rows remain: the queue was just emptied and is collapsing */
   const leaving = items.length === 0;
-  // 用户停掉了,或者这会儿根本没在跑(没有谁会来发队首):都按暂停显示,给一个「继续」
+  // The user stopped it, or nothing is running right now (nobody will come to send the head of the queue): show both as paused, with a "Resume"
   const halted = paused || !running;
   if (!leaving) {
-    lastHead.current = halted ? `已暂停 · 排队中 ${items.length} 条` : `排队中 ${items.length} 条 · Agent 完成后自动发送`;
+    lastHead.current = halted ? tr("Paused · {0} queued", items.length) : tr("{0} queued · will send automatically when the Agent finishes", items.length);
   }
 
-  // 幽灵行按原来的位置插回去(按原下标从小到大插,前面插进去的正好把后面的位置补齐)
+  // Insert ghost rows back at their original positions (insert by original index from small to large, so earlier insertions fill in the later positions exactly)
   type Row = { ghost: false; it: QueuedItem; no: number } | { ghost: true; g: Ghost };
   const rows: Row[] = items.map((it, i) => ({ ghost: false, it, no: i + 1 }));
   for (const g of [...ghosts].sort((a, b) => a.at - b.at)) rows.splice(Math.min(g.at, rows.length), 0, { ghost: true, g });
 
   return (
-    <section className="ai-queue" data-pc={leaving ? undefined : "ai-queue"} aria-label="输入队列" ref={sectionRef}>
+    <section className="ai-queue" data-pc={leaving ? undefined : "ai-queue"} aria-label={tr("Input queue")} ref={sectionRef}>
       <div className={`ai-queue-head${halted && !leaving ? " is-paused" : ""}${leaving ? " is-leaving" : ""}`}>
         {leaving ? (
           <span className="ai-queue-head-text">{lastHead.current}</span>
@@ -96,10 +100,10 @@ export function QueueList(props: QueueListProps) {
               type="button"
               className="ai-queue-btn is-accent"
               data-pc="queue-resume"
-              title="发出队首这一条,之后照常按顺序自动发送"
+              title={tr("Send the first message in the queue now; the rest then send automatically in order as usual")}
               onClick={onResume}
             >
-              继续
+              {tr("Resume")}
             </button>
           </>
         ) : (
@@ -113,7 +117,7 @@ export function QueueList(props: QueueListProps) {
             return (
               <li key={`ghost:${it.id}`} className="ai-queue-item is-leaving" aria-hidden="true">
                 <span className="ai-queue-no" />
-                <span className={`ai-queue-text${it.text ? "" : " is-faint"}`}>{it.text || "(只有附件)"}</span>
+                <span className={`ai-queue-text${it.text ? "" : " is-faint"}`}>{it.text || tr("(attachments only)")}</span>
               </li>
             );
           }
@@ -124,53 +128,53 @@ export function QueueList(props: QueueListProps) {
               <span className="ai-queue-no">{no}</span>
               {confirmEdit === it.id ? (
                 <>
-                  <span className="ai-queue-text is-faint">输入框里有内容,替换成这一条?</span>
+                  <span className="ai-queue-text is-faint">{tr("The input box has content. Replace it with this one?")}</span>
                   <button
                     type="button"
                     className="ai-queue-btn is-accent"
                     data-pc="queue-edit-confirm"
                     onClick={() => { setConfirmEdit(null); onEdit(it); }}
                   >
-                    替换
+                    {tr("Replace")}
                   </button>
                   <button type="button" className="ai-queue-btn" onClick={() => setConfirmEdit(null)}>
-                    取消
+                    {tr("Cancel")}
                   </button>
                 </>
               ) : (
                 <>
                   <span className={`ai-queue-text${it.text ? "" : " is-faint"}`} title={it.text || undefined}>
-                    {it.text || "(只有附件)"}
+                    {it.text || tr("(attachments only)")}
                   </span>
                   {files.length > 0 && (
                     <span className="ai-queue-files" title={files.map((f) => f.name).join("\n")}>
-                      附件 {files.length}
+                      {tr("Attachments {0}", files.length)}
                     </span>
                   )}
                   <button
                     type="button"
                     className="ai-queue-btn is-accent"
                     data-pc="queue-insert"
-                    title={running ? "现在就发这一条:会打断当前运行" : "现在就发这一条"}
+                    title={running ? tr("Send this one now: interrupts the current run") : tr("Send this one now")}
                     onClick={() => onInsert(it)}
                   >
-                    插入
+                    {tr("Insert")}
                   </button>
                   <button
                     type="button"
                     className="ai-queue-btn"
                     data-pc="queue-edit"
-                    title="放回输入框修改,并移出队列"
+                    title={tr("Move back to the input box to edit, and remove from the queue")}
                     onClick={() => (hasDraft() ? setConfirmEdit(it.id) : onEdit(it))}
                   >
-                    编辑
+                    {tr("Edit")}
                   </button>
                   <button
                     type="button"
                     className="ai-queue-btn ai-queue-x"
                     data-pc="queue-remove"
-                    title="从队列里删掉"
-                    aria-label={`删除第 ${no} 条`}
+                    title={tr("Remove from the queue")}
+                    aria-label={tr("Delete item {0}", no)}
                     onClick={() => remove(tabId, it.id)}
                   >
                     ×

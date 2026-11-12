@@ -1,5 +1,5 @@
 diff --git a/desktop/src-tauri/src/lib.rs b/desktop/src-tauri/src/lib.rs
-index 9760842fac7c7511842706df39fc59a3ddde59ea..81ea8529078fac1c0cf78406b922121e08bf7360 100644
+index 1e99adcc4ae21087af99c8b3d698d7137d197b00..bb7c07db8626f8585c38fcb48d45225e36b63d23 100644
 --- a/desktop/src-tauri/src/lib.rs
 +++ b/desktop/src-tauri/src/lib.rs
 @@ -15,7 +15,6 @@ use tauri_plugin_opener::OpenerExt;
@@ -10,7 +10,7 @@ index 9760842fac7c7511842706df39fc59a3ddde59ea..81ea8529078fac1c0cf78406b922121e
  mod background;
  mod chrome_color;
  mod chrome_path;
-@@ -91,29 +90,6 @@ fn editor_url_with_open(open: Option<String>) -> String {
+@@ -92,29 +91,6 @@ fn editor_url_with_open(open: Option<String>) -> String {
      }
  }
  
@@ -40,18 +40,18 @@ index 9760842fac7c7511842706df39fc59a3ddde59ea..81ea8529078fac1c0cf78406b922121e
  /// Holds the sidecar process ID so we can kill the whole tree on exit.
  struct SidecarPid(Mutex<Option<u32>>);
  
-@@ -342,7 +318,6 @@ pub fn run() {
-         // agent 浏览器的调试端口启动时就定下来:主窗口和子 webview 的启动参数都要带它
+@@ -343,7 +319,6 @@ pub fn run() {
+         // The agent browser's debugging port is fixed at startup: both the main window's and the child webview's launch arguments must carry it
          .manage(agent_webview::AgentBrowser::new(agent_webview::pick_port()))
          .invoke_handler(tauri::generate_handler![
 -            account_vault::account_bridge,
              acquire_proc_lock,
              release_proc_lock,
              is_proc_locked,
-@@ -362,22 +337,11 @@ pub fn run() {
+@@ -363,22 +338,11 @@ pub fn run() {
              let handle = app.handle().clone();
  
-             // 双击 .proc 启动时,把路径挂在编辑器地址上带给前端
+             // When launched by double-clicking a .proc, attach the path to the editor URL to pass it to the frontend
 -            let port_override = env::var("PROMPTCUT_ACCOUNT_TEST_EDITOR_PORT").ok();
 -            let editor_port = account_editor_port(&handle.config().identifier, port_override.as_deref())
 -                .map_err(std::io::Error::other)?;
@@ -73,19 +73,17 @@ index 9760842fac7c7511842706df39fc59a3ddde59ea..81ea8529078fac1c0cf78406b922121e
                  if body.contains("PromptCut") {
                      // Another PromptCut is already serving on 5210.
                      existing_instance = true;
-@@ -385,9 +349,7 @@ pub fn run() {
+@@ -386,7 +350,7 @@ pub fn run() {
                      // Port is occupied by something else.
                      rfd::MessageDialog::new()
                          .set_title("PromptCut")
--                        .set_description(&format!(
--                            "端口被占用\n\n端口 {editor_port} 被别的程序占用，请关掉它再启动。"
--                        ))
-+                        .set_description("端口被占用\n\n端口 5210 被别的程序占用，请关掉它再启动。")
+-                        .set_description(ui_text::text("Port in use\n\nPort {0} is used by another program. Close it and start again.", &[&editor_port]))
++                        .set_description(ui_text::text("Port in use\n\nPort {0} is used by another program. Close it and start again.", &[&EDITOR_PORT]))
                          .set_level(rfd::MessageLevel::Error)
                          .show();
                      std::process::exit(1);
-@@ -403,8 +365,7 @@ pub fn run() {
-              * 「预览怎么变慢了」而无从查起。
+@@ -402,8 +366,7 @@ pub fn run() {
+              * "why did the preview get slower" with no way to investigate.
               */
              if !existing_instance {
 -                let busy = if editor_port == EDITOR_PORT { occupied_stage_ports(Duration::from_millis(400)) }
@@ -94,7 +92,7 @@ index 9760842fac7c7511842706df39fc59a3ddde59ea..81ea8529078fac1c0cf78406b922121e
                  if !busy.is_empty() {
                      let list = busy
                          .iter()
-@@ -574,7 +535,7 @@ pub fn run() {
+@@ -572,7 +535,7 @@ pub fn run() {
              let sidecar_cmd = sidecar_cmd
                  .args([
                      "node_modules/vite/bin/vite.js",
@@ -103,7 +101,7 @@ index 9760842fac7c7511842706df39fc59a3ddde59ea..81ea8529078fac1c0cf78406b922121e
                      "--strictPort",
                      "--host", "127.0.0.1",
                  ])
-@@ -676,7 +637,7 @@ pub fn run() {
+@@ -668,7 +631,7 @@ pub fn run() {
                          let _ = win_poll.eval(&status_eval_script(&msg));
                          break;
                      }
@@ -112,7 +110,7 @@ index 9760842fac7c7511842706df39fc59a3ddde59ea..81ea8529078fac1c0cf78406b922121e
                          if body.starts_with("HTTP/1.1 200") || body.starts_with("HTTP/1.0 200") {
                              let _ = win_poll.navigate(editor_url_poll.parse().unwrap());
                              break;
-@@ -782,33 +743,6 @@ fn show_about(handle: &tauri::AppHandle, runtime_dir: &PathBuf) {
+@@ -769,33 +732,6 @@ fn show_about(handle: &tauri::AppHandle, runtime_dir: &PathBuf) {
  mod tests {
      use super::*;
  

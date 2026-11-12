@@ -1,22 +1,26 @@
 diff --git a/server/test/cut-below-streams.test.mjs b/server/test/cut-below-streams.test.mjs
-index 2be209aea0c0a73b09fba2619b2c07803a632601..01fd176970bffe6827dce01d606ff8e69aad5dff 100644
+index 0d5281785166ffd47c42433beed922ff1d68fb3b..399eba1f4f8311e99c023dc206c36aa8f5877c3a 100644
 --- a/server/test/cut-below-streams.test.mjs
 +++ b/server/test/cut-below-streams.test.mjs
-@@ -9,11 +9,9 @@
-  *
-  *   CB-golden  流(没有剪辑段的项目整张流表;有剪辑段的项目整张流表)与开工提交 b362e254 逐字相同;依赖下层的流的输入签名也相同
-  *   CB-r01     剪辑段里依赖下层、没登记的卡不出流;嵌套场景不挂 clip-path
-- * R02 在线浏览器也替剪辑段里的重卡产流(保留):
-- *   CB-split   切分方给浏览器出剪辑段里独立卡(平面的)那一份流任务;外框三维的、依赖下层的照旧不给
-- *   CB-page    本页产流的计划也算剪辑段里的独立卡,键与切分方给浏览器那一份逐字段相同
-- *   CB-bake    浏览器那一份的隔离工程带着剪辑段链(`bakeTask.ts` 的 `isolatedBakeProject`)
-+ *   CB-split   切分方给剪辑段里独立卡(平面的)出流任务;外框三维的、依赖下层的照旧不给
+@@ -18,14 +18,10 @@
+  *              input signatures for below-dependent streams are also identical
+  *   CB-r01     Below-dependent, unregistered cards in cut segments do not output streams; nested
+  *              scenes do not attach clip-path
+- * R02 Online browser also produces streams for heavy cards in cut segments (retained):
+- *   CB-split   Splitter provides stream tasks for planar standalone cards in cut segments to the
+- *              browser; 3D bounding box and below-dependent cards are still not provided
+- *   CB-page    Stream production plan on this page also counts standalone cards in cut segments,
+- *              with keys identical field-by-field to the portion provided by splitter to browser
+- *   CB-bake    Isolated project for browser portion carries cut segment chain
+- *              (`isolatedBakeProject` in `bakeTask.ts`)
++ *   CB-split   Splitter provides stream tasks for planar standalone cards in cut segments; 3D
++ *              bounding box and below-dependent cards are still not provided
   */
 +import '../../src/testing/registerTs.mjs';
  import { test } from 'node:test';
  import assert from 'node:assert/strict';
  import crypto from 'node:crypto';
-@@ -26,9 +24,7 @@ import { CardFrameCache } from '../card-cache.mjs';
+@@ -38,9 +34,7 @@ import { CardFrameCache } from '../card-cache.mjs';
  import { captureCode } from '../frame-code.mjs';
  import { splitPlan } from '../render-node/split.mjs';
  import { clipsPlanTaskOf } from '../render-queue/index.mjs';
@@ -26,78 +30,60 @@ index 2be209aea0c0a73b09fba2619b2c07803a632601..01fd176970bffe6827dce01d606ff8e6
  import { cutProject, topProject, entryOf, pageValueOf, FP, CV } from './cut-below-fixtures.mjs';
  
  const ROOT = path.resolve(fileURLToPath(import.meta.url), '../../..');
-@@ -78,7 +74,7 @@ const BROWSER = '2222222222222222';
+@@ -96,7 +90,7 @@ const BROWSER = '2222222222222222';
  const CODES = { capture: captureCode(ROOT) };
  const CODE_VERSION = 'code-version-for-test';
  
--/** 服务端这条链:card plan → 清单计划的流 → 切分给浏览器出的那一份(同 `page-stream-plan.test.mjs`) */
-+/** 服务端这条链:card plan → 清单计划的流 → 切分出的那一份 */
+-/** Server chain: card plan → manifest plan streams → browser split portion (same as `page-stream-plan.test.mjs`) */
++/** Server chain: card plan → manifest plan streams → split portion */
  function serverSide(project, value, clips) {
    const wire = JSON.parse(JSON.stringify(value));
    const cache = new CardFrameCache({ root: path.join(os.tmpdir(), 'pc-cut-below-split'), project, envFingerprint: OWN });
-@@ -104,61 +100,17 @@ function r02Project() {
-   return p;
- }
- 
--test('CB-split 切分方给浏览器出剪辑段里平面独立卡的那一份;外框三维的、依赖下层的不给', () => {
-+test('CB-split 切分方给剪辑段里平面独立卡出那一份流任务;外框三维的、依赖下层的不给', () => {
-   const p = r02Project();
-   const clips = ['S~up', 'S~m', 'S~S2~cc', 'S~d3', 'S~g'];
-   const { specs, tasks } = serverSide(p, pageValueOf(p), clips);
-   assert.ok(specs.some(s => s.topClipId === 'S~d3' && s.solo === 'flat'), '三维外框的那张照旧是切分方自己的 solo flat 单卡流');
-   const forBrowser = new Set(tasks.filter(t => t.requires.envFingerprint === BROWSER).map(t => t.input.clipId));
--  for (const id of ['S~up', 'S~m', 'S~S2~cc']) assert.ok(forBrowser.has(id), `${id} 有浏览器那一份:${[...forBrowser].join(' ')}`);
--  assert.ok(!forBrowser.has('S~d3'), '外框三维的不给浏览器');
--  assert.ok(!forBrowser.has('S~g'), '依赖下层的不给浏览器(和顶层一样)');
-+  for (const id of ['S~up', 'S~m', 'S~S2~cc']) assert.ok(forBrowser.has(id), `${id} 有对应那一份:${[...forBrowser].join(' ')}`);
-+  assert.ok(!forBrowser.has('S~d3'), '外框三维的不给');
-+  assert.ok(!forBrowser.has('S~g'), '依赖下层的不给(和顶层一样)');
-   const m = tasks.find(t => t.input.clipId === 'S~m');
-   assert.equal(m.input.stream.kind, 'card');
+@@ -136,47 +130,3 @@ test('CB-split the splitter produces, for the browser, its share of the flat sol
    assert.equal(m.input.stream.plane, 'local');
-   assert.equal(m.input.bake.sampling.firstFrame, 60, '露出窗口 [2, 6) 秒的第一帧');
+   assert.equal(m.input.bake.sampling.firstFrame, 60, 'First frame of the visible window [2, 6) seconds');
  });
 -
--test('CB-page 本页产流的计划也算剪辑段里的平面独立卡,键与切分方给浏览器那一份逐字段相同', async () => {
+-test('CB-page the plan that produces streams on this page also counts the flat solo cards inside cut segments, and its keys are field-for-field identical to the splitter\'s share for the browser', async () => {
 -  const p = r02Project();
 -  const value = pageValueOf(p);
 -  const clips = ['S~up', 'S~m', 'S~S2~cc', 'S~d3', 'S~g'];
 -  const server = serverSide(p, value, clips);
 -  const page = await planPageStreams({ project: p, value, clips, codes: CODES, envFingerprint: BROWSER });
 -  const ids = page.specs.map(s => s.topClipId).sort();
--  assert.deepEqual(ids, ['S~S2~cc', 'S~m', 'S~up'], `页面产这三条:${JSON.stringify(page.skipped)}`);
+-  assert.deepEqual(ids, ['S~S2~cc', 'S~m', 'S~up'], `The page produces these three: ${JSON.stringify(page.skipped)}`);
 -  assert.equal(page.skipped['S~d3'], 'frame-3d');
 -  assert.equal(page.skipped['S~g'], 'not-independent');
 -  for (const got of page.specs) {
 -    const want = server.specs.find(s => s.topClipId === got.topClipId);
 -    assert.ok(want, got.topClipId);
--    assert.equal(got.contentKey, want.contentKey, `${got.topClipId} 内容键与切分方相同`);
+-    assert.equal(got.contentKey, want.contentKey, `${got.topClipId} content key is the same as the splitter's`);
 -    assert.equal(got.streamKey, serverResultKeyOf(want.contentKey, BROWSER));
 -    for (const field of ['kind', 'plane', 'firstFrame', 'lastFrame', 'firstSegment', 'lastSegment', 'originFrame']) assert.deepEqual(got[field], want[field], `${got.topClipId}.${field}`);
 -    assert.deepEqual(got.bound, want.bound);
 -    assert.deepEqual(got.offset, want.offset);
 -  }
--  // 流任务与切分方给浏览器出的那一份相同
+-  // Stream tasks are identical to the portion output by splitter for browser
 -  const norm = v => JSON.parse(JSON.stringify(v));
 -  const mine = page.specs.flatMap(spec => pageStreamTasks(spec, { projectId: p.id, projectRev: 7, codeVersion: CODE_VERSION, derivedFrom: server.planTask.id }));
 -  for (const t of mine) {
 -    const theirs = server.tasks.find(x => x.id === t.id);
--    assert.ok(theirs, `切分方也出了 ${t.id}`);
--    assert.deepEqual(norm(t.input), norm(theirs.input), `${t.id} 的 input`);
+-    assert.ok(theirs, `The splitter also produced ${t.id}`);
+-    assert.deepEqual(norm(t.input), norm(theirs.input), `input of ${t.id}`);
 -    assert.deepEqual(norm(t.range), norm(theirs.range));
 -  }
 -});
 -
--test('CB-bake 浏览器那一份的隔离工程带着剪辑段链;顶层卡照旧', async () => {
+-test('CB-bake the isolated project for the browser\'s share carries the cut segment chain; top-level cards stay as before', async () => {
 -  const { isolatedBakeProject } = await import('../../src/online/bakeTask.ts');
 -  const p = cutProject();
 -  const input = { clipId: 'S~m', start: 2, end: 6, count: 120, sampling: { firstFrame: 60, phase: { numerator: '0', denominator: '1' } } };
 -  const iso = isolatedBakeProject(p, input);
--  assert.deepEqual(iso.tracks.filter(t => !t.hidden).flatMap(t => t.clips).map(c => c.id), ['S'], '顶层只留剪辑段');
+-  assert.deepEqual(iso.tracks.filter(t => !t.hidden).flatMap(t => t.clips).map(c => c.id), ['S'], 'Only the cut segment is kept at the top level');
 -  const B = iso.cuts.find(c => c.id === 'B');
--  assert.deepEqual(B.tracks.filter(t => !t.hidden).flatMap(t => t.clips).map(c => c.id), ['m'], '剪辑里只留目标卡');
--  assert.equal(iso.tracks.find(t => !t.hidden).clips[0].start, 1, '时间不平移');
--  // 顶层卡照旧是平移到 -phase 的那一份
+-  assert.deepEqual(B.tracks.filter(t => !t.hidden).flatMap(t => t.clips).map(c => c.id), ['m'], 'Only the target card is kept in the cut');
+-  assert.equal(iso.tracks.find(t => !t.hidden).clips[0].start, 1, 'Time is not shifted');
+-  // Top-level card is still the portion translated to -phase
 -  const top = isolatedBakeProject(p, { clipId: 'over', start: 0, end: 8, count: 240, sampling: { firstFrame: 0, phase: { numerator: '0', denominator: '1' } } });
--  assert.deepEqual(top.tracks.filter(t => !t.hidden).flatMap(t => t.clips).map(c => [c.id, c.start + 0]), [['over', 0]], '目标平移到 -phase(这里 phase 是 0)');
+-  assert.deepEqual(top.tracks.filter(t => !t.hidden).flatMap(t => t.clips).map(c => [c.id, c.start + 0]), [['over', 0]], 'The target is shifted to -phase (phase is 0 here)');
 -});

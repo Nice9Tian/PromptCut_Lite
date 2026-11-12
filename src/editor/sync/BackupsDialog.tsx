@@ -1,9 +1,12 @@
 /**
- * 「项目」菜单「本地备份…」(c65-design.md 第 8 节裁定):按时间和实体列出草稿目录 `backups/` 里的备份,
- * 点「恢复」把那个实体以一次新写入写回去(照样进撤销栈、照样通知别人,不破坏「最后写的赢」)。
+ * Project menu > "Local backups..." (ruling in c65-design.md, section 8): lists the backups in the draft
+ * directory `backups/` by time and entity. Clicking "Restore" writes that entity back as a new write
+ * (it still goes on the undo stack and still notifies others, so "last write wins" is not broken).
  *
- * 备份有两种(`docsync.ts` 的 `LocalBackup`):被别人覆盖之前自己那一版的实体;离线时选「丢弃」前的那批修改
- * (按它改到的实体各列一行,值取丢弃前那一份项目)。只有当前项目的备份能恢复。
+ * There are two kinds of backup (`LocalBackup` in `docsync.ts`): the entity as this page had it before
+ * someone else overwrote it; and the batch of changes made offline before "Discard" was chosen
+ * (one row per entity it touched, the value taken from the project as it was before the discard).
+ * Only backups of the current project can be restored.
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -13,6 +16,7 @@ import { actions, getState } from "../../store/project";
 import { currentDocProjectId, displayNames, me, pushToast } from "./syncManager";
 import { entityLabel, writerLabel } from "./labels";
 import "./sync.css";
+import { tr } from "../../i18n/index.ts";
 
 interface Summary {
   id: string;
@@ -25,7 +29,7 @@ interface Summary {
   rev: number | null;
   at: number;
   broken: boolean;
-  /** 存这份备份的页面会话 */
+  /** The page session that stored this backup */
   pageSession?: string | null;
 }
 
@@ -40,10 +44,10 @@ function fmtTime(ms: number): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
-/** 把一个实体的值写回项目:原处还在就替换;原处没了(被别人删了)就插回去;备份里没有它就删掉 */
+/** Writes an entity's value back into the project: replace it if it is still there; insert it back if it is gone (deleted by someone else); delete it if the backup does not have it */
 export function restoreInto(project: Project, entity: string, value: unknown): { ok: true; next: Project } | { ok: false; detail: string } {
   const path = entityValuePath(entity);
-  if (path === "") return value && typeof value === "object" ? { ok: true, next: value as Project } : { ok: false, detail: "备份里没有项目内容" };
+  if (path === "") return value && typeof value === "object" ? { ok: true, next: value as Project } : { ok: false, detail: tr("The backup has no project content") };
   const ops: PathOp[] = value === undefined ? [{ op: "remove", path }] : [{ op: "set", path, value }];
   const r = applyOps(project, ops);
   if (r.ok) return { ok: true, next: r.value };
@@ -53,7 +57,7 @@ export function restoreInto(project: Project, entity: string, value: unknown): {
     const parent = path.slice(0, path.lastIndexOf("/"));
     const arr = getAt(project, parent);
     if (Array.isArray(arr)) {
-      // 片段按开始时间排着:插在第一个开始得比它晚的前面
+      // Clips are sorted by start time: insert before the first one that starts later than this one
       const start = (value as { start?: number }).start;
       let index = arr.length;
       if (typeof start === "number") {
@@ -79,7 +83,7 @@ export function BackupsDialog({ open, onClose }: { open: boolean; onClose: () =>
     fetch("/api/project-backups", { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => setItems(Array.isArray(j.backups) ? j.backups : []))
-      .catch((e) => setErr(`读不到本地备份:${(e as Error).message}`));
+      .catch((e) => setErr(tr("Cannot read local backups: {0}", (e as Error).message)));
   }, [open]);
 
   if (!open) return null;
@@ -95,41 +99,41 @@ export function BackupsDialog({ open, onClose }: { open: boolean; onClose: () =>
       const value = full.kind === "overwritten" ? full.value : getAt(full.project, entityValuePath(row.entity));
       const res = restoreInto(getState().project, row.entity, value);
       if (!res.ok) {
-        pushToast(`恢复不了:${res.detail}`, "warn");
+        pushToast(tr("Cannot restore: {0}", res.detail), "warn");
         return;
       }
       actions.editCardProject(() => res.next);
-      pushToast(`已恢复 ${entityLabel(row.entity, res.next)}。`, "info", 4000);
+      pushToast(tr("Restored {0}.", entityLabel(row.entity, res.next)), "info", 4000);
     } catch (e) {
-      pushToast(`恢复不了:${(e as Error).message}`, "warn");
+      pushToast(tr("Cannot restore: {0}", (e as Error).message), "warn");
     }
   };
 
   return createPortal(
     <div className="pc-dialog-mask">
       <div className="pc-dialog pc-sync-dialog pc-sync-dialog--wide" role="dialog" aria-modal="true" data-pc="backups-dialog">
-        <div className="pc-dialog-title">本地备份</div>
+        <div className="pc-dialog-title">{tr("Local backups")}</div>
         <div className="pc-dialog-body">
-          <div className="pc-sync-hint">被别人覆盖之前你那一版、离线时丢弃的修改都存在这里。点「恢复」会把那一处以一次新的修改写回当前项目。</div>
+          <div className="pc-sync-hint">{tr("Your version from before someone else overwrote it, and changes discarded while offline, are kept here. \"Restore\" writes that item back into the current project as a new edit.")}</div>
           {err ? <div className="pc-sync-err">{err}</div> : null}
-          {items === null && !err ? <div className="pc-sync-hint">正在读取…</div> : null}
-          {items && !rows.length ? <div className="pc-sync-hint">（还没有本地备份）</div> : null}
+          {items === null && !err ? <div className="pc-sync-hint">{tr("Loading…")}</div> : null}
+          {items && !rows.length ? <div className="pc-sync-hint">{tr("(no local backups yet)")}</div> : null}
           <div className="pc-backups">
             {rows.map((row, i) => {
               const b = row.backup;
               const mine = b.projectId === current;
-              // 「谁覆盖的」按备份的主人(被覆盖的那个页面)说:同一台机器上几个页面的备份都在这一个目录里
+              // "Who overwrote it" is judged by the backup's owner (the page that was overwritten): backups from several pages on the same machine all live in this one directory
               const owner = { ...me(), session: b.pageSession ?? me().session };
-              const who = b.kind === "overwritten" ? `被 ${writerLabel(b.by as never, owner, displayNames())} 覆盖` : "离线时丢弃";
+              const who = b.kind === "overwritten" ? tr("Overwritten by {0}", writerLabel(b.by as never, owner, displayNames())) : tr("Discarded while offline");
               return (
                 <div className="pc-backup-row" key={`${b.id}-${i}`} data-pc="backup-row" data-entity={row.entity}>
                   <span>{entityLabel(row.entity, mine ? project : null)}</span>
                   <small>
-                    {fmtTime(b.at)} · {who}{b.rev !== null && b.rev !== undefined ? ` · 历史序号 ${b.rev}` : ""} · {b.projectName ?? b.projectId}
-                    {mine ? "" : "(不是当前项目)"}
+                    {fmtTime(b.at)} · {who}{b.rev !== null && b.rev !== undefined ? tr(" · history sequence number {0}", b.rev) : ""} · {b.projectName ?? b.projectId}
+                    {mine ? "" : tr("(not the current project)")}
                   </small>
-                  <button type="button" className="pc-dialog-opt" disabled={!mine} title={mine ? "以一次新的修改写回去" : "只能恢复到同一个项目"} onClick={() => void restore(row)}>
-                    恢复
+                  <button type="button" className="pc-dialog-opt" disabled={!mine} title={mine ? tr("Write it back as a new edit") : tr("Can only restore into the same project")} onClick={() => void restore(row)}>
+                    {tr("Restore")}
                   </button>
                 </div>
               );
@@ -138,7 +142,7 @@ export function BackupsDialog({ open, onClose }: { open: boolean; onClose: () =>
         </div>
         <div className="pc-dialog-foot">
           <button type="button" className="pc-btn" onClick={onClose}>
-            关闭
+            {tr("Close")}
           </button>
         </div>
       </div>

@@ -1,13 +1,25 @@
 diff --git a/src/start/types.ts b/src/start/types.ts
-index e73098b42e8b20b821bcb986f956a4c1c89b49f4..bd8be5fe78cc5af74f82e8a3baddbc498e0fb84f 100644
+index 62ac1fb94d8d63f072e7c5b8ce61185ad7f2f60a..7a6b45b68fe2e4e8fdbfe57430affdfce0c7b5d8 100644
 --- a/src/start/types.ts
 +++ b/src/start/types.ts
-@@ -5,7 +5,7 @@
-  * - **项目**:云端文档服务的项目列表(`src/account/useAccountProjects.ts` 的 `lists`:我创建的 / 我加入的);
-  *   游客没有这张表,他自己那一个项目记在本机(`src/account/guest.ts`)。名字、归属以服务端为准;
-  *   画幅、时长、缩略图是这台浏览器打开过这个项目时记下的(`thumbCache.ts`),没打开过就没有,界面退回色块。
-- * - **项目 Agent**:此刻连着的那个项目里、当前账号看得到的云端 Agent 对话(`src/ai/cloud/useCloud.ts` 的历史列表,
-+ * - **项目 Agent**:项目里的 Agent 对话(按 `product/agent.md` 展示,见 `vibeOrg.ts` 的 `viewableChats`)。
-  *   服务端按 `product/agent.md` 的共有 / 私有规则过滤,页面再按同一条规则复核一遍,见 `vibeOrg.ts` 的 `viewableChats`)。
-  * - **分组**(用户 2026-10-23 定:分本地分组和云端分组,互相放不进):本地分组装本机草稿项目、存本机;
-  *   云端分组装云端项目、存云端。两套各管各的项目,这里用 `OrgRealm` 标出一个东西属于哪一套(`vibeOrg.ts`)。
+@@ -3,16 +3,10 @@
+  * Agents (cloud chats).
+  *
+  * Data sources (business layer wired in on 2026-10-23, `docs/reports/AGENT-claude-vibe-wire.md`):
+- * - **Projects**: the project list of the cloud document service (`lists` in
+- *   `src/account/useAccountProjects.ts`: created by me / joined by me); guests have no such table, and
+- *   their one project is recorded locally (`src/account/guest.ts`). Names and ownership follow the
+- *   server; the aspect ratio, duration and thumbnail were recorded when this browser opened the project
+- *   (`thumbCache.ts`), and are absent if it was never opened, in which case the UI falls back to a
+- *   color block.
+- * - **Project Agents**: the cloud Agent chats in the currently connected project that the current
+- *   account can see (the history list in `src/ai/cloud/useCloud.ts`; the server filters by the shared /
+- *   private rules of `product/agent.md`, and the page re-checks with the same rule, see `viewableChats`
+- *   in `vibeOrg.ts`).
++ * - **Projects**: local draft projects on this machine; aspect ratio, duration and thumbnail are recorded
++ *   when the project is opened (`thumbCache.ts`), falling back to a color block when absent.
++ * - **Project Agents**: the Agent chats in the project (displayed per `product/agent.md`, see
++ *   `viewableChats` in `vibeOrg.ts`).
+  * - **Groups** (user decision, 2026-10-23: split into local groups and cloud groups that cannot hold
+  *   each other's projects): a local group holds local draft projects and is stored locally; a cloud
+  *   group holds cloud projects and is stored in the cloud. The two realms each manage their own

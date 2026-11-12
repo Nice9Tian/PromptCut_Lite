@@ -1,21 +1,24 @@
 diff --git a/src/ui/windowTitleBarOnline.test.mjs b/src/ui/windowTitleBarOnline.test.mjs
-index 3f8904cfed0f075937042674848e44aeaf1810da..747c3fc7512b58684bf58890b83ea24541e7c622 100644
+index 034a945a025d4f27c675caa7802306a32287fd33..a7cfa7435379397bdf5be60152fb24865f668a1a 100644
 --- a/src/ui/windowTitleBarOnline.test.mjs
 +++ b/src/ui/windowTitleBarOnline.test.mjs
-@@ -1,10 +1,6 @@
+@@ -1,12 +1,7 @@
  /**
-- * 浏览器版(在线构建)不画应用标题栏(2026-10-22 用户定:不要「显示顶部菜单栏」和 − □ × 三个按钮;桌面版照旧)。
-- * 开关是编译期常量 `ONLINE_BUILD`,就对产物核:
-- * - 在线产物里没有标题栏的菜单行、窗口按钮、桌面壳命令;
-- * - 标题栏「帮助」里只此一处入口的「快捷键」「关于 PromptCut」改住编辑器顶栏的「⋯」菜单,在线产物里有;
-- * - 桌面产物里标题栏整套还在,「⋯」菜单里不重复那两项。
-- * 产物写进临时目录,不碰 `dist/`、`dist-online/`。
-+ * 桌面产物里标题栏整套照旧,「⋯」菜单不重复「快捷键」「关于」。
-+ * 产物写进临时目录,不碰 `dist/`。
+- * Browser version (online build) does not render the app title bar (user decision, 2026-10-22: omit
+- * "Show top menu bar" and the three buttons −, □, ×; desktop app remains as before). The toggle is
+- * the compile-time constant `ONLINE_BUILD`, verified against artifacts:
+- * - Online artifacts do not contain title bar menu row, window buttons, or desktop shell commands;
+- * - "Keyboard shortcuts" and "About PromptCut", whose only entry point was in the title bar "Help",
+- *   are moved to the editor top bar "..." menu, and are present in online artifacts;
+- * - Desktop artifacts retain the full title bar, and the "..." menu does not repeat those two items.
+- * Artifacts are written to a temporary directory without touching `dist/` or `dist-online/`.
++ * Desktop build artifacts keep the full title bar as is, and the "⋯" menu does not duplicate
++ * "Keyboard shortcuts" and "About".
++ * Artifacts are written to a temporary directory without touching `dist/`.
   */
  import test, { after } from 'node:test';
  import assert from 'node:assert/strict';
-@@ -14,7 +10,7 @@ import path from 'node:path';
+@@ -16,7 +11,7 @@ import path from 'node:path';
  import { fileURLToPath } from 'node:url';
  
  const ROOT = path.resolve(fileURLToPath(import.meta.url), '..', '..', '..');
@@ -24,22 +27,22 @@ index 3f8904cfed0f075937042674848e44aeaf1810da..747c3fc7512b58684bf58890b83ea245
  after(() => fs.rmSync(OUT, { recursive: true, force: true }));
  
  async function viteBuild(mode, outDir) {
-@@ -30,18 +26,6 @@ async function viteBuild(mode, outDir) {
+@@ -34,18 +29,6 @@ async function viteBuild(mode, outDir) {
+ const isTranslationTable = (f) => /^i18n-[\w-]+\.js$/.test(f);
+ const bundleText = (dir) => fs.readdirSync(path.join(dir, 'assets')).filter((f) => f.endsWith('.js') && !isTranslationTable(f)).map((f) => fs.readFileSync(path.join(dir, 'assets', f), 'utf8')).join('\n');
  
- const bundleText = (dir) => fs.readdirSync(path.join(dir, 'assets')).filter((f) => f.endsWith('.js')).map((f) => fs.readFileSync(path.join(dir, 'assets', f), 'utf8')).join('\n');
- 
--test('TITLEBAR-ONLINE-01 在线产物里没有标题栏菜单行、窗口按钮和桌面壳命令,「快捷键」「关于」住进「⋯」菜单', { timeout: 240_000 }, async () => {
+-test('TITLEBAR-ONLINE-01 the online build has no title bar menu row, window buttons or desktop shell commands; "Shortcuts" and "About" live in the "⋯" menu', { timeout: 240_000 }, async () => {
 -  const dir = path.join(OUT, 'dist-online');
 -  await viteBuild('online', dir);
 -  const text = bundleText(dir);
--  for (const gone of ['titlebar-${', 'pc-titlebar-menus', 'pc-titlebar-window-controls', '应用菜单', '窗口控制', 'pc-window-control', 'desktop_titlebar_command']) {
--    assert.equal(text.includes(gone), false, `在线产物里不该还有标题栏的 ${gone}`);
+-  for (const gone of ['titlebar-${', 'pc-titlebar-menus', 'pc-titlebar-window-controls', 'App menu', 'Window controls', 'pc-window-control', 'desktop_titlebar_command']) {
+-    assert.equal(text.includes(gone), false, `the online build should no longer have the title bar's ${gone}`);
 -  }
--  for (const kept of ['more-shortcuts', 'more-about', '关于 PromptCut']) {
--    assert.ok(text.includes(kept), `在线产物里应有 ${kept}(「⋯」菜单里的入口)`);
+-  for (const kept of ['more-shortcuts', 'more-about', 'About PromptCut']) {
+-    assert.ok(text.includes(kept), `the online build should have ${kept} (entry in the "⋯" menu)`);
 -  }
 -});
 -
- test('TITLEBAR-ONLINE-02 桌面产物里标题栏整套照旧,「⋯」菜单不重复「快捷键」「关于」', { timeout: 240_000 }, async () => {
+ test('TITLEBAR-ONLINE-02 the desktop build keeps the whole title bar as is; the "⋯" menu does not duplicate "Shortcuts" and "About"', { timeout: 240_000 }, async () => {
    const dir = path.join(OUT, 'dist');
    await viteBuild('production', dir);

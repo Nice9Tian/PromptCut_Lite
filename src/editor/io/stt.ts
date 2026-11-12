@@ -1,30 +1,31 @@
 import type { Transcript, TranscriptSegment } from "../../kernel/project";
 import { getMediaFile } from "./index";
 import { actions } from "../../store/project";
+import { tr } from "../../i18n/index.ts";
 
 export interface SttEngineStatus {
   installed: boolean;
   version?: string;
 }
 
-/** Python 侧一行一个 JSON 的事件形状(字段按 event 类型出现) */
+/** Shape of the events from the Python side, one JSON per line (fields appear depending on the event type) */
 export interface SttEvent {
   event?: string;
-  /** log 事件 */
+  /** log event */
   line?: string;
   data?: string;
   stream?: string;
-  /** error 事件 */
+  /** error event */
   message?: string;
   stderr?: string;
-  /** progress 事件 */
+  /** progress event */
   done?: number;
   total?: number;
-  /** segment 事件 */
+  /** segment event */
   start?: number;
   end?: number;
   text?: string;
-  /** done 事件 */
+  /** done event */
   engine?: string;
   model?: string;
   language?: string;
@@ -43,20 +44,20 @@ export interface SttStatus {
   error?: string;
 }
 
-/** 查询 STT 服务状态(Python 版本、引擎是否安装、可用模型等) */
+/** Query the STT service status (Python version, whether the engine is installed, available models, etc.) */
 export async function sttStatus(): Promise<SttStatus> {
   const res = await fetch("/api/stt/status");
   if (res.status === 503) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error ?? "STT 服务不可用(503):找不到内置 Python,重装一次安装包即可。");
+    throw new Error(data.error ?? tr("STT service unavailable (503): the bundled Python was not found, reinstall the installer once."));
   }
   if (!res.ok) {
-    throw new Error(`/api/stt/status 返回 ${res.status}`);
+    throw new Error(tr("/api/stt/status returned {0}", res.status));
   }
   return res.json();
 }
 
-/** 安装指定引擎(流式读取 pip 日志) */
+/** Install the given engine (reads the pip log as a stream) */
 export async function sttInstall(
   engine: string,
   onLog?: (line: string) => void
@@ -69,10 +70,10 @@ export async function sttInstall(
 
   if (res.status === 503) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error ?? "STT 服务不可用(503)");
+    throw new Error(data.error ?? tr("STT service unavailable (503)"));
   }
   if (!res.ok || !res.body) {
-    throw new Error(`/api/stt/install 返回 ${res.status}`);
+    throw new Error(tr("/api/stt/install returned {0}", res.status));
   }
 
   const log: string[] = [];
@@ -84,7 +85,7 @@ export async function sttInstall(
       onLog?.(line);
     } else if (ev.event === "error") {
       ok = false;
-      const msg = ev.message ?? "安装失败";
+      const msg = ev.message ?? tr("Install failed");
       log.push("[error] " + msg);
       onLog?.("[error] " + msg);
     }
@@ -92,7 +93,7 @@ export async function sttInstall(
   return { ok, log };
 }
 
-/** 转写媒体文件 */
+/** Transcribe a media file */
 export async function transcribeMedia(
   mediaId: string,
   opts?: { engine?: string; model?: string; language?: string },
@@ -102,26 +103,26 @@ export async function transcribeMedia(
 ): Promise<Transcript> {
   const file = getMediaFile(mediaId);
   if (!file) {
-    throw new Error("素材文件不在内存里(可能是打开的项目),请重新导入");
+    throw new Error(tr("The media file is not in memory (it may be from an opened project), please import it again"));
   }
 
   const engine = opts?.engine ?? "faster-whisper";
   const model = opts?.model ?? "small";
   const language = opts?.language;
 
-  // 生成 jobId(时间戳 + 随机)
+  // Generate a jobId (timestamp + random)
   const jobId = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6);
 
-  // 上传文件
+  // Upload the file
   const uploadRes = await fetch(
     `/api/stt/upload/${jobId}/${encodeURIComponent(file.name)}`,
     { method: "POST", body: file }
   );
   if (!uploadRes.ok) {
-    throw new Error(`文件上传失败: ${uploadRes.status} ${await uploadRes.text()}`);
+    throw new Error(tr("File upload failed: {0} {1}", uploadRes.status, await uploadRes.text()));
   }
 
-  // 启动转写(SSE 流)
+  // Start transcription (SSE stream)
   const transcribeRes = await fetch("/api/stt/transcribe", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -130,10 +131,10 @@ export async function transcribeMedia(
 
   if (transcribeRes.status === 503) {
     const data = await transcribeRes.json().catch(() => ({}));
-    throw new Error(data.error ?? "STT 服务不可用(503)");
+    throw new Error(data.error ?? tr("STT service unavailable (503)"));
   }
   if (!transcribeRes.ok || !transcribeRes.body) {
-    throw new Error(`/api/stt/transcribe 返回 ${transcribeRes.status}`);
+    throw new Error(tr("/api/stt/transcribe returned {0}", transcribeRes.status));
   }
 
   let finalTranscript: Transcript | null = null;
@@ -155,20 +156,20 @@ export async function transcribeMedia(
         segments: ev.segments ?? [],
       };
     } else if (ev.event === "error") {
-      throw new Error(ev.message ?? "转写失败");
+      throw new Error(ev.message ?? tr("Transcription failed"));
     }
   });
 
   if (!finalTranscript) {
-    throw new Error("转写未收到 done 事件");
+    throw new Error(tr("Transcription did not receive a done event"));
   }
 
-  // 写入 store
+  // Write to the store
   actions.setMediaTranscript(mediaId, finalTranscript);
   return finalTranscript;
 }
 
-/** 解析 SSE 流,逐事件调用 callback(可能 throw) */
+/** Parse the SSE stream and call callback for each event (may throw) */
 export async function readSseStream(
   body: ReadableStream<Uint8Array>,
   onEvent: (ev: SttEvent) => void
@@ -187,7 +188,7 @@ export async function readSseStream(
     try {
       const ev = JSON.parse(jsonStr) as SttEvent;
       onEvent(ev);
-    } catch { /* 忽略非 JSON */ }
+    } catch { /* Ignore non-JSON */ }
   };
 
   try {
@@ -195,18 +196,19 @@ export async function readSseStream(
       const { done, value } = await reader.read();
       if (done) break;
       buf += decoder.decode(value, { stream: true });
-      // SSE 事件以 \n\n 分隔
+      // SSE events are separated by \n\n
       const events = buf.split("\n\n");
       buf = events.pop() ?? "";
       for (const block of events) emit(block);
     }
     /*
-     * 流结束时缓冲区里剩下的那一段也要发。
+     * What is left in the buffer when the stream ends must be sent too.
      *
-     * 上面按 \n\n 切,最后一段(还没等到分隔符的部分)留在 buf 里等下一次读取。可服务端
-     * 把最后一个事件写完就直接关流的话,那个 \n\n 永远不会来 —— 已经完整收到的 done 事件
-     * 就这么烂在 buf 里被丢掉,调用方报「转写未收到 done 事件」,而数据其实是到齐了的。
-     * decode() 不带 stream 是让 TextDecoder 把它自己的尾巴也吐出来。
+     * Above, we split on \n\n, and the last piece (the part that has not yet seen its separator) stays in
+     * buf waiting for the next read. But if the server closes the stream right after writing the last
+     * event, that \n\n never comes: a done event that was fully received just rots in buf and gets dropped,
+     * and the caller reports "transcription did not receive a done event", although the data had all
+     * arrived. decode() without stream makes the TextDecoder flush its own tail as well.
      */
     buf += decoder.decode();
     if (buf.trim()) emit(buf);

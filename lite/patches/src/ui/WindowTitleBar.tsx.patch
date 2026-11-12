@@ -1,15 +1,15 @@
 diff --git a/src/ui/WindowTitleBar.tsx b/src/ui/WindowTitleBar.tsx
-index df2305c3a951fb9f1404b1282ae3ccd506c8d35f..9d060e1f90a0267a03065b944282e88611ccdd52 100644
+index b9685ab2fc2655523ae9f7f8dff57c11ac12e6b6..adc9352e233931141214507c981078aad36e135f 100644
 --- a/src/ui/WindowTitleBar.tsx
 +++ b/src/ui/WindowTitleBar.tsx
 @@ -1,6 +1,5 @@
  import { useEffect, useRef, useState } from "react";
  import type { JSX, MouseEvent as ReactMouseEvent } from "react";
--import { onlineUnsupported } from "../online/pageFlag";
+-import { onlineUnsupported } from "../online/onlineUnsupported";
  import "./WindowTitleBar.css";
+ import { tr } from "../i18n/index.ts";
  
- /**
-@@ -239,10 +238,9 @@ function DesktopTitleBar(): JSX.Element {
+@@ -246,10 +245,9 @@ function DesktopTitleBar(): JSX.Element {
                        role="menuitem"
                        className="pc-titlebar-menu-item"
                        data-pc={item.command ? `titlebar-${item.command}` : undefined}

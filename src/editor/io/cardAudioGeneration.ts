@@ -7,8 +7,9 @@ import { cardAudioIdentityHooks, renderEmbeddedCardWav } from "../../audio/cardA
 import { sha256Hex } from "../../render/snapUploader";
 import { hasGeneratedAudio, uploadGeneratedAudio } from "./generatedAudioUpload";
 import { isViewOnly } from "./viewOnly";
+import { tr } from "../../i18n/index.ts";
 
-/** 与独立音效一样限制总任务数；任意用户卡仍只在一个小块里求值，不同时攒多份 PCM。 */
+/** Limit the total number of tasks just like standalone sound effects; any user card is still evaluated in a single small chunk, never holding several PCM copies at once. */
 export const CARD_AUDIO_JOB_LIMIT = 4;
 const pending = new Map<string, AbortController>();
 let active = false;
@@ -33,20 +34,20 @@ export function cancelCardAudioGeneration(clipId: string): boolean {
 }
 
 /**
- * Agent 等待实际入库和提交完成；取消/换项目/新请求不会留下半个片段或覆盖新内容。
- * `cutId`:片段住在哪条剪辑里(缺省激活的那条)。导出前生成被剪辑段引用的剪辑里的有声卡时给(`exportSounds.ts`):
- * 身份、合成都按那条剪辑的序列算(`cutViewProject`),和用户切过去再生成是同一个结果,结果写回那条剪辑。
+ * The Agent waits for the actual store and commit to finish; cancel / switching project / a new request never leaves half a clip or overwrites new content.
+ * `cutId`: which cut the clip lives in (defaults to the active one). Given when generating, before export, the audible cards in a cut referenced by a cut segment (`exportSounds.ts`):
+ * identity and synthesis are both computed over that cut's tracks (`cutViewProject`), giving the same result as the user switching over and generating, and the result is written back to that cut.
  */
 export async function generateCardAudio(clipId: string, options: { signal?: AbortSignal; force?: boolean; cutId?: string; onProgress?: (done: number, total: number) => void } = {}) {
-  if (isViewOnly()) throw new Error("只读页面不能生成卡片声音");
+  if (isViewOnly()) throw new Error(tr("Read-only pages cannot generate card audio"));
   const state = getState(), root = state.project, hooks = cardAudioIdentityHooks();
   const found = findClipInCut(root, options.cutId, clipId), p = found?.view ?? root, hit = found;
-  if (!hit || !clipHasEmbeddedAudio(p, hit.clip, hooks.getCard)) throw new Error("找不到带内嵌声音的动效卡片");
-  if (hit.track.locked) throw new Error("请先解锁卡片所在序列");
+  if (!hit || !clipHasEmbeddedAudio(p, hit.clip, hooks.getCard)) throw new Error(tr("Cannot find a motion graphics card with embedded audio"));
+  if (hit.track.locked) throw new Error(tr("Unlock the track containing the card first"));
   const expectedClip = JSON.stringify(hit.clip), frozen = structuredClone(p), clip = findClipInCut(frozen, undefined, clipId)!.clip;
   const identity = cardAudioIdentity(frozen, clip, hooks), sourceOffset = cardAudioSourceOffset(frozen, clip);
-  if (new TextEncoder().encode(cardJson(identity)).byteLength > 96 * 1024) throw new Error("卡片声音参数记录过大，请缩短片段或精简输入");
-  if (!pending.has(clipId) && pending.size >= CARD_AUDIO_JOB_LIMIT) throw new Error("最多同时排队 4 个卡片声音任务，请等待或取消已有任务");
+  if (new TextEncoder().encode(cardJson(identity)).byteLength > 96 * 1024) throw new Error(tr("Card audio parameter record is too large. Shorten the clip or simplify the input"));
+  if (!pending.has(clipId) && pending.size >= CARD_AUDIO_JOB_LIMIT) throw new Error(tr("At most 4 card audio jobs can be queued at once, wait for or cancel existing jobs"));
   pending.get(clipId)?.abort();
   const controller = new AbortController(); pending.set(clipId, controller);
   const abort = () => controller.abort(); options.signal?.addEventListener("abort", abort, { once: true });
@@ -57,13 +58,13 @@ export async function generateCardAudio(clipId: string, options: { signal?: Abor
     if (pending.get(clipId) !== controller || current.projectLoadToken !== state.projectLoadToken || current.project.id !== root.id ||
         current.project.activeCutId !== root.activeCutId || !now || JSON.stringify(now.clip) !== expectedClip ||
         cardJson(cardAudioIdentity(now.view, now.clip, cardAudioIdentityHooks())) !== cardJson(identity))
-      throw new Error("卡片、源码或项目已变化，旧的声音生成结果不会覆盖当前内容");
+      throw new Error(tr("The card, source or project has changed; the old audio generation result will not overwrite the current content"));
   };
   let release: (() => void) | undefined;
   try {
     if (!options.force) {
       let reusable;
-      try { reusable = resolveCardAudioRendition(p, hit.clip, hooks); } catch { /* 缺失或过期时重新生成 */ }
+      try { reusable = resolveCardAudioRendition(p, hit.clip, hooks); } catch { /* Regenerate when missing or stale */ }
       if (reusable && await hasGeneratedAudio(reusable.media.hash!, controller.signal)) {
         check();
         return { ok: true as const, clipId, mediaId: reusable.media.id, reused: true };
@@ -79,7 +80,7 @@ export async function generateCardAudio(clipId: string, options: { signal?: Abor
     const asset = await uploadGeneratedAudio(rendered.wav, controller.signal);
     check();
     const result = commitCardAudio({ projectId: root.id, cutId: root.activeCutId, clipCutId: options.cutId, loadToken: state.projectLoadToken, clipId, expectedClip,
-      media: { kind: "audio", name: `${clip.label || hooks.getCard(clip.cardId)?.name || clip.cardId} · 卡片声音.wav`,
+      media: { kind: "audio", name: tr("{0} · card audio.wav", clip.label || hooks.getCard(clip.cardId)?.name || clip.cardId),
         url: `/@media/${asset.hash}`, hash: asset.hash, ext: "wav", size: asset.bytes, duration: rendered.frames / 48000 },
       rendition: { version: 1, cardId: clip.cardId, sourceKey, sourceOffset, duration: rendered.frames / 48000,
         sampleRate: 48000, frames: rendered.frames, channels: rendered.channels, identity } });

@@ -1,8 +1,10 @@
 /**
- * 预览播放栏(配色诊断与修正 v2 整屏,中栏底部)。
- * 一张 L1 卡片:上面一条 3px 进度线(强调色填充 + 主文字色圆点),
- * 下面一行:上一段 / 播放 / 下一段 / 重播 四个 28 方钮(播放键是卡片里唯一的实心强调色),
- * 当前时间(等宽 15px,点一下能直接输入跳转)+ 总时长,右侧扬声器 + 64px 音量滑条。
+ * Preview control bar (color diagnosis and correction v2 full screen, bottom of the middle
+ * column). One L1 card: on top a 3px progress line (accent-color fill + primary-text-color dot),
+ * below it one row: previous clip / play / next clip / replay, four 28 square buttons (the play
+ * button is the only solid accent-color element in the card), the current time (monospace 15px,
+ * click to type a time and jump) + total duration, and on the right a speaker + a 64px volume
+ * slider.
  */
 import React, { useEffect, useRef, useState } from "react";
 import { actions, useStore } from "../../store/project";
@@ -16,6 +18,7 @@ import {
   IconVolumeMute,
 } from "../../ui/icons";
 import "./preview.css";
+import { tr } from "../../i18n/index.ts";
 
 function parseTime(str: string): number {
   const s = str.trim();
@@ -59,7 +62,7 @@ export function ControlBar() {
     else if (e.key === "Escape") setEditing(false);
   };
 
-  /** 进度线:按下即定位,按住可拖 */
+  /** Progress line: press to seek, hold to drag */
   const scrubTo = (clientX: number) => {
     const el = progressRef.current;
     if (!el || duration <= 0) return;
@@ -91,33 +94,33 @@ export function ControlBar() {
 
   return (
     <div className="pc-pv-ctrl" data-pc="control-bar">
-      <div ref={progressRef} className="pc-pv-progress" onPointerDown={onProgressDown} title="拖动 = 定位播放头">
+      <div ref={progressRef} className="pc-pv-progress" onPointerDown={onProgressDown} title={tr("Drag = set playhead")}>
         <div className="pc-pv-progress-fill" style={{ right: `${(1 - ratio) * 100}%` }} />
         <div className="pc-pv-progress-knob" style={{ left: `${ratio * 100}%` }} />
       </div>
 
       <div className="pc-pv-row">
         <div className="pc-pv-btns">
-          <button type="button" className="pc-pv-btn" onClick={() => actions.seek(0)} title="跳到开头">
+          <button type="button" className="pc-pv-btn" onClick={() => actions.seek(0)} title={tr("Jump to start")}>
             <IconSkipBack size={14} />
           </button>
           <button
             type="button"
             className="pc-pv-btn pc-pv-btn--play"
             onClick={() => actions.togglePlay()}
-            title={playing ? "暂停" : "播放"}
+            title={playing ? tr("Pause") : tr("Play")}
           >
             {playing ? <IconPause size={14} /> : <IconPlay size={14} />}
           </button>
-          <button type="button" className="pc-pv-btn" onClick={() => actions.seek(duration)} title="跳到结尾">
+          <button type="button" className="pc-pv-btn" onClick={() => actions.seek(duration)} title={tr("Jump to end")}>
             <IconSkipForward size={14} />
           </button>
-          <button type="button" className="pc-pv-btn" onClick={() => actions.replay()} title="重播">
+          <button type="button" className="pc-pv-btn" onClick={() => actions.replay()} title={tr("Replay")}>
             <IconLoop size={14} />
           </button>
         </div>
 
-        <span className="pc-pv-time" title="点击输入秒数跳转">
+        <span className="pc-pv-time" title={tr("Click to enter seconds and jump")}>
           {editing ? (
             <input
               ref={inputRef}
@@ -145,7 +148,7 @@ export function ControlBar() {
             type="button"
             className="pc-pv-vol-btn"
             onClick={() => actions.toggleMute()}
-            title={muted ? "取消静音" : "静音"}
+            title={muted ? tr("Unmute") : tr("Muted")}
             aria-pressed={muted}
           >
             {muted || volume === 0 ? <IconVolumeMute size={14} /> : <IconVolume size={14} />}
@@ -158,8 +161,8 @@ export function ControlBar() {
               max={100}
               value={Math.round(shownVolume * 100)}
               onChange={(e) => actions.setVolume(Number(e.target.value) / 100)}
-              aria-label="预览音量"
-              title="预览音量(不影响导出)"
+              aria-label={tr("Preview volume")}
+              title={tr("Preview volume (does not affect export)")}
             />
           </div>
         </div>

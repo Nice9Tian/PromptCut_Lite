@@ -1,8 +1,8 @@
 diff --git a/server/test/render-node-ws.test.mjs b/server/test/render-node-ws.test.mjs
-index f31ad2f051207d50b049001ccd871af176faa92f..7c0c417c6241d094af659fce413c8e9aaf8a9794 100644
+index 501c5244002a189c3672f2ba469e0b8437d246fa..93364b82b23cd48b231ff3e3e34aab4baaa66985 100644
 --- a/server/test/render-node-ws.test.mjs
 +++ b/server/test/render-node-ws.test.mjs
-@@ -22,8 +22,6 @@ import {
+@@ -26,8 +26,6 @@ import {
    wsClient, byReq, byType, waitFor, sleep, randomToken, createTcpProxy, createSleepExecutor,
    snapshotTaskInput, healthServer, refusingPort,
  } from './fake-ws-kit.mjs';
@@ -10,8 +10,8 @@ index f31ad2f051207d50b049001ccd871af176faa92f..7c0c417c6241d094af659fce413c8e9a
 -import { buildAuthProtocols } from '../auth/client.mjs';
  
  const BACKOFF = { baseMs: 500, factor: 2, maxMs: 15_000, jitter: 0.2 };
- // M6c X3：host 的 watch 'all' 只收摘要（按扫描周期发现项目），T 系列测的是传输，节点改用 pc 照旧收全量（原为 host）
-@@ -39,9 +37,7 @@ const expectedDelay = (n, r, b = BACKOFF) => Math.min(b.maxMs, b.baseMs * b.fact
+ // M6c X3: host watch 'all' receives only summaries (discovering projects by scan cycle);
+@@ -44,9 +42,7 @@ const expectedDelay = (n, r, b = BACKOFF) => Math.min(b.maxMs, b.baseMs * b.fact
  async function startQueueService({ token, modules } = {}) {
    const options = { log: () => {} };
    if (token !== undefined) {
@@ -22,12 +22,45 @@ index f31ad2f051207d50b049001ccd871af176faa92f..7c0c417c6241d094af659fce413c8e9a
    }
    if (modules) options.modules = modules;
    const service = createDocService(options);
-@@ -133,7 +129,7 @@ async function publisher(url, publisherId = 'page-1') {
- 
- // M6a：原来的「令牌模式」测的是「带凭证握手的端点也能连上、报到」。集群令牌退出数据面之后，改成凭共享项目的证明
- // 进入（`protocols()` 每次连之前现取挑战，auth-contract 第 11 节），角色 render；principal 是这个成员身份。
+@@ -140,23 +136,11 @@ async function publisher(url, publisherId = 'page-1') {
+ // and check in". After cluster tokens exited the data plane, changed to entering via shared project
+ // proof (`protocols()` fetches challenge fresh before each connection, auth-contract Section 11),
+ // role render; principal is this member identity.
 -for (const mode of ['anonymous', 'shared']) {
+-  test(`T1 createWsEndpoint against the real document service (${mode === 'shared' ? 'shared project credentials' : 'Anonymous mode'}): onOpen fires and local-node receives node.welcome`, async (t) => {
+-    let env;
+-    let options;
+-    if (mode === 'shared') {
+-      const shared = await startSharedService({ mode: 'hosted' });
+-      t.after(() => shared.close());
+-      const { projectId } = await createProject(shared.base, { password: 'pw-t1' });
+-      const dev = newDeviceId('t1');
+-      const queueOf = () => shared.service.describe().modules['render-queue'].spaces?.[projectId];
+-      env = { service: shared.service, url: shared.url, get queue() { return { epoch: queueOf()?.epoch }; }, projectId, dev };
+-      options = { url: shared.url, protocols: () => buildAuthProtocols({ base: shared.base, projectId, username: 'bob', deviceId: dev, deviceName: 'Bob', password: 'pw-t1', role: 'render' }) };
+-    } else {
+-      env = await startQueueService({});
+-      t.after(() => env.service.close());
+-      options = { url: env.url };
+-    }
 +for (const mode of ['anonymous']) {
-   test(`T1 对真文档服务建 createWsEndpoint（${mode === 'shared' ? '共享项目凭证' : '匿名模式'}）：onOpen 触发，local-node 收到 node.welcome`, async (t) => {
-     let env;
-     let options;
++  test(`T1 createWsEndpoint against the real document service (Anonymous mode): onOpen fires and local-node receives node.welcome`, async (t) => {
++    const env = await startQueueService({});
++    t.after(() => env.service.close());
++    const options = { url: env.url };
+     const { ep, rec } = await endpoint(options);
+     t.after(() => ep.close());
+     const n = attachNode(ep, { nodeId: `n-${mode}` });
+@@ -172,12 +156,6 @@ for (const mode of ['anonymous', 'shared']) {
+     const d = env.service.describe();
+     assert.equal(d.conns.length, 1);
+     assert.deepEqual(d.conns[0].roles.sort(), ['node', 'publisher'], 'local-node.start sends publisher.hello first, then node.hello');
+-    if (mode === 'shared') {
+-      assert.deepEqual(d.conns[0].principal, {
+-        userId: `bob@${env.dev}`, tenantId: env.projectId, scope: 'member', username: 'bob', deviceId: env.dev, deviceName: 'Bob',
+-        creator: false, role: 'render', conversation: null, owner: null,
+-      });
+-    }
+     const s = ep.stats();
+     assert.equal(s.opens, 1);
+     assert.equal(s.closes, 0);

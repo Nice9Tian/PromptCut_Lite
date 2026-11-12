@@ -1,8 +1,8 @@
 diff --git a/src/editor/timeline/durationSync.ts b/src/editor/timeline/durationSync.ts
-index b90c9f66d47383160857b4f672dd890c15546ea0..54f493629f923015990719ac4434756e8ae7d049 100644
+index 97c348f4375753b3328533f830238a9df11c03a5..7db364b86632ebacbb80eff8347fb992ec7066b6 100644
 --- a/src/editor/timeline/durationSync.ts
 +++ b/src/editor/timeline/durationSync.ts
-@@ -19,7 +19,6 @@ import { useEffect } from "react";
+@@ -27,7 +27,6 @@ import { useEffect } from "react";
  import { actions, getState, subscribe } from "../../store/project";
  import { contentEndOf, effectiveDuration } from "../../kernel/duration";
  import type { Track } from "../../kernel/project";
@@ -10,10 +10,10 @@ index b90c9f66d47383160857b4f672dd890c15546ea0..54f493629f923015990719ac4434756e
  import { memberReadOnlyNow } from "../readOnlyCore";
  
  let mounted = 0;
-@@ -31,7 +30,7 @@ let seen: { tracks: Track[]; duration: number; manual: number | null } | null =
+@@ -39,7 +38,7 @@ let seen: { tracks: Track[]; duration: number; manual: number | null } | null =
  export function syncDurationNow(): void {
    queued = false;
-   // 只读项目(游客):总时长是项目里的字段,这一下是个写,服务端要拒;看别人的项目时也别自己去改它
+   // Read-only project (guest): the total duration is a project field, so this would be a write and the server would reject it; also do not edit it yourself when viewing someone else's project
 -  if (mounted === 0 || isRecoveringAssociation() || memberReadOnlyNow()) return;
 +  if (mounted === 0 || memberReadOnlyNow()) return;
    const s = getState();

@@ -1,30 +1,30 @@
 diff --git a/src/editor/left/paramsView.ts b/src/editor/left/paramsView.ts
-index af8984f3d91b230da374c86ab098bbe6d54981eb..735d14b45de6a1ee73e6d4e8c7b17796774035d9 100644
+index 1fdb4fa705ae1702672b2dc40b9894a8a8628e02..f30419e794f7a953ee9a53c478aea7147fef6e8d 100644
 --- a/src/editor/left/paramsView.ts
 +++ b/src/editor/left/paramsView.ts
-@@ -6,7 +6,6 @@
+@@ -9,7 +9,6 @@
   */
  import type { CardDef, Control } from "../../kernel/types";
  import type { SkippedControl, SyncedCardView } from "../../kernel/registry";
--import { onlineUnsupported } from "../../online/pageFlag";
+-import { onlineUnsupported } from "../../online/onlineUnsupported";
+ import { tr } from "../../i18n/index.ts";
  
- /** 面板要的那几样:能跑的定义与同步来的视图都满足 */
- export interface ParamsCardView {
-@@ -39,7 +38,7 @@ export const ONLINE_PARAMS_ENTRY = "修改这张卡的参数";
+ /** What the panel needs: both a runnable definition and a synced view satisfy it */
+@@ -44,7 +43,7 @@ export const ONLINE_PARAMS_ENTRY = tr("changing this card's parameters");
   */
  export function paramsEmptyText(view: ParamsCardView | undefined): string | null {
    if (view && Array.isArray(view.controls) && view.controls.length > 0) return null;
 -  if (view?.controlsIncomplete) return onlineUnsupported(ONLINE_PARAMS_ENTRY);
-+  if (view?.controlsIncomplete) return `暂不支持${ONLINE_PARAMS_ENTRY}`;
++  if (view?.controlsIncomplete) return tr("{0} is not supported yet", ONLINE_PARAMS_ENTRY);
    return NO_PARAMS_TEXT;
  }
  
-@@ -52,7 +51,7 @@ export const ONLINE_PARAMS_REST_ENTRY = "修改这张卡的其余参数";
+@@ -58,7 +57,7 @@ export const ONLINE_PARAMS_REST_ENTRY = tr("changing this card's remaining param
   */
  export function paramsPartialText(view: ParamsCardView | undefined): string | null {
    if (!view?.controlsIncomplete || !Array.isArray(view.controls) || view.controls.length === 0) return null;
 -  return onlineUnsupported(ONLINE_PARAMS_REST_ENTRY);
-+  return `暂不支持${ONLINE_PARAMS_REST_ENTRY}`;
++  return tr("{0} is not supported yet", ONLINE_PARAMS_REST_ENTRY);
  }
  
- /** 面板上最多逐条列几个没认出的控件(其余的说「等 N 条」) */
+ /** Maximum number of unrecognized controls the panel lists one by one (the rest are summarized as "and N more") */

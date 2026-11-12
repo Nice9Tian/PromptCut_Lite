@@ -1,22 +1,26 @@
 diff --git a/src/start/vibeOrg.ts b/src/start/vibeOrg.ts
-index 30125e0f043aac32e96d7c5ba88b148208e3b6c2..1b9482ad3224713be1575fa2d779890c8dd0ed34 100644
+index 94e563b6f05cc0aeb977502900b5f39674d8c743..9cd7530b9ce741d49ead5a9590052e1b08f5d889 100644
 --- a/src/start/vibeOrg.ts
 +++ b/src/start/vibeOrg.ts
-@@ -16,7 +16,7 @@
-  * - **放进分组只能同一套**(`moveProject`、`moveRefusal`):跨套返回一句说明,整理信息原样不动。
+@@ -23,10 +23,8 @@
   *
-  * **云端那一套存哪**:存在云端文档服务、按账号一份,整份(分组、项目放在哪、置顶、归档、顺序、对话标记)一起上云
-- * (接口 `POST /hosted/shared/account/start-org`,服务端 `cloud/docservice/modules/account-org.mjs`,裁定 V22-05～09)。
-+ * (裁定 V22-05～09)。
-  * 本机的键 `pc.start.org.cloud.<账号>` 是它在这台浏览器里的缓存:打开先用它,同步逻辑见 `orgSync.ts`、`orgMerge.ts`、`useCloudOrg.ts`。
-  * 服务端还没有这条路由(老服务端)时安静地退回「只记在这台浏览器里」,界面据此改口。游客没有云端那一份(游客身份不跨设备、只有一个项目),也就没有分组。
-  *
-@@ -319,7 +319,7 @@ export function moveTargetsFor(project: Pick<VibeProject, "realm" | "groupId">,
+  * **Where the cloud realm is stored**: in the cloud document service, one copy per account, and the whole
+  * copy (groups, which group a project is in, pins, archive, order, chat markers) goes to the cloud
+- * together (interface `POST /hosted/shared/account/start-org`, server
+- * `cloud/docservice/modules/account-org.mjs`, rulings V22-05~09).
+- * The local key `pc.start.org.cloud.<account>` is its cache in this browser: it is used first on open;
+- * for the sync logic see `orgSync.ts`, `orgMerge.ts` and `useCloudOrg.ts`.
++ * together (rulings V22-05~09).
++ * The local key `pc.start.org.cloud.<account>` is its cache in this browser: it is used first on open.
+  * When the server does not have this route yet (an old server) it quietly falls back to "recorded only in
+  * this browser" and the UI changes its wording accordingly. Guests have no cloud copy (a guest identity
+  * does not cross devices and has just one project), and so no groups.
+@@ -362,7 +360,7 @@ export function moveTargetsFor(project: Pick<VibeProject, "realm" | "groupId">,
  
- /* ---------------- 项目 Agent:看得到哪些对话 ---------------- */
+ /* ---------------- Project Agent: which chats are visible ---------------- */
  
--/** 云端历史列表里的一条(`src/ai/cloud/types.ts` 的 `CloudChatItem`,这里只认用得到的几项) */
-+/** 历史列表里的一条(这里只认用得到的几项) */
+-/** One entry in the cloud history list (`CloudChatItem` in `src/ai/cloud/types.ts`; only the fields that are used are recognized here) */
++/** One entry in the history list (only the fields that are used are recognized here) */
  export interface ChatItemLike {
    id: string;
    title: string;

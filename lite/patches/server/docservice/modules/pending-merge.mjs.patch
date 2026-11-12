@@ -1,8 +1,8 @@
 diff --git a/server/docservice/modules/pending-merge.mjs b/server/docservice/modules/pending-merge.mjs
-index 7489a4f805e29edb1cdf66e6d62c5f31556c06b3..ab3eb08a2ba8451c09d953ffa9075a4249cca819 100644
+index a4da4c89bb2bfca2a0747cd2460bd0ac6e24aef4..484ad918bbbc5c4516a487d810a68170c6088b9b 100644
 --- a/server/docservice/modules/pending-merge.mjs
 +++ b/server/docservice/modules/pending-merge.mjs
-@@ -44,8 +44,6 @@ class Refused extends Error {
+@@ -56,8 +56,6 @@ class Refused extends Error {
  export function mergeUserOf(principal) {
    if (!principal || principal.scope === 'admin' || principal.scope === 'service') return null;
    if (typeof principal.service === 'string' || principal.role === 'render' || principal.role === 'agent') return null;
