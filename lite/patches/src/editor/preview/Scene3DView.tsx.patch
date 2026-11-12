@@ -1,17 +1,17 @@
 diff --git a/src/editor/preview/Scene3DView.tsx b/src/editor/preview/Scene3DView.tsx
-index 16a963e1ff2ed5416b8ced2d6563bcc4693ef57c..cedae20f9e39a3436cb5189972caa9083ca2b77c 100644
+index df7d78eb4f6f350fd97918c25f1186fa94ecd3f0..80fd91ba42bf7cc144d74ba42458ee12d7db07be 100644
 --- a/src/editor/preview/Scene3DView.tsx
 +++ b/src/editor/preview/Scene3DView.tsx
-@@ -15,7 +15,6 @@ import {
- import { cameraFor, DEFAULT_FOV_DEG, stageToWorld } from "../../kernel/space3d";
+@@ -34,7 +34,6 @@ import {
+ } from "../../kernel/space3d";
  import { motionOf, pickBakeT, sampleTimesFor, texKeyOf, type TimedClip } from "./bakeTime";
  import { isScrubbing, subscribeScrub } from "../timeline/useScrub";
 -import { ONLINE } from "../../online/mode";
  import { StreamPlayer, PushedStreamSource, type StreamPlaneRequest } from "../../render/streamPlayer";
  import { isStreamOrigin } from "../../render/streamSegments.mjs";
  import { currentReadyIndex } from "../snapshotFeed";
-@@ -426,7 +425,6 @@ export function Scene3DView({ project, t }: Props) {
-     /* 轨道流播放器：从隐藏画布中解码并获取各卡片轨道流 */
+@@ -608,7 +607,6 @@ export function Scene3DView({ project, t, mode = "space", onSelectCamera }: Prop
+     /* Track stream player: decodes from a hidden canvas and fetches each card's track stream */
      const player = new StreamPlayer({
        root: () => streamHost.current,
 -      ...(ONLINE ? { source: new PushedStreamSource() } : {}),

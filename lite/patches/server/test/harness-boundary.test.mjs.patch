@@ -1,0 +1,49 @@
+diff --git a/server/test/harness-boundary.test.mjs b/server/test/harness-boundary.test.mjs
+index 6481e66ccffb316a8ff940361be5c9a8969a3b9f..da976cea8896be29974d5bde3fd42641c2f07df3 100644
+--- a/server/test/harness-boundary.test.mjs
++++ b/server/test/harness-boundary.test.mjs
+@@ -7,7 +7,43 @@ import os from 'node:os';
+ import path from 'node:path';
+ import { fileURLToPath } from 'node:url';
+ 
+-import { commentRanges, inComment } from './community-ownership.mjs';
++function commentRanges(src) {
++  const ranges = [];
++  let i = 0;
++  const n = src.length;
++  while (i < n) {
++    const c = src[i];
++    if (c === '/' && src[i + 1] === '/') {
++      const start = i;
++      while (i < n && src[i] !== '\n') i += 1;
++      ranges.push([start, i]);
++      continue;
++    }
++    if (c === '/' && src[i + 1] === '*') {
++      const start = i;
++      i += 2;
++      while (i < n && !(src[i] === '*' && src[i + 1] === '/')) i += 1;
++      i = Math.min(i + 2, n);
++      ranges.push([start, i]);
++      continue;
++    }
++    if (c === "'" || c === '"' || c === '`') {
++      const quote = c;
++      i += 1;
++      while (i < n) {
++        if (src[i] === '\\') { i += 2; continue; }
++        if (src[i] === quote) { i += 1; break; }
++        if (quote !== '`' && src[i] === '\n') break; // Unclosed single-line string; do not consume the entire file
++        i += 1;
++      }
++      continue;
++    }
++    i += 1;
++  }
++  return ranges;
++}
++
++const inComment = (ranges, idx) => ranges.some(([a, b]) => idx >= a && idx < b);
+ import {
+   Agent,
+   MessageHistory,

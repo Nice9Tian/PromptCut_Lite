@@ -1,5 +1,6 @@
 /**
- * 「用不了的能力怎么办」:提示词里那张决策表按真实情况写。
+ * "What to do with unavailable capabilities": Write the decision table in the prompt according to
+ * the actual situation.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,47 +11,50 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const prompt = fs.readFileSync(path.join(here, '..', 'ai-system-prompt.md'), 'utf8');
 
-test('提示词:「必须先看素材」那条指向决策表,不再是一条没有出口的硬要求', () => {
-  const must = prompt.slice(prompt.indexOf('排卡之前必须先用'), prompt.indexOf('用不了的能力怎么办'));
-  assert.match(must, /这一条做不到时/);
-  assert.match(must, /不要自己蒙着做下去/);
+test('prompt: the "must look at the media first" item points to the decision table, and is no longer a hard requirement with no way out', () => {
+  const must = prompt.slice(prompt.indexOf('you must first look at the picture with the media mode of `see_frames` (`source: "media"`) before arranging cards'), prompt.indexOf('What to do when a capability is unavailable'));
+  assert.match(must, /When this item cannot be done/);
+  assert.match(must, /do not carry on blindly by yourself/);
 });
 
-test('提示词:决策表三条路都在,且「硬前提」有可操作的判据', () => {
-  const table = prompt.slice(prompt.indexOf('- **用不了的能力怎么办'), prompt.indexOf('- **先落地,再打磨'));
-  assert.ok(table, '决策表那一节要在交互原则里');
-  // 三条路
-  assert.match(table, /它是\*\*硬前提\*\*/);
-  assert.match(table, /它\*\*不是\*\*硬前提/);
-  assert.match(table, /同一个错误连续 2 次/);
-  // 硬前提那条要落到 final + blocked 的汇报并停下:blocked 是界面上「等你回话」那一位
-  assert.match(table, /`final: true`、`blocked: true` 的 `report_progress`/);
-  assert.match(table, /然后停下,不要再调工具/);
-  // 判据:用户提到画面内容就算硬前提;拿不准就停
-  assert.match(table, /谁在哪、避开什么/);
-  assert.match(table, /拿不准就当硬前提停下来问/);
-  // 明确排除「重试第三次」和「当它不存在接着做」
-  assert.match(table, /不包括"重试第三次"/);
-  assert.match(table, /不包括"当它不存在,接着做"/);
-  // 结果里带 cloudUnavailable 也算一种信号
+test('prompt: all three options of the decision table are present, and "hard prerequisite" has an actionable criterion', () => {
+  const table = prompt.slice(prompt.indexOf('- **What to do when a capability is unavailable'), prompt.indexOf('- **Land it first, polish later'));
+  assert.ok(table, 'the decision table section must be in the interaction principles');
+  // Three paths
+  assert.match(table, /It \*\*is\*\* a hard prerequisite/);
+  assert.match(table, /It is \*\*not\*\* a hard prerequisite/);
+  assert.match(table, /the same error 2 times in a row/);
+  // The hard prerequisite path must land on a final + blocked progress report and stop: blocked is
+  // the "waiting for your reply" bit in the UI
+  assert.match(table, /`report_progress` with `final: true` and `blocked: true`/);
+  assert.match(table, /Then stop and do not call any more tools/);
+  // Criterion: user mentioning visual content counts as a hard prerequisite; stop if unsure
+  assert.match(table, /who is where, what to avoid/);
+  assert.match(table, /When in doubt, treat it as a hard prerequisite and stop to ask/);
+  // Explicitly exclude "retry a third time" and "continue as if it does not exist"
+  assert.match(table, /includes "retry a third time"/);
+  assert.match(table, /includes "carry on as if it did not exist"/);
+  // Having cloudUnavailable in the result also counts as a signal
   assert.match(table, /cloudUnavailable/);
 });
 
-test('提示词:先落地再打磨,并说明只有交给工具的才算交付', () => {
-  const ship = prompt.slice(prompt.indexOf('- **先落地,再打磨'));
-  assert.match(ship, /只有真正交给工具的东西才算交付/);
-  assert.match(ship, /写在代码块里的卡片源码/);
-  assert.match(ship, /还剩一半和只剩四分之一时提醒你一次/, '要和 harness 真发的那两条提示对得上');
+test('prompt: land it first and polish later, and state that only what is handed to a tool counts as delivered', () => {
+  const ship = prompt.slice(prompt.indexOf('- **Land it first, polish later'));
+  assert.match(ship, /only what has actually been handed to a tool counts as delivered/);
+  assert.match(ship, /card source written in code blocks/);
+  assert.match(ship, /remind you once when half is left and once when only a quarter is left/, 'must match the two hints the harness actually sends');
 });
 
-test('提示词:停下来等用户的那几处都改成 blocked,并说清不该乱填', () => {
-  // 决策表之外还有三处「停下来等用户」:汇报那一节、网页撞墙交接、指令含糊要澄清
-  for (const anchor of ['要用户做事或回答时也一样', '无法理解时询问', '把窗口挪到用户面前']) {
+test('prompt: every place that stops to wait for the user is changed to blocked, with a clear note not to fill it in carelessly', () => {
+  // Outside the decision table, there are three other places to "stop and wait for user": the progress
+  // report section, web page blocked handoff, and clarifying ambiguous instructions
+  for (const anchor of ['The same applies when you need the user to do something or answer', 'Ask when you cannot understand', 'bring the window to the user']) {
     assert.ok(prompt.includes(anchor), anchor);
   }
-  assert.match(prompt, /都调 `final: true` \*\*且 `blocked: true`\*\* 的 `report_progress`/);
-  assert.match(prompt, /- \*\*无法理解时询问\*\*: [^\n]*`final: true`、`blocked: true`/);
-  // 别乱填:做完了或只是撞上限不算「等你回话」
-  assert.match(prompt, /自己做完了、或者只是撞上轮次上限,不要填 `blocked`/);
-  assert.match(prompt, /`blocked: true` 隐含 `final`/);
+  assert.match(prompt, /in all these cases call `report_progress` with `final: true` \*\*and `blocked: true`\*\*/);
+  assert.match(prompt, /- \*\*Ask when you cannot understand\*\*: [^\n]*`final: true` and `blocked: true`/);
+  // Do not fill arbitrarily: completed or merely hitting the limit does not count as "waiting for
+  // your reply"
+  assert.match(prompt, /If you finished by yourself, or merely hit the turn limit, do not set `blocked`/);
+  assert.match(prompt, /`blocked: true` implies `final`/);
 });

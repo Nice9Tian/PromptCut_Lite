@@ -10,14 +10,18 @@ import { GroupBrowser } from "./library/GroupBrowser";
 import { useMediaGroup, useMediaMenu } from "./library/mediaGroups";
 import { useCutsGroup } from "./library/cutsGroup";
 import { useReadOnly } from "../readOnly";
+import { tr } from "../../i18n/index.ts";
 
 /**
- * 「素材库」分区:导入媒体 → 搜索 → 分类胶囊 → 分组(视频 / 图片 / 音频)。
- * 卡片、部件在「动画」分区(AnimationsSection)。
+ * "Media library" section: import media → search → category pills → groups (video / image / audio).
+ * Cards and parts are in the "Animations" section (AnimationsSection).
  *
- * 右键菜单、删除确认框、底部提示条都挂在这一级常驻渲染,
- * 不跟着某个组的详情走 —— 在总览、组详情、搜索结果里右键都弹得出来。
- * 以前 pc.left.group.library 里存过卡片组的 id:不在 LIBRARY_GROUP_IDS 里,useOpenGroup 读出来就是总览。
+ * The context menu, delete confirm dialog and bottom hint bar are all mounted and rendered
+ * persistently at this level,
+ * not following the detail of some group: right-clicking in the overview, group detail and search
+ * results all pops them up.
+ * pc.left.group.library used to store card group ids: ones not in LIBRARY_GROUP_IDS are read by
+ * useOpenGroup as the overview.
  */
 export function LibrarySection() {
   const [search, setSearch] = useState("");
@@ -27,7 +31,7 @@ export function LibrarySection() {
   const [msg, flash] = useFlash();
   const mediaInputRef = useRef<HTMLInputElement>(null);
 
-  // 素材三组共用一份右键菜单
+  // The three media groups share one context menu
   const mediaMenu = useMediaMenu(flash);
   const videos = useMediaGroup("video", q, mediaMenu.openMenu);
   const images = useMediaGroup("image", q, mediaMenu.openMenu);
@@ -45,19 +49,19 @@ export function LibrarySection() {
     if (!files || files.length === 0) return;
     try {
       const { counts, skipped, firstKind, rejected } = await importMediaFiles(files);
-      // 导入完成后把用户带到素材落地的那个组,让他看见东西进来了
+      // After an import, take the user to the group where the media landed, so they can see it came in
       if (firstKind) setOpenGroup(KIND_GROUP[firstKind]);
       if (skipped.length > 0) {
         const done = (Object.keys(counts) as AssetKind[])
           .filter((k) => counts[k] > 0)
           .map((k) => `${KIND_LABEL[k]} ${counts[k]}`)
-          .join("、");
+          .join(tr(", "));
         const details = rejected.length ? `\n\n${rejected.join("\n")}` : "";
-        alert(`${done ? `已导入:${done}。\n\n` : ""}这些文件不是视频 / 音频 / 图片,已跳过:\n${skipped.join("\n")}${details}`);
+        alert(tr("{0}These files are not video / audio / images and were skipped:\n{1}{2}", done ? tr("Imported: {0}.\n\n", done) : "", skipped.join("\n"), details));
       }
     } catch (err: unknown) {
       const m = err instanceof Error ? err.message : String(err);
-      alert(`导入素材失败: ${m}`);
+      alert(tr("Failed to import media: {0}", m));
     } finally {
       e.target.value = "";
     }
@@ -65,20 +69,20 @@ export function LibrarySection() {
 
   return (
     <div data-pc="library" className="pc-left-section">
-      <SectionHead title="素材库">
-        {/* 常驻的导入:选进来的文件按类型自动落到视频 / 图片 / 音频组 */}
+      <SectionHead title={tr("Media library")}>
+        {/* Always-visible import: selected files are sorted by type into the video / image / audio groups */}
         <button
           type="button"
           className="pc-btn-primary is-block pc-left-primary"
           data-pc-add="media"
-          title={ro.locked ? ro.why : "导入素材(视频 / 音频 / 图片,按类型自动归位)"}
+          title={ro.locked ? ro.why : tr("Import media (video / audio / images, filed automatically by type)")}
           disabled={ro.locked}
           onClick={importMedia}
         >
           <IconImport size={16} />
-          <span>导入媒体</span>
+          <span>{tr("Import media")}</span>
         </button>
-        <SearchBox value={search} onChange={setSearch} placeholder="搜索素材…" dataPc="search" />
+        <SearchBox value={search} onChange={setSearch} placeholder={tr("Search media…")} dataPc="search" />
       </SectionHead>
 
       <GroupBrowser
@@ -88,7 +92,7 @@ export function LibrarySection() {
         openId={openGroup}
         onOpen={setOpenGroup}
         onImport={ro.locked ? undefined : importMedia}
-        noMatch="没有匹配的素材"
+        noMatch={tr("No matching media")}
       />
 
       <FlashBar msg={msg} />

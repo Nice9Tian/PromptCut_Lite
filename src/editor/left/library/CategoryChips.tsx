@@ -1,22 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import { CATEGORIES, type GroupCategory } from "./groups";
+import { tr } from "../../../i18n/index.ts";
 
 export interface CategoryChipsProps {
   active: GroupCategory | null;
-  /** 点胶囊本体:只看这一类的组(null = 所有) */
+  /** Click the pill itself: show only the groups of this category (null = all) */
   onCategory: (cat: GroupCategory | null) => void;
-  /** 点 ▾ 菜单里的一项:直接打开那个组 */
+  /** Click an item in the ▾ menu: open that group directly */
   onOpenGroup: (groupId: string) => void;
-  /** 每一类下面当前能打开的组 */
+  /** The groups that can currently be opened under each category */
   groupsByCategory: Record<GroupCategory, { id: string; title: string }[]>;
 }
 
-/** 总览顶部的筛选胶囊行:`所有` / `视觉 ▾` / `音频 ▾` */
+/** Filter chip row at the top of the overview: `All` / `Visual ▾` / `Audio ▾` */
 export function CategoryChips({ active, onCategory, onOpenGroup, groupsByCategory }: CategoryChipsProps) {
   const [menu, setMenu] = useState<GroupCategory | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
-  // 小菜单:点外面或按 Esc 收起
+  // Small menu: click outside or press Esc to close
   useEffect(() => {
     if (!menu) return;
     const onDown = (e: MouseEvent) => {
@@ -34,7 +35,7 @@ export function CategoryChips({ active, onCategory, onOpenGroup, groupsByCategor
   }, [menu]);
 
   return (
-    <div ref={ref} className="pc-lib-chips" role="toolbar" aria-label="分类">
+    <div ref={ref} className="pc-lib-chips" role="toolbar" aria-label={tr("Category")}>
       <button
         type="button"
         className={`pc-chip${active === null ? " is-on" : ""}`}
@@ -45,7 +46,7 @@ export function CategoryChips({ active, onCategory, onOpenGroup, groupsByCategor
           onCategory(null);
         }}
       >
-        所有
+        {tr("All")}
       </button>
       {CATEGORIES.map((cat) => {
         const groups = groupsByCategory[cat] ?? [];
@@ -60,14 +61,14 @@ export function CategoryChips({ active, onCategory, onOpenGroup, groupsByCategor
                 onCategory(cat);
               }}
             >
-              {cat}
+              {tr(cat === "visual" ? "Visual" : "Audio")}
             </button>
             <button
               type="button"
               className="pc-lib-split-caret"
               aria-haspopup="menu"
               aria-expanded={menu === cat}
-              title={`「${cat}」里的组`}
+              title={tr("Groups in \"{0}\"", cat)}
               onClick={() => setMenu((m) => (m === cat ? null : cat))}
             >
               <svg className="pc-chip-caret" viewBox="0 0 14 14" aria-hidden="true">
@@ -77,7 +78,7 @@ export function CategoryChips({ active, onCategory, onOpenGroup, groupsByCategor
             {menu === cat && (
               <div className="pc-lib-menu" role="menu">
                 {groups.length === 0 ? (
-                  <div className="pc-lib-menu-empty">没有可打开的组</div>
+                  <div className="pc-lib-menu-empty">{tr("No groups to open")}</div>
                 ) : (
                   groups.map((g) => (
                     <button

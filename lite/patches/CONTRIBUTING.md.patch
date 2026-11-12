@@ -1,5 +1,5 @@
 diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
-index 365c0365dec8a453cdb138965c760acc5c2f0454..87c50e03fb276113ea51a7f8508784cf77e397ee 100644
+index a72b52fcad161b1ac4df76d88c5df5a83f7f489c..0be28372589807cca1c37a3acf356a7c0c0e3286 100644
 --- a/CONTRIBUTING.md
 +++ b/CONTRIBUTING.md
 @@ -1,4 +1,4 @@
@@ -30,6 +30,6 @@ index 365c0365dec8a453cdb138965c760acc5c2f0454..87c50e03fb276113ea51a7f8508784cf
  
 +想在"暂缓"区域动手，先开 issue 说一下，我们会告诉你那块接缝拆到哪儿了。
 +
- ## 提交前自己跑什么
+ ## 界面文字
  
- ```bash
+ 界面有英文、简体中文、日语三种，源语言是英文。

@@ -1,21 +1,22 @@
 diff --git a/src/editor/left/library/mediaGroups.tsx b/src/editor/left/library/mediaGroups.tsx
-index ecea7ffddf1211dd2fae6fca20e0333aff197fd8..8c1a978a513b98f8dd8565bac9f9e1f4ab322609 100644
+index 12d2bbd9e3e7b7b8e57377b2c80fedc0531ce947..0654bb433aad5c7ccc74389491105865bf9a4ffa 100644
 --- a/src/editor/left/library/mediaGroups.tsx
 +++ b/src/editor/left/library/mediaGroups.tsx
-@@ -11,7 +11,6 @@ import { useMediaTierPolicy, usePreviewMediaUrl } from "../../media/previewUrl";
+@@ -11,8 +11,6 @@ import { useMediaTierPolicy, usePreviewMediaUrl } from "../../media/previewUrl";
  import { mediaTierPolicy, originalMediaUrl, previewMediaUrl } from "../../../render/mediaTier";
  import { ThumbTile } from "./ThumbTile";
  import type { GroupData, GroupItem } from "./groups";
--import { onlinePage, onlineUnsupported } from "../../../online/pageFlag";
+-import { onlinePage } from "../../../online/pageFlag";
+-import { onlineUnsupported } from "../../../online/onlineUnsupported";
  import { useReadOnly } from "../../readOnly";
+ import { tr } from "../../../i18n/index.ts";
  
- /**
-@@ -336,8 +335,6 @@ export function useMediaMenu(flash: (text: string, ms?: number) => void) {
+@@ -349,8 +347,6 @@ export function useMediaMenu(flash: (text: string, ms?: number) => void) {
            {
-             label: m.transcript ? "查看字幕" : "转写字幕",
-             hint: m.transcript ? `${m.transcript.segments.length} 段` : undefined,
--            // 在线浏览器模式没有语音识别(C10 契约第 10 节):没有字幕的只能转写,置灰;已有字幕的照常查看
--            ...(!m.transcript && onlinePage() ? { disabled: true, title: onlineUnsupported("语音识别") } : {}),
-             // 走全局入口:左栏切到「字幕」分区、展开抽屉、聚焦这份素材
+             label: m.transcript ? tr("View captions") : tr("Transcribe captions"),
+             hint: m.transcript ? tr("{0} segments", m.transcript.segments.length) : undefined,
+-            // Online browser mode has no speech recognition (C10 contract, section 10): media without captions can only be transcribed, greyed out; media that already has captions can be viewed as usual
+-            ...(!m.transcript && onlinePage() ? { disabled: true, title: onlineUnsupported(tr("Speech recognition")) } : {}),
+             // Go through the global entry: the left rail switches to the "Captions" section, expands the drawer, and focuses this media
              onClick: () => requestCaptions(m.id),
            },

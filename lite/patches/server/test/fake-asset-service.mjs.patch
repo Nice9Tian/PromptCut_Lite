@@ -1,8 +1,8 @@
 diff --git a/server/test/fake-asset-service.mjs b/server/test/fake-asset-service.mjs
-index 97b8859c5dd4156dc56a3b552123202772717fc5..1b373cdcf9353654b0cfda2c75ead04409cdbb33 100644
+index 0442dd71d54135d4b2505a73f73e839fd3f68f8a..c4c99f81118bfeecc187adfa380cb3cc1af876ef 100644
 --- a/server/test/fake-asset-service.mjs
 +++ b/server/test/fake-asset-service.mjs
-@@ -153,3 +153,26 @@ export function createAssetHarness() {
+@@ -160,3 +160,26 @@ export function createAssetHarness() {
  
    return { asset, serve, memoryStore, cleanup, compileTs };
  }

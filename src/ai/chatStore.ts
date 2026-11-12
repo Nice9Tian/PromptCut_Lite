@@ -20,20 +20,20 @@ export interface StoredChat {
   messages: ChatMessage[];
 }
 
-/** 生成符合 /^[A-Za-z0-9_-]{1,64}$/ 规范的新会话 ID */
+/** Generate a new session ID matching the /^[A-Za-z0-9_-]{1,64}$/ specification */
 export function newChatId(): string {
   const time = Date.now().toString(36);
   const rand = Math.random().toString(36).slice(2, 6).padEnd(4, "0");
   return `c-${time}-${rand}`;
 }
 
-/** 获取会话概要列表（按更新时间倒序） */
+/** Get session summary list (in descending order of update time) */
 export async function listChats(q?: string): Promise<ChatSummary[]> {
   try {
     const url = q ? `/api/chats/list?q=${encodeURIComponent(q)}` : "/api/chats/list";
     const res = await fetch(url);
     if (!res.ok) {
-      console.warn(`获取对话历史失败: HTTP ${res.status}`);
+      console.warn(`Failed to fetch chat history: HTTP ${res.status}`);
       return [];
     }
     const data = await res.json();
@@ -42,17 +42,17 @@ export async function listChats(q?: string): Promise<ChatSummary[]> {
     }
     return [];
   } catch (err: unknown) {
-    console.warn("获取对话历史网络异常:", err);
+    console.warn("Network error fetching chat history:", err);
     return [];
   }
 }
 
-/** 根据会话 ID 读取完整会话内容 */
+/** Read full session content by session ID */
 export async function getChat(id: string): Promise<StoredChat | null> {
   try {
     const res = await fetch(`/api/chats/get?id=${encodeURIComponent(id)}`);
     if (!res.ok) {
-      console.warn(`读取对话失败: HTTP ${res.status}`);
+      console.warn(`Failed to read chat: HTTP ${res.status}`);
       return null;
     }
     const data = await res.json();
@@ -61,12 +61,12 @@ export async function getChat(id: string): Promise<StoredChat | null> {
     }
     return null;
   } catch (err: unknown) {
-    console.warn("读取对话网络异常:", err);
+    console.warn("Network error reading chat:", err);
     return null;
   }
 }
 
-/** 保存完整会话到服务端（防抖与原子落盘） */
+/** Save full session to server (debounced and atomic flush to disk) */
 export async function saveChat(chat: StoredChat): Promise<void> {
   try {
     const res = await fetch("/api/chats/save", {
@@ -75,14 +75,14 @@ export async function saveChat(chat: StoredChat): Promise<void> {
       body: JSON.stringify(chat),
     });
     if (!res.ok) {
-      console.warn(`保存对话失败: HTTP ${res.status}`);
+      console.warn(`Failed to save chat: HTTP ${res.status}`);
     }
   } catch (err: unknown) {
-    console.warn("保存对话网络异常:", err);
+    console.warn("Network error saving chat:", err);
   }
 }
 
-/** 删除指定会话及其关联工作空间目录 */
+/** Delete specified session and its associated workspace directory */
 export async function deleteChat(id: string): Promise<void> {
   try {
     const res = await fetch("/api/chats/delete", {
@@ -91,9 +91,9 @@ export async function deleteChat(id: string): Promise<void> {
       body: JSON.stringify({ id }),
     });
     if (!res.ok) {
-      console.warn(`删除对话失败: HTTP ${res.status}`);
+      console.warn(`Failed to delete chat: HTTP ${res.status}`);
     }
   } catch (err: unknown) {
-    console.warn("删除对话网络异常:", err);
+    console.warn("Network error deleting chat:", err);
   }
 }

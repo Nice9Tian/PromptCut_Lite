@@ -1,5 +1,5 @@
 diff --git a/src/editor/dock/DockPages.tsx b/src/editor/dock/DockPages.tsx
-index 8d173c3713da216b7909eee03b5d017d8aa1ff3c..64cec31fd03908df5ea06a96ff84dcfb571b8f29 100644
+index ae53bed4af97e87922825446b2db4229de3d851b..d06deb68bece843ce0fc1691a4c6f9594e5215b6 100644
 --- a/src/editor/dock/DockPages.tsx
 +++ b/src/editor/dock/DockPages.tsx
 @@ -9,7 +9,6 @@ import { EffectsSection } from "../left/EffectsSection";
@@ -16,8 +16,8 @@ index 8d173c3713da216b7909eee03b5d017d8aa1ff3c..64cec31fd03908df5ea06a96ff84dcfb
  const ScriptPageMemo = memo(ScriptPage);
 -const ONLINE_BUILD = typeof import.meta.env !== "undefined" && import.meta.env.VITE_PC_ONLINE === "1";
 -/**
-- * 在线浏览器模式的 Agent 页:AI 助手的本机版要本机编辑器进程(模型配置、对话记录、工具执行都走它的 `/api/*`),在线页面按契约第 2 节
-- * 不挂 AiPanel,换成「云端」接入方式的 AI 栏(`OnlineAgentPage`,云端 Agent 服务契约 9.5;不分身份、不分档,`product/platforms.md`「AI 栏」)。
+- * Agent page in online browser mode: the local version of the AI assistant needs the local editor process (model config, chat history, and tool execution all go through its `/api/*`); per section 2 of the contract, the online page
+- * does not mount AiPanel, and uses an AI panel with the "cloud" connection type instead (`OnlineAgentPage`, Cloud Agent service contract 9.5; no distinction by identity or tier, see "AI panel" in `product/platforms.md`).
 - */
 -function OnlineAgentSwitch(props: { tabId: string; active: boolean; mcpConnected: boolean }) {
 -  return <OnlineAgentPage tabId={props.tabId} active={props.active} />;

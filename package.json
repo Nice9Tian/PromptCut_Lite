@@ -3,6 +3,10 @@
   "private": true,
   "version": "0.7.30",
   "type": "module",
+  "imports": {
+    "#promptcut-harness": "./server/harness/index.mjs",
+    "#promptcut-harness/*": "./server/harness/*"
+  },
   "scripts": {
     "dev": "vite --port 5190 --strictPort --host 127.0.0.1",
     "test": "node scripts/test-suite.mjs",

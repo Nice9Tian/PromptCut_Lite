@@ -1,8 +1,8 @@
 diff --git a/server/asset-store/index.mjs b/server/asset-store/index.mjs
-index 1da89ce355bb12a316b64c428739c1fb5f228afc..61be34183c9c6a32be4f2059b2b40bb8cee37ec0 100644
+index a3a305540c60b5508a54353e2a176c2389cfebd0..77dcdc95857eadd28758860045692df10cc2ff52 100644
 --- a/server/asset-store/index.mjs
 +++ b/server/asset-store/index.mjs
-@@ -19,11 +19,6 @@ import { createFsStore, ensureLayoutSync, readLayoutSync, LAYOUT_FILE, LAYOUTS }
+@@ -24,11 +24,6 @@ import { createFsStore, ensureLayoutSync, readLayoutSync, LAYOUT_FILE, LAYOUTS }
  import { createMemoryStore } from './memory-store.mjs';
  import { BLOB_CHUNK_SIZE } from './blob-store.mjs';
  import { createAssetClient } from './client.mjs';

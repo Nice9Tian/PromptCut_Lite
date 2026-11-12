@@ -1,11 +1,14 @@
 /**
- * c65-editor 给 docsync 加的几件事的测试。跑:node --test src/store/docsyncEditor.test.mjs
+ * Tests for additions to docsync by c65-editor. Run: node --test src/store/docsyncEditor.test.mjs
  *
- *   - AI 栏「撤销这一步」(`revertRemote`):以页面身份提交 Agent 那次提交的逆操作,带 undoOf、进页面自己的撤销栈;
- *     这一步之后被**不同于那个 Agent 对话**的任何写入(含页面自己后来的改动)改过的实体不撤(2026-09-26 主会话裁定);
- *   - 别人的改动发 `remote` 通知(时间轴描边用);
- *   - 超过 256 KiB 的根替换走 `project.upload`(真文档服务,`server/docservice/modules/project.mjs`);
- *     差异本身超过 256 KiB 时改成一条根替换。
+ *   - AI panel "Undo this step" (`revertRemote`): commits inverse operation of Agent's commit as
+ *     page identity, with undoOf, enters page's own undo stack; entities modified after this step
+ *     by any write **different from that Agent chat** (including page's own later changes) are not
+ *     undone (lead session ruling, 2026-09-26);
+ *   - Others' modifications emit `remote` notifications (used for timeline stroke);
+ *   - Root replacements exceeding 256 KiB go through `project.upload` (real document service,
+ *     `server/docservice/modules/project.mjs`); converted to a root replacement when diff itself
+ *     exceeds 256 KiB.
  */
 import { srcUrl } from "../testing/registerTs.mjs";
 import test from "node:test";
@@ -28,9 +31,9 @@ function page(svc, session, initial) {
 function clipsProject() {
   return {
     version: 1, id: "p", name: "p", width: 1920, height: 1080, fps: 30, duration: 30, themeId: "midnight", media: [],
-    tracks: [{ id: "t1", name: "序列 1", clips: [
-      { id: "c1", cardId: "title", start: 0, end: 2, params: { text: "一" } },
-      { id: "c2", cardId: "title", start: 3, end: 5, params: { text: "二" } },
+    tracks: [{ id: "t1", name: "Track 1", clips: [
+      { id: "c1", cardId: "title", start: 0, end: 2, params: { text: "One" } },
+      { id: "c2", cardId: "title", start: 3, end: 5, params: { text: "Two" } },
     ] }],
   };
 }
@@ -48,23 +51,23 @@ function setup() {
 
 const lastOp = (svc) => svc.log[svc.log.length - 1];
 
-test("撤这一步:整步照撤,带 undoOf、进页面自己的撤销栈,Ctrl+Z 能把 Agent 的改动恢复回来", () => {
+test("undo this step: undo the whole step, carry undoOf, enter the page's own undo stack, and Ctrl+Z can restore the Agent's edit", () => {
   const { svc, A, B, G } = setup();
   G.ds.commit(withText(withText(G.ds.project, "c1", "G1"), "c2", "G2"));
   svc.drain();
   const agentOp = lastOp(svc).opId;
-  assert.equal(A.ds.canRevertRemote(agentOp), true, "页面收到时记下了逆操作");
+  assert.equal(A.ds.canRevertRemote(agentOp), true, "the page recorded the inverse op on receipt");
   assert.equal(A.ds.canUndo(), false);
   const r = A.ds.revertRemote({ opId: agentOp });
   assert.equal(r.done, true);
   assert.deepEqual(r.skipped, []);
   svc.drain();
-  assert.equal(textOf(svc.project, "c1"), "一");
-  assert.equal(textOf(svc.project, "c2"), "二");
-  assert.equal(lastOp(svc).session, "A", "以页面身份提交");
-  assert.equal(lastOp(svc).undoOf, agentOp, "undoOf 指向 Agent 那次提交");
-  assert.equal(textOf(B.ds.project, "c1"), "一", "别人照常收到");
-  assert.equal(A.ds.canUndo(), true, "进了页面自己的撤销栈");
+  assert.equal(textOf(svc.project, "c1"), "One");
+  assert.equal(textOf(svc.project, "c2"), "Two");
+  assert.equal(lastOp(svc).session, "A", "committed as the page");
+  assert.equal(lastOp(svc).undoOf, agentOp, "undoOf points to that Agent commit");
+  assert.equal(textOf(B.ds.project, "c1"), "One", "others receive it as usual");
+  assert.equal(A.ds.canUndo(), true, "entered the page's own undo stack");
   A.ds.undo();
   svc.drain();
   assert.equal(textOf(svc.project, "c1"), "G1");
@@ -72,7 +75,7 @@ test("撤这一步:整步照撤,带 undoOf、进页面自己的撤销栈,Ctrl+Z 
   assert.ok(A.notices.some((n) => n.kind === "revert-remote" && n.of === agentOp));
 });
 
-test("撤这一步:之后被别人改过的实体不撤,告诉是谁;Agent 自己后来又改的不算冲突", () => {
+test("undo this step: entities edited later by others are not undone and who did it is reported; later edits by the Agent itself are not conflicts", () => {
   const { svc, A, B, G } = setup();
   G.ds.commit(withText(withText(G.ds.project, "c1", "G1"), "c2", "G2"));
   svc.drain();
@@ -85,11 +88,11 @@ test("撤这一步:之后被别人改过的实体不撤,告诉是谁;Agent 自�
   assert.equal(r.done, true);
   assert.deepEqual(r.skipped.map((s) => [s.entity, s.by.session]), [["/tracks/@t1/clips/@c2", "B"]]);
   svc.drain();
-  assert.equal(textOf(svc.project, "c1"), "一", "Agent 自己后来改的 c1 照撤(撤到那一步之前)");
-  assert.equal(textOf(svc.project, "c2"), "B2", "B 后来改的保留");
+  assert.equal(textOf(svc.project, "c1"), "One", "c1, edited later by the Agent itself, is still undone (back to before that step)");
+  assert.equal(textOf(svc.project, "c2"), "B2", "B's later edits are kept");
 });
 
-test("撤这一步:页面自己后来改过的也挡(含还没确认的);全部挡住时不产生提交", () => {
+test("undo this step: later edits by the page itself also block it (including unconfirmed ones); when everything is blocked, no commit is produced", () => {
   const { svc, A, G } = setup();
   G.ds.commit(withText(G.ds.project, "c1", "G1"));
   svc.drain();
@@ -101,32 +104,33 @@ test("撤这一步:页面自己后来改过的也挡(含还没确认的);全部�
   assert.equal(r.done, false);
   assert.deepEqual(r.skipped.map((s) => [s.entity, s.by.session]), [["/tracks/@t1/clips/@c1", "A"]]);
   svc.drain();
-  assert.equal(svc.rev, revBefore, "一处都没撤成不产生提交");
+  assert.equal(svc.rev, revBefore, "nothing was undone, so no commit is produced");
   assert.equal(textOf(svc.project, "c1"), "A1");
-  // 还没确认的本地修改
+  // Unconfirmed local modifications
   G.ds.commit(withText(G.ds.project, "c2", "G2"));
   svc.drain();
   const op2 = lastOp(svc).opId;
-  A.ds.commit(withText(A.ds.project, "c2", "A2-未确认"));
+  A.ds.commit(withText(A.ds.project, "c2", "A2-unconfirmed"));
   const r2 = A.ds.revertRemote({ opId: op2 });
   assert.equal(r2.done, false);
   assert.equal(r2.skipped[0].entity, "/tracks/@t1/clips/@c2");
 });
 
-test("撤这一步:事件带来的 inverse 优先;查不到逆操作时撤不了", () => {
+test("undo this step: the inverse carried by the event takes priority; when no inverse op can be found, it cannot be undone", () => {
   const { svc, A, G } = setup();
   G.ds.commit(withText(G.ds.project, "c1", "G1"));
   svc.drain();
   const agentOp = lastOp(svc).opId;
   assert.equal(A.ds.canRevertRemote("nope"), false);
-  // 事件给的逆操作(这里故意给一个只改 c1 为「事件」的,验证用的是它)
-  const r = A.ds.revertRemote({ opId: agentOp, inverse: [{ op: "set", path: "/tracks/@t1/clips/@c1/params/text", value: "事件" }] });
+  // Inverse operation provided by event (here deliberately provide one that only changes c1 to
+  // "event" to verify it is used)
+  const r = A.ds.revertRemote({ opId: agentOp, inverse: [{ op: "set", path: "/tracks/@t1/clips/@c1/params/text", value: "Event" }] });
   assert.equal(r.done, true);
   svc.drain();
-  assert.equal(textOf(svc.project, "c1"), "事件");
+  assert.equal(textOf(svc.project, "c1"), "Event");
 });
 
-test("别人的改动发 remote 通知,带实体与写入身份;自己的不发", () => {
+test("others' edits emit a remote notice carrying the entity and the writer identity; one's own do not", () => {
   const { svc, A, B } = setup();
   B.ds.commit(withText(B.ds.project, "c2", "B2"));
   A.ds.commit(withText(A.ds.project, "c1", "A1"));
@@ -137,7 +141,7 @@ test("别人的改动发 remote 通知,带实体与写入身份;自己的不发"
   assert.equal(remote[0].by.session, "B");
 });
 
-/* ---------------- 真文档服务:大的根替换走分片上传 ---------------- */
+/* ---------------- Real document service: large root replacements use chunked upload ---------------- */
 
 const kit = await import("../../server/test/c65-kit.mjs");
 
@@ -151,10 +155,13 @@ async function realPage(env, session, initial, user = "u1") {
   return { ds, ws, sent };
 }
 
-/** 文档服务的当前版本:另开一个页面读(大项目的 project.state 分片发回,DocSync 自己拼) */
+/**
+ * Current version of the document service: read by opening another page (for large projects,
+ * project.state is sent back in chunks, DocSync reassembles them itself).
+ */
 async function serverCopy(env) {
   const R = await realPage(env, 'reader-' + Math.random().toString(36).slice(2, 6), {}, 'reader');
-  await kit.waitFor(() => R.ds.status === 'online', 10_000, '读者上线');
+  await kit.waitFor(() => R.ds.status === 'online', 10_000, 'reader online');
   const out = { rev: R.ds.rev, project: R.ds.project };
   R.ws.close();
   return out;
@@ -162,47 +169,47 @@ async function serverCopy(env) {
 
 function bigProject(n = 900) {
   const p = clipsProject();
-  p.tracks[0].clips = Array.from({ length: n }, (_, i) => ({ id: `c${i}`, cardId: "title", start: i * 2, end: i * 2 + 1, params: { text: `片段 ${i} ${"字".repeat(120)}` } }));
+  p.tracks[0].clips = Array.from({ length: n }, (_, i) => ({ id: `c${i}`, cardId: "title", start: i * 2, end: i * 2 + 1, params: { text: `clip ${i} ${"x".repeat(360)}` } }));
   return p;
 }
 
-test("超过 256 KiB 的根替换:分片 project.upload + 引用它的 project.op;文档服务落地,另一页面经 resync 拿到同一份", async (t) => {
+test("root replacement over 256 KiB: chunked project.upload + project.op referencing it; the document service applies it, and another page gets the same copy via resync", async (t) => {
   const env = await kit.startProjectService();
   t.after(() => env.cleanup());
   const A = await realPage(env, "A", clipsProject());
-  await kit.waitFor(() => A.ds.status === "online", 5000, "A 上线");
+  await kit.waitFor(() => A.ds.status === "online", 5000, "A online");
   const B = await realPage(env, "B", clipsProject(), "u2");
-  await kit.waitFor(() => B.ds.status === "online" && B.ds.rev === A.ds.rev, 5000, "B 上线");
+  await kit.waitFor(() => B.ds.status === "online" && B.ds.rev === A.ds.rev, 5000, "B online");
   const big = bigProject();
-  assert.ok(new TextEncoder().encode(JSON.stringify(big)).length > MAX_OPS_BYTES, "测试项目确实超过 256 KiB");
+  assert.ok(new TextEncoder().encode(JSON.stringify(big)).length > MAX_OPS_BYTES, "the test project really exceeds 256 KiB");
   A.ds.load(big);
   const settled = await A.ds.whenSettled({ timeoutMs: 10_000 });
   const uploads = A.sent.filter((m) => m.type === "project.upload");
-  assert.ok(uploads.length >= 2, `分了片:${uploads.length}`);
+  assert.ok(uploads.length >= 2, `chunked: ${uploads.length}`);
   const op = A.sent.filter((m) => m.type === "project.op").at(-1);
   assert.deepEqual(op.ops, [{ op: "set", path: "", upload: uploads[0].uploadId }]);
   const server = await serverCopy(env);
   assert.equal(server.rev, settled.rev);
   assert.equal(JSON.stringify(server.project), JSON.stringify(big));
-  await kit.waitFor(() => B.ds.rev === settled.rev && B.ds.status === "online", 10_000, "B 经 resync 拿到新版本");
+  await kit.waitFor(() => B.ds.rev === settled.rev && B.ds.status === "online", 10_000, "B gets the new version via resync");
   assert.equal(JSON.stringify(B.ds.project), JSON.stringify(big));
   A.ws.close();
   B.ws.close();
 });
 
-test("差异本身超过 256 KiB:改成一条根替换走上传,文档服务照样落地,逆操作仍按差异撤得回来", async (t) => {
+test("the diff itself exceeds 256 KiB: changed to a single root replacement via upload, the document service still applies it, and the inverse op can still be undone by diff", async (t) => {
   const env = await kit.startProjectService();
   t.after(() => env.cleanup());
   const A = await realPage(env, "A", clipsProject());
-  await kit.waitFor(() => A.ds.status === "online", 5000, "A 上线");
+  await kit.waitFor(() => A.ds.status === "online", 5000, "A online");
   await A.ds.whenSettled({ timeoutMs: 5000 });
   const next = { ...A.ds.project, tracks: [{ ...A.ds.project.tracks[0], clips: [...A.ds.project.tracks[0].clips, ...bigProject().tracks[0].clips.map((c) => ({ ...c, id: `n${c.id}`, start: c.start + 10, end: c.end + 10 }))] }] };
   A.ds.commit(next);
   await A.ds.whenSettled({ timeoutMs: 10_000 });
-  assert.ok(A.sent.some((m) => m.type === "project.upload"), "走了上传");
+  assert.ok(A.sent.some((m) => m.type === "project.upload"), "went through upload");
   assert.equal(JSON.stringify((await serverCopy(env)).project), JSON.stringify(A.ds.project));
   A.ds.undo();
   await A.ds.whenSettled({ timeoutMs: 10_000 });
-  assert.equal((await serverCopy(env)).project.tracks[0].clips.length, 2, "撤回到两个片段");
+  assert.equal((await serverCopy(env)).project.tracks[0].clips.length, 2, "undo back to two clips");
   A.ws.close();
 });

@@ -13,18 +13,24 @@ import { driveMedia, releaseMedia, targetTimeOf } from "../../render/mediaDrive"
 import { VideoTrack } from "../../render/VideoTrack";
 import { playbackUrl } from "../../render/mediaTier";
 import { confirmedMissingAudio } from "../io/missingMaterials";
+import { tr as trText } from "../../i18n/index.ts";
 
 /**
- * 预览里的素材层:画面(视频/图片)和声音(配乐、旁白)。
+ * Media layers in the preview: picture (video/images) and sound (music, narration).
  *
- * 画面层可以同时有多条——两段素材在时间上重叠、各自带淡入淡出,就是交叉溶解。
- * 时间轴上靠上的序列画在上面(videoLayersAt 已经按「最后一个 = 最上层」给好了顺序)。
- * 声音层每段一个 <audio>,音量走 opacityAt,所以音频段的淡入淡出同样有效。
+ * There can be several picture layers at once. Two media clips that overlap in time, each with its
+ * own fade in and fade out, make a crossfade.
+ * Tracks higher up on the timeline are drawn on top (videoLayersAt already returns them in the
+ * order "last one = topmost").
+ * Each sound segment gets one <audio>, and its volume follows opacityAt, so fades on audio
+ * segments work the same way.
  *
- * **E7 第 1 条之后画面层不在这个文件里**:`VideoTrack` 搬到了 `src/render/VideoTrack.tsx`
- * (舞台和主文档共用同一份),元素驱动搬到了 `src/render/mediaDrive.ts`,纯函数搬到了
- * `src/render/mediaSync.ts`。这里只剩「把它们按序列摆出来」和声音层(`AudioLayer`)——
- * 音频路由(`audio/previewAudio.ts`)只在这一侧接,舞台恒 `muted`。
+ * **After E7 step 1 the picture layers are no longer in this file**: `VideoTrack` moved to
+ * `src/render/VideoTrack.tsx` (the stage and the main document share the same copy), element
+ * driving moved to `src/render/mediaDrive.ts`, and the pure functions moved to
+ * `src/render/mediaSync.ts`. What is left here is "lay them out by track" and the sound layer
+ * (`AudioLayer`). Audio routing (`audio/previewAudio.ts`) is wired up on this side only; the
+ * stage is always `muted`.
  */
 
 
@@ -40,11 +46,12 @@ function AudioLayer({ project, clip, media, volume, t, playing, scrubbing, audio
   const target = nodeId ? Math.max(0, t - clip.start + cardOffset) : missingAudio ? missingMaterialSourceTime(clip, t) : targetTimeOf(clip, t);
   const [cardUrl, setCardUrl] = useState<string | null>(null);
   const [cardState, setCardState] = useState<"idle" | CardState>("idle");
-  // 这一段卡片声音的播放源是当场合成的(素材效果卡、在线页面判轻的内置声音)还是已入库的产物;只给验收探针看(`data-pc-audio-source`)
+  // Whether the playback source of this card sound is synthesized on the spot (media effect card) or an already stored product; only for the acceptance probe (`data-pc-audio-source`)
   const [cardLive, setCardLive] = useState(false);
 
-  // 换了素材效果卡(HMR 重跑 src/cards/index.ts)之后 project 引用不变,effect 不会自己重跑;
-  // configureCardAudio 每调一次 +1 的这个版本号就是重取的触发。
+  // After a media effect card is swapped (HMR reruns src/cards/index.ts) the project reference stays
+  // the same, so the effect doesn't rerun on its own;
+  // this version number, bumped by 1 on every configureCardAudio call, is the trigger to refetch.
   const cardAudioEpoch = useSyncExternalStore(subscribeCardAudioEpoch, getCardAudioEpoch, getCardAudioEpoch);
   useEffect(() => {
     let current = true;
@@ -66,7 +73,7 @@ function AudioLayer({ project, clip, media, volume, t, playing, scrubbing, audio
       release = lease.release; const url = lease.url;
       if (!current) { release(); return; }
       setCardLive(!("live" in lease && lease.live === false));
-      setCardUrl(url); // 真正解码就绪后由 canplay 确认，URL 存在不代表字节可读。
+      setCardUrl(url); // Confirmed by canplay once decoding is really ready; a URL existing doesn't mean the bytes are readable.
     }, (error: unknown) => {
       if (!current) return;
       const message = error instanceof Error ? error.message : String(error); setCardState("error"); onCardState?.(clip.id, "error", message);
@@ -75,10 +82,10 @@ function AudioLayer({ project, clip, media, volume, t, playing, scrubbing, audio
     return () => { current = false; release?.(); };
   }, [project, nodeId, clip.id, clip.start, clip.end, onCardState, cardAudioEpoch, embedded, localHashes]);
   useLayoutEffect(() => {
-    // While a 素材效果卡 node is loading or has failed there is deliberately no source URL.
+    // While a media effect card node is loading or has failed there is deliberately no source URL.
     // driveMedia may attempt play(), but it cannot emit source-media audio as a fallback.
     if (nodeId && !cardUrl) return;
-    // 变速的声音段(音画分离出来的那种):按片段速度放、不保调(随倍率变调),和导出两条混音路的 ffmpegVarispeed 同一个语义
+    // Variable-speed sound segment (the kind split out by audio-visual separation): plays at the clip speed without pitch preservation (pitch follows the rate), the same semantics as ffmpegVarispeed in both export mixing paths
     const rate = nodeId ? 1 : clipSpeed(clip);
     if (ref.current && rate !== 1 && ref.current.preservesPitch !== false) ref.current.preservesPitch = false;
     driveMedia(ref.current, { target, playing, volume, scrubbing, ...(rate !== 1 ? { rate } : null) });
@@ -91,15 +98,15 @@ function AudioLayer({ project, clip, media, volume, t, playing, scrubbing, audio
       releasePreviewAudio(el);
     };
   }, []);
-  // 主文档的声音也经换档判据(T1a 审查 #5)。C6.6「音频先留在素材小尺寸」:播放中换了档,声音先接着用上一档,
-  // 停下(暂停、拖动松开前的暂停态)再换 —— 两路声音不重叠、不爆音。上一档本来就没出声(挂失败了)时当场换。
+  // The main document's sound also goes through the tier-switch criterion (T1a review #5). C6.6 "audio stays at the small media size first": if the tier changes during playback, the sound keeps using the previous tier
+  // and switches only once stopped (paused, or the paused state before a drag is released), so the two sounds don't overlap or pop. If the previous tier was already silent (it failed), switch immediately.
   const wanted = missingAudio ? MISSING_MATERIAL_WAV_URL : media ? playbackUrl(media, localHashes) : undefined;
   const held = useRef<string | undefined>(undefined);
   if (held.current === undefined || !playing || held.current === wanted || !media || ref.current?.error) held.current = wanted;
   return <audio ref={ref}
     onCanPlay={() => { if (nodeId && cardUrl) { setCardState("ready"); onCardState?.(clip.id, "ready"); } }}
     onError={() => {
-      if (nodeId && cardUrl) { const message = `${clip.label ?? clip.id} 的卡片声音素材无法读取，请恢复素材或重新生成`; setCardState("error"); onCardState?.(clip.id, "error", message); }
+      if (nodeId && cardUrl) { const message = trText("The card audio asset of {0} cannot be read, please restore the asset or regenerate it", clip.label ?? clip.id); setCardState("error"); onCardState?.(clip.id, "error", message); }
     }}
     src={nodeId ? (cardUrl ?? undefined) : missingAudio ? MISSING_MATERIAL_WAV_URL : held.current} preload="auto" hidden
     data-pc-audio-clip={clip.id} data-pc-audio-source={nodeId ? (cardUrl ? (cardLive ? "live" : "product") : undefined) : "product"}
@@ -107,7 +114,7 @@ function AudioLayer({ project, clip, media, volume, t, playing, scrubbing, audio
 }
 
 
-/** 有画面段(视频/图片)的序列,顺序和 videoLayersAt 同一个口径:倒着走,最后一个 = 最上层 */
+/** Tracks that have picture segments (video/images), in the same order convention as videoLayersAt: walk backwards, last one = topmost */
 function visualTrackIds(p: Project): string[] {
   const audio = new Set(p.media.filter((m) => m.kind === "audio").map((m) => m.id));
   const known = new Set(p.media.map((m) => m.id));
@@ -131,20 +138,22 @@ export function MediaLayers({
   project: Project;
   t: number;
   playing: boolean;
-  /** 导出时用:画面照旧,声音一律不出(音轨由 ffmpeg 合成) */
+  /** For export: picture as usual, no sound at all (the audio track is mixed by ffmpeg) */
   muted?: boolean;
-  /** 预览总音量 0–1,叠在每段自己的淡入淡出音量之上;静音就传 0 */
+  /** Overall preview volume 0-1, applied on top of each segment's own fade volume; pass 0 to mute */
   masterVolume?: number;
   audioOnly?: boolean;
   /**
-   * 当前连接的素材服务报 `complete` 的哈希(A1 的 `localHashes`),声音层和画面层按它换档。
-   * 缺省空集合 = 一律素材原尺寸。来源(每 2 秒轮询 `GET media/<hash>/chunks`)在第 6 步。
+   * Hashes that the currently connected asset service reports as `complete` (A1's `localHashes`);
+   * the sound layer and the picture layer switch tier by it.
+   * Defaults to an empty set = always the original media size. The source (polling
+   * `GET media/<hash>/chunks` every 2 seconds) comes in step 6.
    */
   localHashes?: readonly string[];
 }) {
-  // 手按着播放头时 seek 放疏一点;松手那一刻它变回 false,各层按 0.03s 精确对齐一次(见 mediaSync 的 SCRUB_SEEK_MIN_MS)
+  // While the playhead is held down, seek is sparser; the moment it is released this goes back to false, and each layer aligns precisely once at 0.03s (see SCRUB_SEEK_MIN_MS in mediaSync)
   const scrubbing = useSyncExternalStore(subscribeScrub, isScrubbing, isScrubbing);
-  // 只出声音时(编辑器主文档):剪辑段按 kernel/cutAudio.mjs 展开成平移、裁好的片段,被引用剪辑的声音跟着出
+  // When only sound is output (the editor's main document): cut segments are expanded per kernel/cutAudio.mjs into shifted, trimmed clips, and the sound of referenced cuts plays along
   const sound = audioOnly ? audioProjectOf(project) : project;
   const layers = videoLayersAt(sound, t);
   const nexts = nextVideoLayerAfter(project, t);
@@ -172,7 +181,7 @@ export function MediaLayers({
           localHashes={localHashes}
         />
       ))}
-      {/* 变速的视频段不出原声(〔裁〕第一版,kernel/clipTime.mjs;和导出混音 audioPlanOf 同一条) */}
+      {/* Variable-speed video segments don't play their original sound ([ruling] first version, kernel/clipTime.mjs; same rule as audioPlanOf in the export mix) */}
       {audioOnly && !muted && layers.filter(l => !cardAudioNodeOf(sound, l.clip) && !isImageMedia(l.media) && l.media.kind === "video" && !l.clip.audioMuted && !speedMutesSource(l.clip, sound) && !sound.tracks.find(tr => tr.id === l.trackId)?.muted).map(l => (
         <AudioLayer key={l.clip.id} project={sound} clip={l.clip} media={l.media} volume={l.opacity * master * (l.clip.audioVolume ?? 1)} t={t} playing={playing} scrubbing={scrubbing} audioFx={project.audioFx} localHashes={localHashes} />
       ))}
@@ -182,7 +191,7 @@ export function MediaLayers({
       {generated.map((a) => <AudioLayer key={`card-audio:${a.clip.id}`} project={sound} clip={a.clip} media={a.media} volume={a.volume * master} t={t} playing={playing} scrubbing={scrubbing} audioFx={project.audioFx} onCardState={setGeneratedStatus} localHashes={localHashes} />)}
       {generated.map(({ clip }) => {
         const status = cardStatus[clip.id]; if (!status || status.state === "ready") return null;
-        return <div key={`card-audio-status:${clip.id}`} role="status" aria-live="polite" style={{ position: "absolute", left: 12, bottom: 12, zIndex: 100, padding: "6px 9px", borderRadius: 4, color: "#fff", background: status.state === "error" ? "#a11" : "#333", fontSize: 12 }}>{status.state === "pending" ? `正在生成音频：${clip.label ?? clip.id}` : `音频生成失败：${status.message ?? clip.label ?? clip.id}`}</div>;
+        return <div key={`card-audio-status:${clip.id}`} role="status" aria-live="polite" style={{ position: "absolute", left: 12, bottom: 12, zIndex: 100, padding: "6px 9px", borderRadius: 4, color: "#fff", background: status.state === "error" ? "#a11" : "#333", fontSize: 12 }}>{status.state === "pending" ? trText("Generating audio: {0}", clip.label ?? clip.id) : trText("Audio generation failed: {0}", status.message ?? clip.label ?? clip.id)}</div>;
       })}
     </>
   );

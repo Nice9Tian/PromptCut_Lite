@@ -1,5 +1,5 @@
 diff --git a/src/editor/ProbeGate.tsx b/src/editor/ProbeGate.tsx
-index f70e66b74c96a1da917780e8820234bd17481a84..0f71b4f36875668eb39ccb7314aea4aea6a4f52d 100644
+index 49266f37874a5dff1771a239c4dded967e49d26a..19d823881341a2fc8ec95a1e7c32d40609d91cfd 100644
 --- a/src/editor/ProbeGate.tsx
 +++ b/src/editor/ProbeGate.tsx
 @@ -6,8 +6,6 @@ import { onProbeProgress, probeProgress, requeueProbeRun, syncProbeRun, type Pro
@@ -9,11 +9,11 @@ index f70e66b74c96a1da917780e8820234bd17481a84..0f71b4f36875668eb39ccb7314aea4ae
 -import { ONLINE } from "../online/mode";
 -import { singleStageTier } from "../online/onlineTier";
  import "./ProbeGate.css";
+ import { tr } from "../i18n/index.ts";
  
- /**
-@@ -31,7 +29,7 @@ export function ProbeGate() {
-   // 在线页面开了两个舞台就照常测（C10 契约第 3 节：打开项目在加载遮罩下测完；后台舞台握不上手、退回单舞台时探针等不到后台舞台，遮罩不出现）；
-   // 舞台闸门停在第一级（精简模式、低配模式）只开一个舞台、不跑 ProbeGate，轻重由界限搜索判（`costSearch.ts`）
+@@ -40,7 +38,7 @@ export function ProbeGate() {
+   // An online page with two stages open measures as usual (C10 contract, section 3: opening a project finishes measuring under the loading overlay; if the background stage can't handshake and falls back to a single stage, the probe never gets the background stage and the overlay does not appear);
+   // if the stage gate stops at the first tier (lean mode, low-spec mode), only one stage is opened and ProbeGate does not run; light vs. heavy is judged by the bound search (`costSearch.ts`)
    const staged = previewMode() === "stage";
 -  const enabled = staged && !(ONLINE && singleStageTier());
 +  const enabled = staged;

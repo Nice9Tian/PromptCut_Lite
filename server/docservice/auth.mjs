@@ -1,9 +1,9 @@
 /**
- * 文档服务的本机回环鉴权与子协议解析。
+ * Local loopback authentication and subprotocol parsing for the document service.
  *
- * - 回环来源什么都不带（或只带 `promptcut.v1`）→ 本机页面身份 `LOCAL_PRINCIPAL`；
- * - 回环来源带 `promptcut.v1` + `promptcut.role.agent.<对话号>` → 本机 Agent 身份；
- * - 非回环来源或其它未授权子协议组合一律拒绝（401）。
+ * - Loopback origin with nothing (or only `promptcut.v1`) -> local page principal `LOCAL_PRINCIPAL`;
+ * - Loopback origin with `promptcut.v1` + `promptcut.role.agent.<conversationId>` -> local Agent principal;
+ * - Non-loopback origins or other unauthorized subprotocol combinations are rejected (401).
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
 
@@ -16,10 +16,10 @@ export const ADMIN_PRINCIPAL = Object.freeze({ userId: 'admin', tenantId: null, 
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{32,256}$/;
 
-/** 集群令牌格式：base64url 字符，32～256 个 */
+/** Cluster token format: 32-256 base64url characters */
 export const checkTokenFormat = (token) => typeof token === 'string' && TOKEN_RE.test(token);
 
-/** 握手请求里客户端给的子协议列表（多个头、逗号分隔都拆开） */
+/** Client-offered subprotocol list from handshake request (splits multiple headers and comma-separated entries) */
 export function offeredProtocols(req) {
   const raw = req?.headers?.['sec-websocket-protocol'];
   if (raw === undefined) return [];
@@ -28,14 +28,14 @@ export function offeredProtocols(req) {
 }
 
 /**
- * 监听地址是不是本机回环。只认 `127.0.0.1`、`::1`、`localhost`（大小写不敏感）。
+ * Whether listen host is local loopback. Recognizes only `127.0.0.1`, `::1`, and `localhost` (case-insensitive).
  */
 export function isLoopbackHost(host) {
   const h = String(host ?? '').trim().toLowerCase();
   return h === '127.0.0.1' || h === '::1' || h === 'localhost';
 }
 
-/** 回环地址（含 IPv4 映射的 IPv6） */
+/** Loopback address (including IPv4-mapped IPv6) */
 export function isLoopbackAddress(address) {
   const a = String(address ?? '').toLowerCase();
   return a === '::1' || /^127\./.test(a) || /^::ffff:127\./.test(a);
@@ -46,7 +46,7 @@ function sha256(text) {
 }
 
 /**
- * 本机回环握手鉴权（兼容 `createHandshakeAuth` 的回环行为）。
+ * Local loopback handshake authentication (compatible with loopback behavior of `createHandshakeAuth`).
  */
 export function createHandshakeAuth({
   isLoopback = (req) => isLoopbackAddress(req?.socket?.remoteAddress),
@@ -95,15 +95,15 @@ export function createHandshakeAuth({
 export const createLocalLoopbackAuth = createHandshakeAuth;
 
 /**
- * 构造给 `createDocService` 用的 `authenticate(req)`（测试与独立服务兼容）。
+ * Builds `authenticate(req)` for `createDocService` (compatible with tests and standalone service).
  */
 export function createTokenAuth({ token, allowAnonymous = false, log = () => {} } = {}) {
   const hasToken = token !== undefined && token !== null && token !== '';
   if (!hasToken && !allowAnonymous) {
-    throw new Error('createTokenAuth: 必须给 token，或显式设 allowAnonymous: true（仅本机回环）');
+    throw new Error('createTokenAuth: must provide token or explicitly set allowAnonymous: true (local loopback only)');
   }
   if (hasToken && !checkTokenFormat(token)) {
-    throw new TypeError('createTokenAuth: 令牌格式不对（要 32～256 个 base64url 字符）');
+    throw new TypeError('createTokenAuth: invalid token format (expected 32-256 base64url characters)');
   }
   const expectedDigest = hasToken ? sha256(token) : null;
 

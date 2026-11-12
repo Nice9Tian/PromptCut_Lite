@@ -1,8 +1,8 @@
 diff --git a/src/start/ChatSidePanel.tsx b/src/start/ChatSidePanel.tsx
-index 695dfe855fbf34e5810c495f380dbe0c70868c3f..64f0e01c165472c9f9438b1538762baa2e30d936 100644
+index 9ff28fdc0cc6dd3ef0d0f4539aaca29afbacf5ee..22cf3bfee1e936ea9d443564c6cbd0e5c7a7271e 100644
 --- a/src/start/ChatSidePanel.tsx
 +++ b/src/start/ChatSidePanel.tsx
-@@ -19,7 +19,7 @@ import type { ChatMessage } from "../ai/types";
+@@ -27,7 +27,7 @@ import type { ChatMessage } from "../ai/types";
  import { actions, useStore } from "../store/project";
  import { useVisualRecord, visualIdOf } from "../editor/right/ToolVisual";
  import { KIND_LABEL, bareToolName, toolKind } from "../editor/right/chat/iconRuns";

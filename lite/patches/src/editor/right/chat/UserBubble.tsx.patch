@@ -1,5 +1,5 @@
 diff --git a/src/editor/right/chat/UserBubble.tsx b/src/editor/right/chat/UserBubble.tsx
-index 5b161d10b911588d516ce7a3a1fdbd74d7a24388..7b9479f6a7a193b58a4d2ca79e34d8658b4dc16f 100644
+index 384aebcabfcce26a1502f5bdc167561a31f1d69b..2995ee23fbb2f6c94ec29c1fb7fcfb062508ee10 100644
 --- a/src/editor/right/chat/UserBubble.tsx
 +++ b/src/editor/right/chat/UserBubble.tsx
 @@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
@@ -9,23 +9,23 @@ index 5b161d10b911588d516ce7a3a1fdbd74d7a24388..7b9479f6a7a193b58a4d2ca79e34d865
 -import { OUTBOX_RESEND_EVENT, OUTBOX_TEXT } from "../../../ai/outbox";
  import "./chat.css";
  import "./queue.css";
- 
-@@ -21,9 +20,6 @@ export interface RewindHandlers {
+ import { tr } from "../../../i18n/index.ts";
+@@ -24,9 +23,6 @@ export interface RewindHandlers {
    onRewind: (userMessageId: string) => void;
  }
  
--/** 「重新发送」发的窗口事件(定义在 outbox.ts,手机页共用) */
+-/** The window event sent by "Resend" (defined in outbox.ts, shared with the mobile page) */
 -export const CLOUD_RESEND_EVENT = OUTBOX_RESEND_EVENT;
 -
- /** 逆时针的回退箭头 */
+ /** Counterclockwise rewind arrow */
  function IconRewind() {
    return (
-@@ -94,16 +90,7 @@ export function UserBubble(props: { m: ChatMessage; rewind?: RewindHandlers }) {
+@@ -99,16 +95,7 @@ export function UserBubble(props: { m: ChatMessage; rewind?: RewindHandlers }) {
                <LiveMarkdown text={m.text} live={!!m.pending} />
              </div>
            ) : null}
--          {m.sendState === "sending" && <div className="ai-message-send-state" data-pc="cloud-send-state" data-state="sending">发送中…</div>}
--          {m.sendState === "accepted" && <div className="ai-message-send-state" data-pc="cloud-send-state" data-state="accepted">已发出，等待云端开始处理…</div>}
+-          {m.sendState === "sending" && <div className="ai-message-send-state" data-pc="cloud-send-state" data-state="sending">{tr("Sending…")}</div>}
+-          {m.sendState === "accepted" && <div className="ai-message-send-state" data-pc="cloud-send-state" data-state="accepted">{tr("Sent, waiting for the cloud to start processing…")}</div>}
 -          {m.sendState === "queued" && <div className="ai-message-send-state" data-pc="cloud-send-state" data-state="queued">{OUTBOX_TEXT.queued}</div>}
 -          {m.error && <div className="ai-message-error" data-pc={m.sendState === "failed" ? "cloud-send-failed" : undefined}>{m.error}</div>}
 -          {m.sendState === "failed" && m.resendable && (

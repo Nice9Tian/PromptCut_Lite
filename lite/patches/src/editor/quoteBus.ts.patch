@@ -1,13 +1,13 @@
 diff --git a/src/editor/quoteBus.ts b/src/editor/quoteBus.ts
-index 0416640c4adf8878d1f4d04152a68672ecc377b0..5eee073e9f9c95cdea6412f1720d3b547b23a371 100644
+index 0a8c22e057a4c0306bab28c785c0d99632466c21..189324db0da5e5688da2df11fc79923b96ae7f70 100644
 --- a/src/editor/quoteBus.ts
 +++ b/src/editor/quoteBus.ts
-@@ -9,7 +9,7 @@
-  * 引用块的写法只有 `quoteToken` 一处:以前本机 AI 栏和云端 AI 栏各自拼 `@卡片 …(…)`,
-  * 加「叠加卡」这一级时两处都要改,漏一处就是另一个面板里引用写错级别。
+@@ -14,7 +14,7 @@
+  * the Cloud AI panel each built their own `@card …(…)`, so adding the "overlay card" level meant
+  * changing both, and missing one would make the other panel quote the wrong level.
   */
 -import { quoteToken } from "../mobile/agentView";
 +import { quoteToken } from "../start/agentView";
+ import { tr } from "../i18n/index.ts";
  
  const EVENT = "pc-quote-clip";
- 

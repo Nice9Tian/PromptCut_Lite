@@ -1,14 +1,18 @@
 /**
- * 剪辑段的「渲染身份」:激活剪辑经剪辑段(任意深度)能走到的那些剪辑的内容。
+ * "Render identity" of cut segments: content of cuts reachable from the active cut via cut segments
+ * (to arbitrary depth).
  *
- * 画面的缓存与预渲染的身份(镜像的项目哈希 `render/changedClips.mjs` 的 `projectHash`、帧服务的
- * `server/frame-identity.mjs`、快照签名 `render/frameClient.ts`)原来只看激活剪辑的 `tracks`。
- * 剪辑段引用的剪辑住在 `cuts[]` 里,不把它们算进去的话,改了被引用剪辑旧缓存不失效
- * (Argon 审核意见「缓存与预渲染的身份把被引用剪辑内容算进去」)。
+ * Visual caching and prerender identity (project hash for mirrors `projectHash` in
+ * `render/changedClips.mjs`, frame service `server/frame-identity.mjs`, snapshot signature
+ * `render/frameClient.ts`) originally only inspected `tracks` in the active cut. Cuts referenced by
+ * cut segments live in `cuts[]`; if excluded, modifying referenced cuts fails to invalidate old
+ * caches (Argon review feedback: "include referenced cut contents in cache and prerender identity").
  *
- * 没有剪辑段的项目返回空数组,调用方据此**不往身份里加任何东西**:老项目的哈希、缓存键一个字节不变。
+ * Projects without cut segments return an empty array, and callers accordingly **add nothing to the
+ * identity**: hashes and cache keys for legacy projects remain unchanged byte-for-byte.
  *
- * 纯 JS(.mjs):服务端的帧服务、镜像插件直接 import,不经 TS。和 `cutSegments.ts` 的存法同一口径。
+ * Pure JS (.mjs): frame service and mirror plugins on the server import directly without TS. Same
+ * convention as the storage format in `cutSegments.ts`.
  */
 
 function activeIdOf(p) {
@@ -17,13 +21,43 @@ function activeIdOf(p) {
   return p.activeCutId && cuts.some((c) => c.id === p.activeCutId) ? p.activeCutId : cuts[0].id;
 }
 
+function extraCutMeta(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const out = {};
+  if (entry.kind === '3d') out.kind = '3d';
+  if (typeof entry.camera3dFov === 'number' && Number.isFinite(entry.camera3dFov)) out.camera3dFov = entry.camera3dFov;
+  if (typeof entry.spaceWidth === 'number' && Number.isFinite(entry.spaceWidth)) out.spaceWidth = entry.spaceWidth;
+  if (typeof entry.spaceHeight === 'number' && Number.isFinite(entry.spaceHeight)) out.spaceHeight = entry.spaceHeight;
+  if (Array.isArray(entry.cameras) && entry.cameras.length > 0) out.cameras = entry.cameras;
+  return Object.keys(out).length ? out : null;
+}
+
+/**
+ * Render-affecting metadata on the active cut (`kind`, `camera3dFov`, `spaceWidth`, `spaceHeight`, `cameras`)
+ * plus ephemeral `_renderView` when set to `"space"`.
+ * Returns `null` when everything is at legacy 2D defaults so legacy project cache keys stay byte-identical.
+ */
+export function activeCutRenderMeta(p) {
+  if (!p || typeof p !== 'object') return null;
+  const id = activeIdOf(p);
+  const cuts = Array.isArray(p.cuts) ? p.cuts : [];
+  const entry = id ? cuts.find((c) => c?.id === id) : undefined;
+  const base = extraCutMeta(entry);
+  const view = p._renderView && p._renderView !== 'camera' ? p._renderView : undefined;
+  if (!base && !view) return null;
+  return { ...(base || {}), ...(view ? { renderView: view } : {}) };
+}
+
 function contentOf(p, cutId) {
   const cuts = Array.isArray(p?.cuts) ? p.cuts : [];
   const entry = cuts.find((c) => c?.id === cutId);
   if (!entry) return null;
-  if (cutId === activeIdOf(p)) return { id: cutId, tracks: p.tracks ?? [], duration: p.duration, transitions: p.transitions ?? [] };
+  const meta = extraCutMeta(entry);
+  if (cutId === activeIdOf(p)) {
+    return { id: cutId, tracks: p.tracks ?? [], duration: p.duration, transitions: p.transitions ?? [], ...(meta || {}) };
+  }
   if (!Array.isArray(entry.tracks)) return null;
-  return { id: cutId, tracks: entry.tracks, duration: entry.duration, transitions: entry.transitions ?? [] };
+  return { id: cutId, tracks: entry.tracks, duration: entry.duration, transitions: entry.transitions ?? [], ...(meta || {}) };
 }
 
 function targetsOf(tracks) {
@@ -37,8 +71,9 @@ function targetsOf(tracks) {
 const memo = new WeakMap();
 
 /**
- * 从 `tracks`(缺省激活剪辑的)出发,经剪辑段能走到的剪辑的内容,按 id 排好。
- * 激活剪辑自己不在里面(它就是 tracks);成环的那条边到已经走过的剪辑为止。
+ * Starting from `tracks` (defaults to the active cut's), content of cuts reachable via cut segments,
+ * sorted by id. The active cut itself is not included (it is tracks); edges forming cycles stop at
+ * already visited cuts.
  */
 export function reachableCutContents(project, tracks = project?.tracks) {
   if (!project || !Array.isArray(project.cuts)) return [];
@@ -62,7 +97,7 @@ export function reachableCutContents(project, tracks = project?.tracks) {
   return out;
 }
 
-/** `tracks` 里用到的素材 id,连同经剪辑段走到的剪辑里用到的 */
+/** Asset ids used in `tracks`, together with those used in cuts reached via cut segments */
 export function reachableMediaIds(project, tracks = project?.tracks) {
   const ids = new Set();
   const add = (list) => { for (const tr of list ?? []) for (const c of tr?.clips ?? []) if (c?.mediaId) ids.add(c.mediaId); };

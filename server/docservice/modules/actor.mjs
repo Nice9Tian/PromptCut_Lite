@@ -1,10 +1,13 @@
 /**
- * 写入身份（`actor`）：项目版本日志、内容库都记它（语义 `docs/semantics/product/document-service.md`
- * 「版本与身份」：哪个页面，或哪个 Agent 的哪个对话）。
+ * Write identity (`actor`): recorded by both project version log and content store
+ * (semantics `docs/semantics/product/document-service.md` "Versions and Identities":
+ * which page, or which chat of which Agent).
  *
- * 记 `{ userId, deviceId, role, conversation, session }`，全部取自连接的
- * principal，消息里自报的一律不认；`session` 是页面自报的会话标识，只作记录。
- * 不带连接角色的旧式 principal（测试注入的 `authenticate`）只记 `{ userId, session }`。
+ * Records `{ userId, deviceId, role, conversation, session }`, all taken from connection principal;
+ * self-reported values in messages are never accepted; `session` is the page-reported session
+ * identifier, kept for logging only.
+ * Legacy principals without a connection role (test-injected `authenticate`) record only
+ * `{ userId, session }`.
  */
 export function actorOf(principal, session) {
   const userId = principal?.userId ?? null;

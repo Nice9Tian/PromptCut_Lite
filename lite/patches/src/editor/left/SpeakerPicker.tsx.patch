@@ -1,21 +1,22 @@
 diff --git a/src/editor/left/SpeakerPicker.tsx b/src/editor/left/SpeakerPicker.tsx
-index d6258a353e08c96f4b03b50ef18f0cf20db51749..9e9b6a137cc802725bfac3bd1af8f98e9531eba3 100644
+index 68bc8fedaac23385363ff91237dddda093c7a258..14e1f1c7a3d9c110feb1fef8b2b22eb3c7ea383b 100644
 --- a/src/editor/left/SpeakerPicker.tsx
 +++ b/src/editor/left/SpeakerPicker.tsx
-@@ -2,7 +2,6 @@ import { useEffect, useRef } from "react";
+@@ -2,8 +2,6 @@ import { useEffect, useRef } from "react";
  import { createPortal } from "react-dom";
  import { useStore, getState } from "../../store/project";
  import { importVideoFiles } from "../io";
--import { onlinePage, onlineUnsupported } from "../../online/pageFlag";
+-import { onlinePage } from "../../online/pageFlag";
+-import { onlineUnsupported } from "../../online/onlineUnsupported";
+ import { tr } from "../../i18n/index.ts";
  
  export interface SpeakerPickerProps {
-   open: boolean;
-@@ -132,9 +131,7 @@ export function SpeakerPicker({ open, onClose, onSelect }: SpeakerPickerProps) {
+@@ -138,9 +136,7 @@ export function SpeakerPicker({ open, onClose, onSelect }: SpeakerPickerProps) {
            />
            <button
              type="button"
 -            disabled={onlinePage()}
--            title={onlinePage() ? onlineUnsupported("导入媒体") : undefined}
+-            title={onlinePage() ? onlineUnsupported(tr("Import media")) : undefined}
 -            onClick={() => { if (!onlinePage()) fileInputRef.current?.click(); }}
 +            onClick={() => { fileInputRef.current?.click(); }}
              className="w-full h-8 flex items-center justify-center gap-1.5 rounded border border-neutral-700 bg-neutral-800 hover:bg-neutral-700 text-xs text-neutral-200 transition-colors"

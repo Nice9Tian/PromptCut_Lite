@@ -4,8 +4,9 @@ import type { TrackClip } from "../../kernel/project";
 import { describeAudioFx } from "../../kernel/audioFx.mjs";
 import { createAudioFxTools } from "../right/audioFxTools";
 import { NumberField } from "../fields/NumberField";
+import { tr } from "../../i18n/index.ts";
 
-/** 和 Agent 的 apply_audio_fx 同一份校验 */
+/** Same validation as the Agent's apply_audio_fx */
 const tools = createAudioFxTools({ getState, actions });
 
 const stepOf = (min?: number, max?: number, def?: number) => {
@@ -13,7 +14,7 @@ const stepOf = (min?: number, max?: number, def?: number) => {
   return span <= 2 ? 0.01 : span <= 20 ? 0.1 : 1;
 };
 
-/** 编辑页里素材段的音频效果一栏:从音频效果库挑一个挂上,再逐段调它声明的参数 */
+/** The audio effects row for a media clip in the editor: pick one from the audio effects library to attach, then tune its declared parameters per clip */
 export function ClipAudioFxForm({ clip }: { clip: TrackClip }) {
   const audioFxList = useStore((s) => s.project.audioFx) ?? [];
   const [err, setErr] = useState<string | null>(null);
@@ -31,14 +32,14 @@ export function ClipAudioFxForm({ clip }: { clip: TrackClip }) {
   return (
     <div className="mt-2 pt-2 pc-left-divider" data-pc="clip-audiofx">
       <div className="flex items-center gap-2 mb-1">
-        <span className="pc-left-muted shrink-0">音频效果</span>
+        <span className="pc-left-muted shrink-0">{tr("Audio effect")}</span>
         <select
           data-pc="clip-audiofx-select"
           value={cur?.id ?? ""}
           onChange={(e) => apply(e.target.value)}
           className="flex-1 pc-left-select is-sm"
         >
-          <option value="">无</option>
+          <option value="">{tr("None")}</option>
           {audioFxList.map((f) => (
             <option key={f.id} value={f.id}>
               {f.name}
@@ -46,7 +47,7 @@ export function ClipAudioFxForm({ clip }: { clip: TrackClip }) {
           ))}
         </select>
       </div>
-      {audioFxList.length === 0 && <div className="pc-left-faint">效果库是空的:让 Agent 建一个,或去「特效」分区的「音频预设」组新建</div>}
+      {audioFxList.length === 0 && <div className="pc-left-faint">{tr("The effects library is empty: ask the Agent to create one, or create one in the \"Audio presets\" group of the \"Effects\" section")}</div>}
       {cur && (
         <div className="pc-left-faint mb-1 truncate" title={describeAudioFx(cur)}>
           {describeAudioFx(cur)}
@@ -65,7 +66,7 @@ export function ClipAudioFxForm({ clip }: { clip: TrackClip }) {
               max={spec.max}
               value={clip.audioFx?.params?.[k] ?? spec.default}
               onCommit={(n) => {
-                // 只带声明过的键:update_audio_fx 删掉过的参数还留在片段上的话,整栏都会被「没有参数 X」卡住
+                // Carry only declared keys: if parameters removed by update_audio_fx are still left on the clip, the whole row gets stuck on "no parameter X"
                 const kept = Object.fromEntries(Object.entries(clip.audioFx?.params ?? {}).filter(([key]) => cur.params && key in cur.params));
                 apply(cur.id, { ...kept, [k]: n });
               }}

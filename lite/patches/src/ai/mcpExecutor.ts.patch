@@ -1,5 +1,5 @@
 diff --git a/src/ai/mcpExecutor.ts b/src/ai/mcpExecutor.ts
-index c28d7f8d09490b69277f1196d769745ae4a4bae6..b1ae4a275fb19ecfb90bd7137911e1615ef890d2 100644
+index 68689c6a2b126484def7ce8c53d2160d4fe62c26..1f30c20891aab81e3c385313aa725dbd58382d91 100644
 --- a/src/ai/mcpExecutor.ts
 +++ b/src/ai/mcpExecutor.ts
 @@ -12,7 +12,7 @@ import { getState } from "../store/project";
@@ -9,15 +9,16 @@ index c28d7f8d09490b69277f1196d769745ae4a4bae6..b1ae4a275fb19ecfb90bd7137911e161
 -import { issueAgentTicket, pageOpIdsSince, pageOpMark } from "../editor/sync/syncManager";
 +import { pageOpIdsSince, pageOpMark } from "../editor/sync/syncManager";
  import { trackJobs, trackResults } from "../mcp/common";
+ import { tr as trText } from "../i18n/index.ts";
  
- /**
-@@ -403,9 +403,6 @@ export function connectMcpExecutor(getApi: () => EditorApi, onStatus?: (s: { con
+@@ -470,10 +470,6 @@ export function connectMcpExecutor(getApi: () => EditorApi, onStatus?: (s: { con
        } else if (ev.type === "agent.spawn") {
-         // spawn_agent 拉起子 Agent:开一个带角色名的新页签(A3)
+         // spawn_agent starts a subagent: open a new tab with a role name (A3)
          void agentBus.handleSpawn(ev);
 -      } else if (ev.type === "agent.ticket") {
--        // Agent 服务端要一张 agent 角色的连接票据(共享项目;server/vite-plugin-ai.ts 的 requestTicket)
+-        // The Agent server asks for a connection ticket with the agent role (shared project; requestTicket
+-        // in server/vite-plugin-ai.ts)
 -        void issueAgentTicket(ev);
        } else if (ev.type === "call" && ev.tool === PAGE_STATE_TOOL) {
          /*
-          * Agent 服务端向页面要一次只读的页面状态(c65-integ2 裁定:既读页面状态又写项目的工具改在服务端执行,
+          * The Agent server asks the page for a read-only snapshot of page state (ruling in c65-integ2:

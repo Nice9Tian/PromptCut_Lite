@@ -4,15 +4,18 @@ import { getCard } from "../../kernel/registry";
 import type { TrackClip } from "../../kernel/project";
 import { applyEnvelope, describeLifecycle, envelopeOf, type ClipEnvelope } from "../../kernel/envelope";
 import { useReadOnly } from "../readOnly";
+import { tr } from "../../i18n/index.ts";
 
 /**
- * 编辑 → 代码:显示并编辑这张卡的**约定封装**(kernel/envelope.ts),不是原始代码。
+ * Edit → Code: shows and edits this card's **card contract** (kernel/envelope.ts), not the raw code.
  *
- * 以前这里是 `{ cardId, start, end, params }` 一坨扁平参数 —— 位置、淡入淡出、部件结构、
- * 生命周期都不在里面,看不出「动画 1 秒就落定了后面都是静止」「能不能加淡出」「哪个参数管哪块」。
- * 现在显示的是封装:card(含 lifecycle)/ time / frame(local 可写,world 只读)/ blend / motion /
- * parts(部件树,每个部件带自己的参数)/ params。改完 Ctrl+Enter 或失焦应用,只写有差异的段,
- * 和 Agent 的 set_clip 走同一个 applyEnvelope。
+ * This used to be a flat blob of `{ cardId, start, end, params }` parameters -- position, fade in/out, part
+ * structure and lifecycle were not in it, so you couldn't tell "the animation settles after 1 second and
+ * everything after is static", "whether a fade-out can be added", or "which parameter controls which part".
+ * Now what is shown is the contract: card (including lifecycle) / time / frame (local writable, world
+ * read-only) / blend / motion / parts (the part tree, each part with its own parameters) / params. After
+ * editing, Ctrl+Enter or blur applies it, writing only the segments that differ, going through the same
+ * applyEnvelope as the Agent's set_clip.
  */
 export function CodeTab({ clip }: { clip: TrackClip }) {
   const project = useStore((s) => s.project);
@@ -28,11 +31,11 @@ export function CodeTab({ clip }: { clip: TrackClip }) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [applied, setApplied] = useState<string | null>(null);
-  // 这个项目只给了只读权限(游客):代码照常看、能选中复制,但不能改、不能应用、不能重置
+  // This project only grants read-only access (guest): the code can be viewed and selected for copying as usual, but not edited, applied or reset
   const ro = useReadOnly();
 
   const missing = envelope.missingParams ?? [];
-  /** 刚应用过:下一份 current(带重新算出的 world 等只读段)到了就直接采用,别把用户改过的草稿留成「未应用」 */
+  /** Just applied: when the next current (carrying read-only segments such as the recomputed world) arrives, adopt it directly, and don't leave the user's edited draft as "unapplied" */
   const adoptNext = useRef(false);
 
   useEffect(() => {
@@ -54,7 +57,7 @@ export function CodeTab({ clip }: { clip: TrackClip }) {
     try {
       parsed = JSON.parse(draft);
     } catch (e: any) {
-      setErrorMsg(`JSON 不合法: ${e.message}`);
+      setErrorMsg(tr("Invalid JSON: {0}", e.message));
       return;
     }
     try {
@@ -77,7 +80,7 @@ export function CodeTab({ clip }: { clip: TrackClip }) {
       setErrorMsg(null);
       if (report.changed.length) adoptNext.current = true;
       else setDraft(current);
-      setApplied(report.changed.length ? `已应用:${report.changed.join(" / ")}` : "没有改动");
+      setApplied(report.changed.length ? tr("Applied: {0}", report.changed.join(" / ")) : tr("No changes"));
       setTimeout(() => setApplied(null), 2000);
     } catch (e: any) {
       setErrorMsg(e?.message || String(e));
@@ -85,7 +88,7 @@ export function CodeTab({ clip }: { clip: TrackClip }) {
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (ro.locked) return; // 只读:Tab 照常移焦点,不往草稿里插空格
+    if (ro.locked) return; // Read-only: Tab moves focus as usual and doesn't insert spaces into the draft
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault();
       apply();
@@ -114,8 +117,8 @@ export function CodeTab({ clip }: { clip: TrackClip }) {
 
   const handleReset = () => {
     if (ro.locked) return;
-    // 写回整套默认值,而不是清空成 {} —— 清空会让 clip 退回「靠兜底渲染」的隐式状态,
-    // 正是这次要消灭的东西。
+    // Write back the full set of defaults instead of clearing to {} -- clearing would put the clip back into the implicit state of "relying on fallback rendering",
+    // which is exactly what this change is meant to eliminate.
     const defaults = { ...(card?.defaults ?? {}) };
     actions.setClipParams(clip.id, defaults, { merge: false });
     setErrorMsg(null);
@@ -126,22 +129,22 @@ export function CodeTab({ clip }: { clip: TrackClip }) {
   return (
     <div className="flex-1 min-h-0 flex flex-col p-3">
       <div className="flex items-center gap-2 mb-2 shrink-0 flex-wrap">
-        <span className="text-[11px] pc-left-muted" title={ENVELOPE_TITLE}>约定封装</span>
+        <span className="text-[11px] pc-left-muted" title={ENVELOPE_TITLE}>{tr("Card contract")}</span>
         <button type="button" onClick={handleCopy} className="pc-left-btn">
-          {copied ? "✓ 已复制" : "复制"}
+          {copied ? tr("✓ Copied") : tr("Duplicate")}
         </button>
         <button type="button" onClick={handleReset} className="pc-left-btn" disabled={ro.locked} title={ro.title()}>
-          参数重置为默认
+          {tr("Reset parameters to defaults")}
         </button>
         {missing.length > 0 && (
           <button
             type="button"
             onClick={handleReset}
             disabled={ro.locked}
-            title={ro.locked ? ro.why : `这张卡后来新增了参数,当前 clip 里没有:${missing.join(", ")}。点「参数重置为默认」把它们补齐(会一并丢掉已有的改动)`}
+            title={ro.locked ? ro.why : tr("This card gained new parameters later that the current clip does not have: {0}. Click \"Reset parameters to defaults\" to fill them in (this also discards existing changes)", missing.join(", "))}
             className="text-[11px] px-2 py-1 bg-amber-950 hover:bg-amber-900 text-amber-400 rounded border border-amber-800"
           >
-            缺 {missing.length} 项参数
+            {tr("Missing {0} parameters", missing.length)}
           </button>
         )}
         {applied && <span className="text-[11px] text-green-500 ml-auto">{applied}</span>}
@@ -152,15 +155,17 @@ export function CodeTab({ clip }: { clip: TrackClip }) {
       </div>
 
       {/*
-        frame.local 收哪些键要**常驻**写出来,不能塞进下面那条状态栏 ——
-        那一行是 h-4 单行,而且只在「没报错、没未应用改动、不缺参数」时才出现,
-        平时根本看不到。而三维那三项没设过的时候 JSON 里压根不出现,
-        光看这段 JSON 是不知道它们存在的,这一页偏偏正是给想直接写值的人用的。
+        Which keys frame.local accepts must be **permanently** written out and cannot be tucked into the
+        status bar below: that line is a single h-4 row, and only appears when there are "no errors, no
+        unapplied changes, and no missing parameters", normally not visible at all. Moreover, those three
+        3D items do not appear in the JSON at all when unset; looking at this JSON snippet alone will not
+        reveal their existence, yet this page is intended precisely for people who want to write values
+        directly.
       */}
       <div className="mb-2 shrink-0 text-[10px] leading-relaxed pc-left-faint">
-        frame.local:x / y / w / h / anchor / scale / rotate,以及三维的{" "}
+        {tr("frame.local:x / y / w / h / anchor / scale / rotate, and for 3D: {0}", " ")}
         <span className="pc-left-muted">rotateX / rotateY / translateZ</span>
-        (三维要在「参数」页打开透视相机才有近大远小,否则只是斜切)
+        {tr("(for 3D, turn on the perspective camera in the \"Parameters\" tab to get near-large/far-small depth, otherwise it is only a skew)")}
       </div>
 
       <textarea
@@ -179,20 +184,20 @@ export function CodeTab({ clip }: { clip: TrackClip }) {
         {errorMsg ? (
           <div className="text-[10px] text-red-500 truncate" title={errorMsg}>{errorMsg}</div>
         ) : dirty ? (
-          <div className="text-[10px] pc-left-muted">有未应用的修改 · Ctrl+Enter 应用 / 失焦应用</div>
+          <div className="text-[10px] pc-left-muted">{tr("Unapplied changes · Ctrl+Enter to apply / applies on blur")}</div>
         ) : missing.length > 0 ? (
           <div className="text-[10px] text-amber-500 truncate" title={missing.join(", ")}>
-            缺 {missing.length} 项参数,正靠默认值兜底渲染:{missing.join(", ")}
+            {tr("Missing {0} parameters, rendering with defaults as a fallback: {1}", missing.length, missing.join(", "))}
           </div>
         ) : (
-          <div className="text-[10px] pc-left-faint">可改:card.id / time / frame.local / blend / parts(组合卡整棵可增删改)/ params;world、motion、lifecycle 只读</div>
+          <div className="text-[10px] pc-left-faint">{tr("Editable: card.id / time / frame.local / blend / parts (the whole composite card tree can be added, removed and edited) / params; world, motion, lifecycle are read-only")}</div>
         )}
       </div>
     </div>
   );
 }
 
-const ENVELOPE_TITLE = "这张卡对外唯一的样子:card(含生命周期)、time、frame(位置)、blend(淡入淡出)、parts(部件树)、params。Agent 的 get_clip / set_clip 看到和改的也是它。";
+const ENVELOPE_TITLE = tr("The one canonical outward form of this card: card (including lifecycle), time, frame (position), blend (fade in/out), parts (part tree), params. This is also what the Agent sees and edits with get_clip / set_clip.");
 
-// 让未使用的类型导入不报 lint(类型只在注释里提到)
+// Keep the unused type import from failing lint (the type is only mentioned in comments)
 export type { ClipEnvelope };

@@ -1,0 +1,132 @@
+<p align="center">
+  <img src="docs/assets/logo.svg" width="88" height="88" alt="PromptCut ロゴ">
+</p>
+
+<h1 align="center">PromptCut Lite</h1>
+
+<p align="center">
+  <strong>AI エージェントに話しかけて動画を編集。いつでも手動に切り替えられます。</strong>
+</p>
+
+<p align="center">
+  <a href="README.md"><img src="https://img.shields.io/badge/English-3a3f4b?style=for-the-badge" alt="English"></a>
+  <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/简体中文-3a3f4b?style=for-the-badge" alt="简体中文"></a>
+  <a href="README.ja.md"><img src="https://img.shields.io/badge/日本語-00A3A3?style=for-the-badge" alt="日本語"></a>
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-6F69FC" alt="MIT ライセンス"></a>
+  <a href="https://github.com/Nice9Tian/PromptCut_Lite/actions/workflows/test.yml"><img src="https://github.com/Nice9Tian/PromptCut_Lite/actions/workflows/test.yml/badge.svg" alt="テスト状態"></a>
+  <img src="https://img.shields.io/badge/node-%E2%89%A5%2022-00A3A3" alt="Node.js 22 以上">
+  <img src="https://img.shields.io/badge/desktop-Windows%20x64-3a3f4b" alt="デスクトップ版：Windows x64">
+  <a href="CONTRIBUTING.en.md"><img src="https://img.shields.io/badge/PRs-welcome-00A3A3" alt="PR 歓迎"></a>
+</p>
+
+<p align="center">
+  <a href="#作業スタイル">作業スタイル</a> ·
+  <a href="#できること">できること</a> ·
+  <a href="#はじめかた">はじめかた</a> ·
+  <a href="#ドキュメント">ドキュメント</a> ·
+  <a href="CONTRIBUTING.en.md">コントリビュート</a>
+</p>
+
+<p align="center">
+  <img src="docs/assets/vibe-ja.webp" width="900" alt="PromptCut の Vibe モード：左にプロジェクト一覧、中央にエージェントとのチャット、右にレンダリングされた映像">
+</p>
+
+PromptCut は AI 動画編集ワークベンチです。自然な言葉でエージェントに指示することも、自分の手でカットやパラメータ調整をすることもでき、同じプロジェクトで両方を同時に進められます。
+
+**このリポジトリは Lite 版です。** シングルユーザー・単一マシンのローカルデスクトップ専用です（デスクトップアプリとローカルのデスクトップブラウザ）。アカウント、クラウドプロジェクト、複数人での共同編集、LAN 機能、モバイル版は含まれません。すべてお使いのマシン上で動作し、アカウント登録も外部サーバーへの接続も不要です。LAN での共同編集やスマートフォン対応が必要な場合は、[コミュニティ版](https://github.com/Nice9Tian/PromptCut_Community)をご利用ください。
+
+## 作業スタイル
+
+同じプロジェクトで、いつでも次のスタイルを切り替えられます。切り替えても状態は失われません。
+
+| スタイル | 使い方 |
+|---|---|
+| **Vibe モード** | エディタを開きません。スタート画面でひとこと伝えると、エージェントがプロジェクトを作成します。チャット画面で進み具合を確認し、サイドパネルで映像と変更前後の比較を見られます。自分で調整したいときは詳細編集を開くと、タイムラインを操作できます。 |
+| **クラシックモード** | 素材ライブラリ、プレビュー、タイムライン、AI パネルが揃った本格的なエディタで、あなたとエージェントが一緒に編集します。 |
+| **SKILL モード** | デスクトップアプリのみ。デスクトップ上のエージェントが MCP で接続し、エディタは閉じたままバックグラウンドで動作します。いつでもエディタを開いて加われます。 |
+
+<p align="center">
+  <img src="docs/assets/classic-ja.webp" width="900" alt="PromptCut のクラシックモード：左に素材ライブラリ、中央にプレビュー、右に AI パネル、下にタイムライン">
+</p>
+
+## できること
+
+| | |
+|---|---|
+| **Vibe モード** | 作りたい動画を伝えるだけで、エディタを開かずに最初の一本ができます。チャットで指示を続けたり、詳細編集でタイムラインを調整したりできます。 |
+| **エージェントによる編集** | ローカルの CLI / API エージェントと連携し、タイムラインの構成、カードの追加、パラメータの調整を任せられます。他のエージェントから呼び出せる MCP サーバーとしても動作します。 |
+| **手動編集** | タイムライン、マルチトラック、カットのネスト、パラメータパネル、プレビュー。 |
+| **カード** | モーショングラフィックス、グラフ、字幕などを React コンポーネントとして実装した「カード」。内蔵ライブラリが付属し、自作もできます。 |
+| **レンダリングと書き出し** | プリレンダリングによるスナップショット生成、ローカルの Chrome によるフレーム単位のレンダリング、ffmpeg による最終動画の合成。 |
+| **素材** | ローカルからの読み込み、Web リンクからの取得（yt-dlp）、ショット境界検出、被写体検出、トラッキング、音声文字起こし。 |
+| **多言語** | 画面は英語、簡体字中国語、日本語に対応しています。最初はシステムの言語に合わせて表示され、言語メニューからいつでも切り替えられます。切り替えても開いているプロジェクトはそのままです。 |
+| **デスクトップアプリ** | Tauri v2 のシェルに Node、Chrome for Testing、ffmpeg、内蔵 Python をまとめた Windows インストーラー。 |
+
+## はじめかた
+
+Node.js 22 以上（24.x を推奨）が必要です。最終動画の書き出しには `PATH` 上の ffmpeg も必要です（Windows の場合：`winget install --id Gyan.FFmpeg -e`）。
+
+```bash
+npm ci
+npm run dev        # ローカルエディタ：http://127.0.0.1:5190
+```
+
+| コマンド | 内容 |
+|---|---|
+| `npm run dev` | ローカルエディタを起動します。バックエンドは Vite 開発サーバーのプラグインミドルウェアにあるため、開発サーバーがアプリ本体を兼ねます。 |
+| `npm test` | 全ユニットテスト |
+| `npm run build` | 型チェックのあとビルド |
+| `npx tsc -b` | 型チェックのみ |
+
+Python 側（音声文字起こし、ショット検出、被写体検出、トラッキング、素材収集）の依存関係とモデルの重みは必要に応じてインストールされ、足りないものは `status` に正直に表示されます。詳しくは [python/README.md](python/README.md) を参照してください。デスクトップアプリのビルドは [desktop/README.md](desktop/README.md) を参照してください。
+
+## ドキュメント
+
+ドキュメントは中国語で書かれています。`docs/semantics/` はこのプロジェクトの**契約**であり、セマンティクスとコードが食い違う場合はセマンティクスが優先されます。コードを変更する前に、[docs/semantics/README.md](docs/semantics/README.md) の表で読むべき文書を確認してください。
+
+| 知りたいこと | 参照先 |
+|---|---|
+| 製品が存在する理由と目標 | [docs/semantics/product-purpose.md](docs/semantics/product-purpose.md) |
+| システムの構成 | [docs/semantics/architecture.md](docs/semantics/architecture.md)、製品機能は [product/](docs/semantics/product/)、具体的な仕組みは [mechanism/](docs/semantics/mechanism/) |
+| 使い方 | [docs/semantics/user-workflow.md](docs/semantics/user-workflow.md)、詳細は [workflow/](docs/semantics/workflow/) |
+| 用語集 | [docs/semantics/glossary.md](docs/semantics/glossary.md) |
+| 設計の理由 | [docs/rationale/](docs/rationale/) |
+| トラブルシューティングと運用の知識 | [docs/guides/](docs/guides/) |
+| コントリビュートの方法 | [CONTRIBUTING.en.md](CONTRIBUTING.en.md)（英語） |
+
+<details>
+<summary><strong>このリポジトリの外を指す参照について</strong></summary>
+
+コードのコメントやセマンティクス文書には、このリポジトリに含まれないものへの参照がときどき出てきます。次の 2 種類です。
+
+- **上流の内部文書**：`docs/plan/…`（計画と契約）、`docs/reports/…`（受け入れレポート）、および `docs/local.md`（マシンごとのメモ。設計上どのリポジトリにもコミットされません。`docs/semantics/guide_files/constraints.md` を参照）。
+- **商用版のみのコード**：`src/online/…`、`src/account/…`、`server/account/…`、`server/hosted/…` などのパスや、`ONLINE_BUILD` のように Lite 版では常に偽となるコンパイル時定数です。
+
+どちらも意図的に残しています。判断の出どころを示すものであり、結論はコメント自体に書かれているので、参照先を開けなくてもコードの理解に支障はありません。上流でローカルとクラウドの境界の分離が完了した段階で（[CONTRIBUTING.en.md](CONTRIBUTING.en.md) の対象領域一覧を参照）、これらの参照は両方のエディションでまとめて書き換えられます。ここだけを先に書き換えると、同じファイルの内容がエディション間で食い違ってしまうため、あえてそのままにしています。
+
+</details>
+
+<details>
+<summary><strong>コーディングエージェント向けの入口</strong></summary>
+
+このリポジトリには `AGENTS.md` と `CLAUDE.md` を**置いていません**。これらのファイルは各ツールが無条件にコンテキストへ読み込むため、このプロジェクトの作業習慣が他の人のエージェントに持ち込まれてしまいます。必要な場合は、作業コピーに下の内容で作成してください。コミットはしないでください（`.gitignore` で除外済みです）。
+
+````markdown
+# PromptCut
+
+AI 動画編集ワークベンチ。このリポジトリを変更する前に、次のことを把握してください。
+
+- セマンティクスは `docs/semantics/` にあります。製品の約束は `product/`、実装の仕組みは `mechanism/`、ユーザーフローは `workflow/`。セマンティクスとコードが食い違う場合はセマンティクスが優先されます。
+- 厳守すべき制約は `docs/semantics/guide_files/constraints.md` にあります。レイヤー構成は kernel ← render ← editor / mcp / ai で、下位層は上位層を参照しません。ゲートキーパーテストで検査されます。
+- 検証方法と、変更の種類ごとに必要なチェックは `docs/semantics/guide_files/verification.md` にあります。
+- 変更範囲ごとに読むべきセマンティクスは `docs/semantics/README.md` にあります。
+````
+
+</details>
+
+## ライセンスと名称
+
+コードは [MIT](LICENSE) ライセンスですが、**「PromptCut」という名称と関連する標章はライセンスの対象外です**。自由にフォーク、改変、再配布できますが、公式リリースと誤解されないよう、配布物に「PromptCut」という名前は使わないでください。

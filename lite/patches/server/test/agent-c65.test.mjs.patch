@@ -1,8 +1,8 @@
 diff --git a/server/test/agent-c65.test.mjs b/server/test/agent-c65.test.mjs
-index d3f03bf2689f78dc8dc5a6ea960cb354a400a04e..044e72bb4b95ad4fbeea3adf93ca2143f649c14d 100644
+index 25a8f0fc5a7a9e46cbb2129fc70c339c9838a34a..776556f6a1e4c54a3ad0ad47f4ae84538b6c75d1 100644
 --- a/server/test/agent-c65.test.mjs
 +++ b/server/test/agent-c65.test.mjs
-@@ -15,7 +15,7 @@ import http from 'node:http';
+@@ -19,7 +19,7 @@ import http from 'node:http';
  import { test } from 'node:test';
  import { fileURLToPath } from 'node:url';
  import { createServer as createVite } from 'vite';

@@ -5,21 +5,22 @@ import { readStored, writeStored } from "./stored";
 import { SectionHead } from "./SectionHead";
 import { SoundGenerationControls } from "./SoundEffectForm";
 import { ReadOnlyFence } from "../ReadOnlyFence";
+import { tr } from "../../i18n/index.ts";
 
 type EditTab = "form" | "code" | "nodes";
 
 const EDIT_TABS: { key: EditTab; label: string }[] = [
-  { key: "form", label: "参数" },
-  { key: "code", label: "代码" },
-  { key: "nodes", label: "节点" },
+  { key: "form", label: tr("Parameters") },
+  { key: "code", label: tr("Code") },
+  { key: "nodes", label: tr("Nodes") },
 ];
 const EDIT_TAB_KEYS = EDIT_TABS.map((t) => t.key);
 const EDIT_TAB_STORE = "pc.left.editTab";
 
 /**
- * 「编辑」分区:胶囊分页 参数 / 代码 / 节点(记在 pc.left.editTab)。
- * 参数、代码是 Inspector(它在内部把两页都常驻挂着,切过去不丢代码框里没提交的草稿);节点是 NodeGraphTab。
- * 三页都常驻挂载,只用行内 display 显隐。
+ * The "Edit" section: pill tabs Parameters / Code / Nodes (remembered in pc.left.editTab).
+ * Parameters and Code are the Inspector (internally it keeps both tabs mounted, so switching away doesn't lose uncommitted drafts in the code box); Nodes is NodeGraphTab.
+ * All three tabs stay mounted and are shown or hidden only with inline display.
  */
 export function EditSection() {
   const [tab, setTab] = useState<EditTab>(() => readStored(EDIT_TAB_STORE, EDIT_TAB_KEYS, "form"));
@@ -30,8 +31,8 @@ export function EditSection() {
 
   return (
     <div data-pc="inspector" className="pc-left-section">
-      <SectionHead title="编辑">
-        <div className="pc-lib-chips" role="tablist" aria-label="编辑分页">
+      <SectionHead title={tr("Edit")}>
+        <div className="pc-lib-chips" role="tablist" aria-label={tr("Edit tabs")}>
           {EDIT_TABS.map((t) => (
             <button
               key={t.key}

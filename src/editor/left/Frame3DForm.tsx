@@ -1,39 +1,95 @@
+import { useEffect, useState } from "react";
 import { actions, useStore } from "../../store/project";
 import { resolveFrame } from "../../kernel/layout";
 import { clampFov, DEFAULT_FOV_DEG, MAX_FOV_DEG, MIN_FOV_DEG, perspectivePx } from "../../kernel/space3d";
+import { activeCutEntry, defaultCutFovDeg } from "../../kernel/camera.mjs";
+import { activeCutKind, type TrackClip } from "../../kernel/project";
 import type { ClipFrame } from "../../kernel/types";
-import type { TrackClip } from "../../kernel/project";
 import { NumberField } from "../fields/NumberField";
 import { RangeField } from "../fields/RangeField";
-
-/**
- * 编辑 → 三维:把这张卡摆进空间。
- *
- * # 为什么相机开关也放在这儿
- *
- * 三维是**整个项目一档**的(一个画面只有一台相机),而这三个旋钮是**每张卡**的。
- * 分在两个地方的话必然出现这一幕:用户把 rotateY 拉到 40°,画面只是斜切了一下,
- * 没有近大远小,然后他以为是这个功能不好用 —— 其实只是相机没开。
- * 所以把开关放在同一屏,而且没开的时候直接把话说出来。
- *
- * # 没有 frame 的卡怎么办
- *
- * 大多数卡没有 frame(铺满画幅)。要给它加三维就得先有个 frame,
- * 这里补的是 `{x:0, y:0}` —— resolveFrame 会把 w/h 补成整个画幅、锚点补成左上角,
- * 也就是和「没有 frame」一模一样的位置。所以加这个 frame 不会让画面动,
- * 只是让它有地方存三维那三个值。
- */
+import { tr } from "../../i18n/index.ts";
 
 const RESET: Partial<ClipFrame> = { rotateX: 0, rotateY: 0, translateZ: 0 };
+
+function ExprRow({
+  clipId,
+  fieldKey,
+  label,
+  value,
+  placeholder,
+}: {
+  clipId: string;
+  fieldKey: string;
+  label: string;
+  value: string | undefined;
+  placeholder: string;
+}) {
+  const [draft, setDraft] = useState(value ?? "");
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDraft(value ?? "");
+    setErr(null);
+  }, [clipId, value]);
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    const prev = value ?? "";
+    if (trimmed === prev) {
+      setErr(null);
+      return;
+    }
+    try {
+      actions.setClipFrameExpr(clipId, { [fieldKey]: trimmed || null });
+      setErr(null);
+    } catch (e: any) {
+      setErr(e?.message || String(e));
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-center gap-2">
+        <span className="w-16 shrink-0 pc-left-muted font-mono text-[11px]">{label}</span>
+        <input
+          data-pc={`frame-expr-${fieldKey}`}
+          value={draft}
+          placeholder={placeholder}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") {
+              setDraft(value ?? "");
+              setErr(null);
+            }
+          }}
+          className="flex-1 min-w-0 pc-left-input is-sm font-mono"
+        />
+      </div>
+      {err && <div className="text-[10px] text-rose-400 pl-16 leading-snug">{err}</div>}
+    </div>
+  );
+}
 
 export function Frame3DForm({ clip }: { clip: TrackClip }) {
   const project = useStore((s) => s.project);
   const stage = { width: project.width, height: project.height };
   const f = resolveFrame(clip.frame, stage);
-  const on = !!project.camera3dFov;
-  const fov = project.camera3dFov ?? DEFAULT_FOV_DEG;
+  const is3DCut = activeCutKind(project) === "3d";
+  const cutEntry = activeCutEntry(project);
+  const on = is3DCut || !!project.camera3dFov;
+  const fov = is3DCut ? defaultCutFovDeg(project, cutEntry) : (project.camera3dFov ?? DEFAULT_FOV_DEG);
+  const isPureMedia = Boolean(clip.mediaId && !clip.cardId);
+  const canPlace3D = !isPureMedia || is3DCut;
 
-  /** 只改传进来的那几项,其余保留;没有 frame 就补一个和「铺满」等价的 */
+  const hasExpr = Boolean(clip.frameExpr && Object.keys(clip.frameExpr).length > 0);
+  const [exprOpen, setExprOpen] = useState(hasExpr);
+  useEffect(() => {
+    if (hasExpr) setExprOpen(true);
+  }, [clip.id, hasExpr]);
+
+  /** Change only the items passed in and keep the rest; if there is no frame, fill in one equivalent to "fill" */
   const patch = (p: Partial<ClipFrame>) => {
     const prev = clip.frame ?? { x: 0, y: 0 };
     actions.setClipFrame(clip.id, { ...prev, ...p } as ClipFrame);
@@ -72,81 +128,143 @@ export function Frame3DForm({ clip }: { clip: TrackClip }) {
 
   const is3D = f.rotateX !== 0 || f.rotateY !== 0 || f.translateZ !== 0;
 
+  const exprFields: { key: string; label: string; placeholder: string }[] = [
+    { key: "x", label: "x", placeholder: `${Math.round(f.x)} + 200 * p` },
+    { key: "y", label: "y", placeholder: `${Math.round(f.y)}` },
+    { key: "w", label: "w", placeholder: `${Math.round(f.w)}` },
+    { key: "h", label: "h", placeholder: `${Math.round(f.h)}` },
+    { key: "scale", label: "scale", placeholder: "1 + 0.1 * sin(t)" },
+    { key: "rotate", label: "rotate", placeholder: "15 * p" },
+    ...(canPlace3D
+      ? [
+          { key: "rotateX", label: "rotateX", placeholder: "0" },
+          { key: "rotateY", label: "rotateY", placeholder: "30 * p" },
+          { key: "translateZ", label: "translateZ", placeholder: "-400 * p" },
+        ]
+      : []),
+  ];
+
   return (
     <div className="px-3 py-2 flex flex-col gap-2 text-xs pc-left-divider">
-      <div className="flex items-center justify-between">
-        <span className="font-semibold pc-left-strong">三维</span>
-        <label className="flex items-center gap-1 pc-left-muted" title="整个项目一档:一个画面只有一台相机">
-          <input
-            data-pc="frame3d-camera"
-            type="checkbox"
-            className="pc-left-range"
-            checked={on}
-            onChange={(e) =>
-              actions.setProjectMeta({ camera3dFov: e.target.checked ? (project.camera3dFov ?? DEFAULT_FOV_DEG) : undefined })
-            }
-          />
-          <span>透视相机</span>
-        </label>
-      </div>
+      {canPlace3D && (
+        <>
+          <div className="flex items-center justify-between">
+            <span className="font-semibold pc-left-strong">{tr("3D")}</span>
+            {is3DCut ? (
+              <span className="text-[10px] pc-left-faint">{tr("3D cut board")}</span>
+            ) : (
+              <label className="flex items-center gap-1 pc-left-muted" title={tr("One setting for the whole project: a frame has only one camera")}>
+                <input
+                  data-pc="frame3d-camera"
+                  type="checkbox"
+                  className="pc-left-range"
+                  checked={on}
+                  onChange={(e) =>
+                    actions.setProjectMeta({ camera3dFov: e.target.checked ? (project.camera3dFov ?? DEFAULT_FOV_DEG) : undefined })
+                  }
+                />
+                <span>{tr("Perspective camera")}</span>
+              </label>
+            )}
+          </div>
 
-      {/*
-        没开相机却已经拧了旋钮 —— 这是最容易让人以为"功能坏了"的状态:
-        画面确实变了(仿射斜切),但没有近大远小。所以直接说破,并给一个一键打开。
-      */}
-      {!on && is3D && (
-        <button
-          type="button"
-          onClick={() => actions.setProjectMeta({ camera3dFov: DEFAULT_FOV_DEG })}
-          className="text-left text-[11px] leading-relaxed text-amber-400/90 bg-amber-500/10 border border-amber-500/25 rounded px-2 py-1"
-        >
-          相机没开,现在只是把卡斜切了一下,没有近大远小 —— 点这里打开透视。
-        </button>
+          {!on && is3D && (
+            <button
+              type="button"
+              onClick={() => actions.setProjectMeta({ camera3dFov: DEFAULT_FOV_DEG })}
+              className="text-left text-[11px] leading-relaxed text-amber-400/90 bg-amber-500/10 border border-amber-500/25 rounded px-2 py-1"
+            >
+              {tr("The camera is off, so the card is only skewed, with no perspective scaling. Click here to turn on perspective.")}
+            </button>
+          )}
+
+          {row(tr("Around horizontal axis"), "rotateX", -180, 180, 1, "°", tr("Positive = top edge tilts inward, bottom edge lifts toward the viewer"))}
+          {row(tr("Around vertical axis"), "rotateY", -180, 180, 1, "°", tr("Positive = right side turns inward, left side turns toward the viewer"))}
+          {row(tr("Depth"), "translateZ", -2000, 1200, 10, "px", tr("Positive moves toward the viewer (larger), negative moves inward (smaller)"))}
+
+          {on && (
+            <div className="flex items-center gap-2 pc-left-muted" title={tr("Smaller means weaker perspective (closer to orthographic), larger is more exaggerated. Camera distance is derived from this and the frame size, not set separately")}>
+              <span className="w-14 shrink-0">{tr("Field of view")}</span>
+              <RangeField
+                attrs={{ "data-pc": "frame3d-fov" }}
+                min={MIN_FOV_DEG}
+                max={MAX_FOV_DEG}
+                step={1}
+                value={fov}
+                onValue={(v) => {
+                  const clamped = clampFov(v);
+                  if (is3DCut) actions.setCutMeta(undefined, { camera3dFov: clamped });
+                  else actions.setProjectMeta({ camera3dFov: clamped });
+                }}
+                className="flex-1 min-w-0 pc-left-range"
+              />
+              <span className="w-16 text-right pc-left-faint">{fov}°</span>
+              <span className="w-6" />
+            </div>
+          )}
+
+          <div className="flex items-center justify-between text-[10px] pc-left-faint">
+            <span>
+              {on
+                ? tr("Camera is {0}px from the frame", Math.round(perspectivePx(stage, fov)))
+                : tr("One camera shared by the whole project")}
+            </span>
+            {is3D && (
+              <button type="button" onClick={() => patch(RESET)} className="pc-left-link">
+                {tr("Reset")}
+              </button>
+            )}
+          </div>
+
+          {on && !cutEntry?.cameras?.length && f.translateZ >= perspectivePx(stage, fov) && (
+            <div className="text-[11px] leading-relaxed text-rose-400/90">
+              {tr("Depth has passed the camera ({0}px), so this card is now behind the camera. Pull it back a bit.", Math.round(perspectivePx(stage, fov)))}
+            </div>
+          )}
+        </>
       )}
 
-      {row("绕横轴", "rotateX", -180, 180, 1, "°", "正值 = 顶边往里倒、底边朝观众抬起来")}
-      {row("绕纵轴", "rotateY", -180, 180, 1, "°", "正值 = 右边往里转、左边朝观众转过来")}
-      {row("深度", "translateZ", -2000, 1200, 10, "px", "正值朝观众(变大),负值往里(变小)")}
-
-      {on && (
-        <div className="flex items-center gap-2 pc-left-muted" title="越小透视越弱(接近正交),越大越夸张。相机距离由它和画幅推出来,不单独设">
-          <span className="w-14 shrink-0">视角</span>
-          <RangeField
-            attrs={{ "data-pc": "frame3d-fov" }}
-            min={MIN_FOV_DEG}
-            max={MAX_FOV_DEG}
-            step={1}
-            value={fov}
-            onValue={(v) => actions.setProjectMeta({ camera3dFov: clampFov(v) })}
-            className="flex-1 min-w-0 pc-left-range"
-          />
-          <span className="w-16 text-right pc-left-faint">{fov}°</span>
-          <span className="w-6" />
-        </div>
-      )}
-
-      <div className="flex items-center justify-between text-[10px] pc-left-faint">
-        <span>
-          {on
-            ? `相机距画面 ${Math.round(perspectivePx(stage, fov))}px`
-            : "整个项目共用一台相机"}
-        </span>
-        {is3D && (
-          <button type="button" onClick={() => patch(RESET)} className="pc-left-link">
-            归零
+      <div data-pc="frame-expr-section" className={canPlace3D ? "pt-2 pc-left-divider flex flex-col gap-1.5" : "flex flex-col gap-1.5"}>
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            data-pc="toggle-frame-expr"
+            onClick={() => setExprOpen((o) => !o)}
+            className="font-semibold pc-left-strong flex items-center gap-1 text-left"
+          >
+            <span>{exprOpen ? "▾" : "▸"}</span>
+            <span>{tr("Keyframe expressions")}</span>
+            {hasExpr && <span className="text-[10px] text-sky-400 font-mono">f(t)</span>}
           </button>
+          {hasExpr && (
+            <button
+              type="button"
+              data-pc="clear-frame-expr"
+              onClick={() => actions.setClipFrameExpr(clip.id, null)}
+              className="pc-left-link text-[10px]"
+            >
+              {tr("Clear")}
+            </button>
+          )}
+        </div>
+        {exprOpen && (
+          <div className="flex flex-col gap-1.5 pt-1">
+            <div className="text-[10px] pc-left-faint leading-relaxed">
+              {tr("Animate placement deterministically using t (local seconds), d (clip duration), p (0..1).")}
+            </div>
+            {exprFields.map((ef) => (
+              <ExprRow
+                key={ef.key}
+                clipId={clip.id}
+                fieldKey={ef.key}
+                label={ef.label}
+                value={(clip.frameExpr as Record<string, string | undefined> | undefined)?.[ef.key]}
+                placeholder={ef.placeholder}
+              />
+            ))}
+          </div>
         )}
       </div>
-
-      {/*
-        深度推过头会越过相机 —— 那时画面上这张卡会涨到占满整幅甚至更大,
-        看起来像"炸了"。与其让人自己猜,不如在越界时直接说。
-      */}
-      {on && f.translateZ >= perspectivePx(stage, fov) && (
-        <div className="text-[11px] leading-relaxed text-rose-400/90">
-          深度已经越过相机({Math.round(perspectivePx(stage, fov))}px),这张卡跑到镜头后面去了。往回拉小一点。
-        </div>
-      )}
     </div>
   );
 }

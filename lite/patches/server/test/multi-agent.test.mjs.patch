@@ -1,11 +1,11 @@
 diff --git a/server/test/multi-agent.test.mjs b/server/test/multi-agent.test.mjs
-index 9d535adb8d031669529e2a78a971a315ab3d3dac..87e361bab50bbe3a2ea325268ec01756e3b213dd 100644
+index 95267b48f4e3ae05a1038c618bcc40adba27bd73..a8401eb9b7c5639079b1ddc0aeb135c11dce98b2 100644
 --- a/server/test/multi-agent.test.mjs
 +++ b/server/test/multi-agent.test.mjs
-@@ -438,6 +438,4 @@ test('MA-S14 分工模式归档后没有残留入口:标识符、路由、文件
+@@ -451,6 +451,4 @@ test('MA-S14 no leftover entry points after split-work mode was archived: identi
    };
    for (const d of ['src', 'server', 'scripts']) walk(path.join(ROOT, d));
-   assert.deepEqual(hits, [], `分工模式的入口还有残留:\n${hits.join('\n')}`);
+   assert.deepEqual(hits, [], `Entry points of split-work mode still remain:\n${hits.join('\n')}`);
 -  const baseline = JSON.parse(fs.readFileSync(path.join(ROOT, 'server/test/c10-api-ratchet-baseline.json'), 'utf8')).paths;
--  assert.equal(baseline.includes('/api/ai/plan') || baseline.includes('/api/ai/triage'), false, '在线构建的 /api 棘轮基线按删掉的路由更新');
+-  assert.equal(baseline.includes('/api/ai/plan') || baseline.includes('/api/ai/triage'), false, 'the online build\'s /api ratchet baseline is updated for the deleted routes');
  });

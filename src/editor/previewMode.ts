@@ -1,18 +1,20 @@
 /**
- * 预览走哪条路:**回滚开关 `?preview=legacy` 与双舞台开关 `?preview=stage`**(D5 / F2)。
+ * Which path the preview takes: **the rollback switch `?preview=legacy` and the dual-stage switch
+ * `?preview=stage`** (D5 / F2).
  *
- * **R7 已经把缺省翻过来了**:不带参数、带 `?preview=stage`、带任何别的值,走的都是
- * 跨源双舞台 —— 舞台 iframe 直接露出来,播放头由可见舞台按帧节拍推(K4),
- * 主文档只留音频。要回到老路得显式写 `?preview=legacy`:一个同源舞台 iframe、
- * 整帧 `<img>` 预览、播放头由 `Preview` 的 rAF 循环推。
+ * **R7 flipped the default**: with no parameter, with `?preview=stage`, or with any other value,
+ * the preview runs on the cross-origin dual stage. The stage iframe is exposed directly, the
+ * playhead is pushed by the visible stage on its frame tick (K4), and the main document keeps only
+ * audio. To go back to the old path you must write `?preview=legacy` explicitly: one same-origin
+ * stage iframe, a full-frame `<img>` preview, and the playhead pushed by the rAF loop in `Preview`.
  */
 
-/** 舞台实例名。**只是实例名,和角色无关**(E1):谁当 `front` 由 `setRole` 定 */
+/** Stage instance name. **Only an instance name, unrelated to the role** (E1): which one is `front` is decided by `setRole` */
 export type StageId = "A" | "B";
 
 export const STAGE_IDS: readonly StageId[] = ["A", "B"];
 
-/** 起手的角色分派:A 当可见舞台,B 当后台舞台。K5 的互换之后这张表就不作数了 */
+/** Initial role assignment: A is the visible stage, B is the background stage. After the K5 swap this table no longer applies */
 export const INITIAL_ROLE_OF: Record<StageId, "front" | "back"> = { A: "front", B: "back" };
 
 export type PreviewMode = "legacy" | "stage";
@@ -20,15 +22,17 @@ export type PreviewMode = "legacy" | "stage";
 const paramOf = (): string => (typeof location === "undefined" ? "" : new URLSearchParams(location.search).get("preview") || "");
 
 /**
- * **缺省是 stage(R7 的原子切换)**;只有显式 `?preview=legacy` 才退回单舞台 + 整帧那条路。
+ * **The default is stage (R7's atomic switch)**; only an explicit `?preview=legacy` falls back to
+ * the single stage + full-frame path.
  */
 export function previewMode(): PreviewMode {
   return paramOf() === "legacy" ? "legacy" : "stage";
 }
 
 /**
- * 编辑器进程真的起起来的舞台端口(`server/vite-plugin-stage-ports.ts` 注入)。
- * 端口被占、或者在没有这个插件的环境里(vite preview 的产物包),这里是空表。
+ * The stage ports the editor process actually started (injected by
+ * `server/vite-plugin-stage-ports.ts`). If a port is taken, or in an environment without this
+ * plugin (the vite preview bundle), this is an empty table.
  */
 export function stagePorts(): number[] {
   const v = (window as unknown as { __PC_STAGE_PORTS__?: unknown }).__PC_STAGE_PORTS__;
@@ -36,9 +40,11 @@ export function stagePorts(): number[] {
 }
 
 /**
- * 每个舞台实例该从哪个源加载。**按当前页面的 hostname 拼**(不是写死 127.0.0.1):
- * 用户从 `localhost` 打开时两个 iframe 也得是 `localhost` —— 同 host 不同端口 + OAC 头
- * 才是实测过的那条路(`docs/archive/restructure_planning/g0-a-webview2-probe.md`),换成别的 host 就成了另一件事。
+ * Which origin each stage instance loads from. **Built from the current page's hostname** (not
+ * hardcoded 127.0.0.1): when the user opens from `localhost`, both iframes must also be on
+ * `localhost`. Same host with different ports + OAC headers is the path that was verified in
+ * practice (`docs/archive/restructure_planning/g0-a-webview2-probe.md`); any other host would be a
+ * different matter.
  */
 export function stageOrigins(): Record<StageId, string> | null {
   const ports = stagePorts();
@@ -49,8 +55,10 @@ export function stageOrigins(): Record<StageId, string> | null {
 }
 
 /**
- * 这一次到底开不开双舞台。两个条件都要:显式开了 `?preview=stage`,而且两个舞台端口都起来了。
- * 少一个就退回 legacy 的同源单舞台 —— 宁可少一个后台舞台,也不能让编辑台开不出画面。
+ * Whether to enable the dual stage this time. Both conditions are required: `?preview=stage` was
+ * explicitly set, and both stage ports are up. If either is missing, fall back to legacy's
+ * same-origin single stage. Better to lack a background stage than to leave the editor unable to
+ * show a picture.
  */
 export function dualStage(): boolean {
   return previewMode() === "stage" && stageOrigins() !== null;
@@ -64,13 +72,14 @@ export function singleLiveStage(): boolean {
   return false;
 }
 
-/** 可见舞台渲 live 变体(双舞台):播放头跟舞台的 `frame`、快照 / 抑制经 RPC 投递 */
+/** The visible stage renders the live variant (dual stage): the playhead follows the stage's `frame`, and snapshots / suppression are delivered via RPC */
 export function liveStage(): boolean {
   return dualStage();
 }
 
 /**
- * 舞台 iframe 的地址。legacy(或端口没起来)时是同源,只有 A 那一个。
+ * The address of the stage iframe. Under legacy (or when ports didn't start) it is same-origin,
+ * with only A.
  */
 export function stageSrc(id: StageId, opts: { dual?: boolean } = {}): string {
   const dual = opts.dual ?? dualStage();
@@ -82,7 +91,7 @@ export function stageSrc(id: StageId, opts: { dual?: boolean } = {}): string {
   return `${origins ? origins[id] : ""}${path}?stage=1&id=${id}${mode}${platform}${dualFlag}`;
 }
 
-/** 给 `createStageRpc` 的 `targetOrigin`:跨源时必须点名,不能用 `location.origin` */
+/** The `targetOrigin` for `createStageRpc`: when cross-origin it must be named explicitly, and `location.origin` can't be used */
 export function stageTargetOrigin(id: StageId): string {
   const origins = dualStage() ? stageOrigins() : null;
   return origins ? origins[id] : location.origin;

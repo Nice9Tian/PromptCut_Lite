@@ -1,0 +1,22 @@
+diff --git a/server/test/issue12-gates.test.mjs b/server/test/issue12-gates.test.mjs
+index ba6f547e9f83b4ee1d4bb84de78269815210ee4d..2614eeb28ab5d7bbf7cfe64f9c76bb67e9ed35b4 100644
+--- a/server/test/issue12-gates.test.mjs
++++ b/server/test/issue12-gates.test.mjs
+@@ -7,7 +7,7 @@ import { createServer as createVite } from "vite";
+ import { applyCardDefinition, detachCardNode } from "../../src/kernel/cardAuthoring.mjs";
+ import { checkCardSource, checkMonolithCard } from "../vite-plugin-cards.ts";
+ import { loadSsrHost } from "../agent/ssr-host.mjs";
+-import { CLOUD_TOOL_PLAN } from "../agent/service/cloud-tools.mjs";
++import { tools } from "../mcp-tools.mjs";
+ 
+ const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
+ 
+@@ -209,7 +209,7 @@ test("MCP SSR host executes 2D/3D cut, camera lane, and frameExpr tools end-to-e
+       "remove_camera",
+       "list_cameras",
+     ]) {
+-      assert.ok(CLOUD_TOOL_PLAN[tool], `${tool} has a classification in CLOUD_TOOL_PLAN`);
++      assert.ok(tools.some((t) => t.name === tool), `${tool} is registered in MCP tools`);
+     }
+ 
+     host.resetStore();

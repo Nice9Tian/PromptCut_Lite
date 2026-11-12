@@ -1,8 +1,20 @@
 diff --git a/src/StartPage.tsx b/src/StartPage.tsx
-index 9349f146f42e6b5bce686eecb30e937ddc4feec0..de7310d8d089407245f5664b8ad2039b9337dc04 100644
+index b9698aed96c90120180ed8dd8e35db27bb186e26..7095927c462491c10476705eb1dc7e1df20e50b9 100644
 --- a/src/StartPage.tsx
 +++ b/src/StartPage.tsx
-@@ -21,18 +21,7 @@ import { SttInstallProgress } from "./editor/right/SttInstallProgress";
+@@ -1,9 +1,9 @@
+-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
++import { useCallback, useEffect, useRef, useState } from "react";
+ import type { JSX, ReactNode } from "react";
+ import "./StartPage.css";
+ import { Logo } from "./ui/Logo";
+ import { LanguageMenu } from "./ui/LanguageMenu";
+-import { listDrafts, openDraft, deleteDraft, newDraftId, saveDraft, setActiveDraftId } from "./editor/io/drafts";
++import { listDrafts, openDraft, deleteDraft, newDraftId, setActiveDraftId } from "./editor/io/drafts";
+ import type { DraftInfo } from "./editor/io/drafts";
+ import { newProject, loadProc, PROC_EXT } from "./editor/io/proc";
+ import { PROCP_EXT, isProcpFile, loadProcpFile } from "./editor/io/procp";
+@@ -22,22 +22,8 @@ import { SttInstallProgress } from "./editor/right/SttInstallProgress";
  import { VoiceSettingsDialog } from "./voice/VoiceSettingsDialog";
  import { openVoiceSettings, useVoiceSettingsState } from "./ai/voiceSettingsStore";
  import { getVoiceConfig } from "./ai/voice";
@@ -19,24 +31,28 @@ index 9349f146f42e6b5bce686eecb30e937ddc4feec0..de7310d8d089407245f5664b8ad2039b
 -}
 -import { OnlineStart } from "./start/OnlineStart";
  import { DesktopStart } from "./start/DesktopStart";
+-import { NewProjectDialog, type ExistingDraftTarget, type NewProjectInitialView } from "./start/NewProjectDialog";
+-import { RATIO_SIZE } from "./start/format";
+-import type { Ratio } from "./start/types";
+ import { tr } from "./i18n/index.ts";
  
- /** 字节数写成人看的样子。导出产物、预渲染缓存动辄几十 GB,所以到 G 为止 */
-@@ -80,25 +69,6 @@ function humanDateTime(iso: string): string {
-  * 都要编辑器进程(`/api/*`),C10a 不提供(新建与草稿随 C10 其余)。在线构建里只留 `OnlineStartPage`,桌面那一页
-  * 连同草稿、拓展功能背后的调用一起剪掉(M8 遗留 L24;写法见 `src/online/pageFlag.ts` 的「在线构建剪枝」)。
+ /** Write a byte count in a human-readable form. Export outputs and the prerender cache easily reach tens of GB, so it stops at G */
+@@ -91,25 +77,6 @@ function humanDateTime(iso: string): string {
+  * extension features, is cut away (M8 leftover L24; for the technique see "Online build pruning" in
+  * `src/online/pageFlag.ts`).
   */
 -const ONLINE_BUILD = typeof import.meta.env !== "undefined" && import.meta.env.VITE_PC_ONLINE === "1";
 -
 -function JoinSection(props: { onEnterEditor: () => void }): JSX.Element {
 -  return (
 -    <section className="sp-section" data-pc="start-join">
--      <h2 className="sp-section-title">加入别人的项目</h2>
+-      <h2 className="sp-section-title">{tr("Join someone else's project")}</h2>
 -      <JoinForm onJoined={props.onEnterEditor} />
 -    </section>
 -  );
 -}
 -
--/** 地址里点名要原来那一块账号表单(`?ui=classic`):只留给排障和还认老页面的探针,界面上没有入口 */
+-/** Explicitly request the old account form in the address (`?ui=classic`): kept only for troubleshooting and for probes that still recognize the old page; there is no entry in the UI */
 -function wantsClassic(): boolean {
 -  try {
 -    return new URLSearchParams(location.search).get("ui") === "classic";
@@ -46,10 +62,10 @@ index 9349f146f42e6b5bce686eecb30e937ddc4feec0..de7310d8d089407245f5664b8ad2039b
 -}
  
  /**
-  * 桌面版点名要氛围式那一屏(`?ui=vibe`)。桌面版的缺省仍是这一页(传统开始页) —— 改桌面版的缺省界面是一级改动,
-@@ -139,22 +109,7 @@ function setUiParam(value: string | null): void {
-  * `?ui=vibe` / `?ui=home` / `?ui=login` 不再有特别的意思(进的都是缺省这一页,`?ui=home` 不再跳过登录)。
-  * 老的那一块账号表单(`AccountProjects`)只在 `?ui=classic` 下还能打开,界面上没有入口。
+  * The desktop app explicitly asks for the Vibe-mode screen (`?ui=vibe`). The desktop app's default is still
+@@ -162,23 +129,7 @@ function setUiParam(value: string | null): void {
+  * The old account form (`AccountProjects`) can only still be opened under `?ui=classic`, and there is no
+  * entry in the UI.
   */
 -function OnlineStartPage(props: { onEnterEditor: () => void }): JSX.Element {
 -  if (wantsClassic()) {
@@ -58,6 +74,7 @@ index 9349f146f42e6b5bce686eecb30e937ddc4feec0..de7310d8d089407245f5664b8ad2039b
 -        <header className="sp-bar">
 -          <Logo size={22} />
 -          <span className="sp-bar-spacer" />
+-        <LanguageMenu className="sp-ghost-btn" />
 -        </header>
 -        <main className="sp-main"><AccountProjectsSlot online onEnterEditor={props.onEnterEditor} /></main>
 -      </div>
@@ -70,14 +87,121 @@ index 9349f146f42e6b5bce686eecb30e937ddc4feec0..de7310d8d089407245f5664b8ad2039b
 +export const StartPage: (props: { onEnterEditor: () => void }) => JSX.Element = DesktopStartPage;
  
  /**
-  * 桌面版的首屏:在传统开始页(下面那一大段)和**氛围式**那一屏(`src/start/DesktopStart.tsx`)之间二选一。
-@@ -267,9 +222,6 @@ function DesktopClassicPage(props: { onEnterEditor: () => void; onVibe: () => vo
-           <span className="sp-hero-sub">新建一个空项目</span>
+  * The desktop app's first screen: a choice between the Classic start page (the large block below) and the
+@@ -209,11 +160,6 @@ function DesktopClassicPage(props: { onEnterEditor: () => void; onVibe: () => vo
+   const [loading, setLoading] = useState(true);
+   const [error, setError] = useState("");
+   const [busy, setBusy] = useState("");
+-  const [newDialog, setNewDialog] = useState<{
+-    open: boolean;
+-    view: NewProjectInitialView;
+-    draft: ExistingDraftTarget | null;
+-  }>({ open: false, view: "local", draft: null });
+   const fileInput = useRef<HTMLInputElement>(null);
+ 
+   const refresh = useCallback(async () => {
+@@ -231,40 +177,12 @@ function DesktopClassicPage(props: { onEnterEditor: () => void; onVibe: () => vo
+   useEffect(() => { void refresh(); }, [refresh]);
+ 
+   const startNew = () => {
+-    setNewDialog({ open: true, view: "local", draft: null });
+-  };
+-
+-  const handleCreateLocal = async ({ name, ratio }: { name: string; ratio: Ratio }) => {
+-    const projName = name || tr("Untitled");
+-    const id = newDraftId();
+-    newProject(projName);
+-    if (ratio !== "16:9") {
+-      actions.setProjectMeta({ ...RATIO_SIZE[ratio] });
+-    }
+-    setActiveDraftId(id);
+-    await saveDraft(id);
+-    actions.markSaved(`${projName}${PROC_EXT}`);
++    newProject(tr("Untitled"));
++    // The new project has not been written to disk yet; after entering the editor, "Save project" writes it as a draft
++    setActiveDraftId(newDraftId());
+     onEnterEditor();
+   };
+ 
+-  const convertDraft = async (draft: DraftInfo, targetView: "cloud" | "team") => {
+-    setBusy(draft.id);
+-    setError("");
+-    try {
+-      await openDraft(draft.id);
+-      setActiveDraftId(draft.id);
+-      setNewDialog({
+-        open: true,
+-        view: targetView,
+-        draft: { id: draft.id, name: draft.name },
+-      });
+-    } catch (e) {
+-      setError(e instanceof Error ? e.message : tr("Failed to open"));
+-    } finally {
+-      setBusy("");
+-    }
+-  };
+-
+   const open = async (id: string) => {
+     setBusy(id);
+     setError("");
+@@ -311,6 +229,7 @@ function DesktopClassicPage(props: { onEnterEditor: () => void; onVibe: () => vo
+         {/* The Logo already carries its wordmark, do not add it again */}
+         <Logo size={22} />
+         <span className="sp-bar-spacer" />
++        <LanguageMenu className="sp-ghost-btn" />
+         {/* Vibe mode (`user-workflow.md` "Working mode", first row): without opening the editor, talk to the Agent and get the video made */}
+         <button className="sp-ghost-btn" data-pc="start-go-vibe" title={tr("Make the video by talking to the Agent, without opening the editor")} onClick={props.onVibe}>
+           {tr("Vibe mode")}
+@@ -327,9 +246,6 @@ function DesktopClassicPage(props: { onEnterEditor: () => void; onVibe: () => vo
+           <span className="sp-hero-sub">{tr("Create an empty project")}</span>
          </button>
  
 -        <AccountProjectsSlot online={false} onEnterEditor={onEnterEditor} />
 -        <JoinSection onEnterEditor={onEnterEditor} />
 -
          <section className="sp-section">
-           <h2 className="sp-section-title">拓展功能</h2>
+           <h2 className="sp-section-title">{tr("Extras")}</h2>
            <ExtensionCards />
+@@ -372,26 +288,6 @@ function DesktopClassicPage(props: { onEnterEditor: () => void; onVibe: () => vo
+                     {humanDate(d.updatedAt)} · {humanSize(d.size)} · {humanDuration(d.duration)}
+                   </div>
+                 </div>
+-                <div className="sp-draft-actions">
+-                  <button
+-                    type="button"
+-                    className="sp-draft-act"
+-                    data-pc="draft-switch-online"
+-                    disabled={d.broken || busy === d.id}
+-                    onClick={() => void convertDraft(d, "cloud")}
+-                  >
+-                    {tr("Switch to online project")}
+-                  </button>
+-                  <button
+-                    type="button"
+-                    className="sp-draft-act"
+-                    data-pc="draft-convert-team"
+-                    disabled={d.broken || busy === d.id}
+-                    onClick={() => void convertDraft(d, "team")}
+-                  >
+-                    {tr("Convert to team project")}
+-                  </button>
+-                </div>
+                 <button className="sp-draft-del" title={tr("Delete this draft")} onClick={() => void remove(d)}>
+                   ✕
+                 </button>
+@@ -403,15 +299,6 @@ function DesktopClassicPage(props: { onEnterEditor: () => void; onVibe: () => vo
+         <StorageSection />
+       </main>
+ 
+-      <NewProjectDialog
+-        open={newDialog.open}
+-        initialView={newDialog.view}
+-        existingDraft={newDialog.draft}
+-        onClose={() => setNewDialog((prev) => ({ ...prev, open: false }))}
+-        onCreateLocal={handleCreateLocal}
+-        onEnteredShared={onEnterEditor}
+-      />
+-
+       <input
+         ref={fileInput}
+         type="file"

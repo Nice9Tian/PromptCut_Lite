@@ -1,14 +1,19 @@
 /**
- * 页面的同步管理(c65-design.md 第 4、6、8、9 节):页面用 WebSocket 接本机文档服务、把 DocSync 挂上 store。
+ * Page-side sync management (c65-design.md sections 4, 6, 8, 9): connects the page to the local document
+ * service over WebSocket and attaches DocSync to the store.
  *
- * - **本机项目**:连本机编辑器的 `/docservice`(回环什么都不带 = `local` 空间),项目号就是 `project.id`。
- *   载入另一个项目(开始页、打开 .proc、新建)时换一条连接、一个新的 DocSync,并把载入的内容以根替换写进去
- *   (打开的文件就是用户要的那一份);载入的还是同一个项目时是对它的一次根替换。
- * - `?join=<项目号>`:第二个页面加入同一个本机项目,内容以文档服务为准,不做根替换(V2 的真实页面版用)。
- * - 无头实例(`?headless=1`)、只读查看、连不上本机文档服务时不接:store 照旧用快照栈。
+ * - **Local project**: connects to the local editor's `/docservice` (loopback with no credentials = `local`
+ *   space), where the project ID is `project.id`. Loading another project (start page, opening a `.proc`,
+ *   creating a new project) switches to a new connection and a new DocSync, writing the loaded content in
+ *   as a root replacement (the opened file is the authoritative copy); loading the same project again is a
+ *   root replacement on that connection.
+ * - `?join=<projectId>`: a second page joining the same local project; content follows the document service
+ *   without a root replacement (used by the real-page V2 tests).
+ * - Headless instances (`?headless=1`), read-only viewing, or when the local document service cannot be
+ *   reached: does not attach, and the store uses its snapshot undo stack as usual.
  *
- * 界面状态(同步状态、离线对话框、撤销提示条、气泡、冲突合并表)放在这里的一个小仓库里,
- * 组件用 `useSync(selector)` 读。
+ * UI state (sync status, offline dialog, undo notice bar, bubbles, conflict merge table) lives in a small
+ * store here, read by components via `useSync(selector)`.
  */
 import { useSyncExternalStore } from "react";
 import { bindStore, type LocalBackup, type PausedInfo, type SyncNotice, type SyncStatus, type UndoResult, type Writer } from "../../store/docsync";
@@ -25,8 +30,9 @@ import { bindAgentSide, releaseAgentSide } from "./agentSideBinding";
 import { receivePresence, setPresenceLink } from "./presence";
 import { applyMerge, cardConflictThing, selectionList, staleSelections, type Box, type MergeThing, type Selection } from "./mergeItems";
 import { MergeTable, defaultStore } from "./mergeTable";
+import { tr } from "../../i18n/index.ts";
 
-/* ---------------- 界面状态 ---------------- */
+/* ---------------- UI state ---------------- */
 
 export interface DeviceInfo {
   deviceId: string;
@@ -39,7 +45,7 @@ export interface UndoNoticeView {
   id: number;
   kind: "undo" | "redo" | "agent";
   result: UndoResult;
-  /** 出提示时的项目(实体名按它取) */
+  /** The project when the prompt is shown (the entity name is taken from it) */
   project: Project;
 }
 
@@ -49,16 +55,17 @@ export interface Toast {
   tone: "info" | "warn";
   action?: { label: string; run: () => void; pc?: string };
   /**
-   * 同一类气泡的键:再推一条同键的,旧的那条让位(issue #15 —— 原来每进一次云端项目就叠一条常驻气泡,
-   * 在氛围式里来回点几个项目就叠成一摞)。不给键的照旧各自独立
+   * Key for a class of bubbles: pushing another one with the same key makes the old one give way (issue #15:
+   * every time you entered a cloud project a new persistent bubble was stacked, and clicking between a few
+   * projects in Vibe mode piled them into a stack). Bubbles without a key stay independent as before
    */
   key?: string;
 }
 
 export interface AgentOp {
-  /** 事件 id(`events.event` 的 eventId) */
+  /** Event id (the eventId of `events.event`) */
   eventId: string;
-  /** 这次工具调用的 callId(事件里带了才有;AI 栏按它对上 SSE 的工具调用) */
+  /** callId of this tool call (only present if the event carries it; the AI panel uses it to match SSE tool calls) */
   callId?: string;
   opId: string;
   inverse?: PathOp[];
@@ -68,8 +75,10 @@ export interface AgentOp {
 }
 
 /**
- * AI 栏的一条工具调用记录(D2,c65-design.md 第 7 节):Agent 服务端每个工具调用发「创建」「完成」两条事件,
- * 按 `eventId` 合成这一条;文字回复是一条 `kind: "text"`。只存摘要,完整参数在内容库 `event-detail`,展开时再拉。
+ * One tool call record in the AI panel (D2, c65-design.md section 7): the Agent server emits two events,
+ * "create" and "finish", for each tool call, merged into this record by `eventId`; a text reply is one
+ * `kind: "text"`. Only the summary is kept here; full parameters live in the content store `event-detail`
+ * and are fetched on expand.
  */
 export interface EventRecord {
   eventId: string;
@@ -80,19 +89,19 @@ export interface EventRecord {
   args?: string | null;
   callId?: string;
   actor?: Record<string, unknown>;
-  /** null = 还在跑(只收到了创建) */
+  /** null = still running (only "create" received so far) */
   status: "ok" | "error" | "cancelled" | null;
   summary?: string | null;
   durationMs?: number | null;
   at?: number;
   text?: string;
-  /** 这次调用写进项目的那次提交(成功的写才有) */
+  /** The commit written into the project by this call (present only for successful writes) */
   opId?: string;
   detailKey?: string | null;
 }
 
 export interface SyncView {
-  /** 页面接上了文档服务(不然 store 用快照栈) */
+  /** Whether the page is attached to the document service (otherwise the store uses its snapshot stack) */
   active: boolean;
   kind: "local" | "off";
   status: SyncStatus;
@@ -101,19 +110,20 @@ export interface SyncView {
   notice: UndoNoticeView | null;
   toasts: Toast[];
   device: DeviceInfo | null;
-  /** AI 栏记录的版本号:agentOps 变了就加一 */
+  /** Version counter for AI panel records: incremented whenever agentOps changes */
   agentOpsVersion: number;
-  /** 工具调用记录(eventRecords)的版本号:变了就加一 */
+  /** Version counter for tool call records (eventRecords): incremented whenever it changes */
   eventsVersion: number;
   unconfirmed: number;
-  /** 当前项目的历史序号（文档服务确认的 rev） */
+  /** Current project's history sequence number (rev confirmed by the document service) */
   rev: number | null;
   /**
-   * 待合并表(「冲突合并」窗口,`mergeItems.ts`):当前项目里这位用户还没处理完的东西。
-   * 按「项目 × 用户」存在文档服务(连不上时先用本机暂存的副本),供 0.7.20 的撤销冲突使用。
+   * Pending merge table ("Conflict merge" window, `mergeItems.ts`): items in the current project that this
+   * user has not finished handling yet. Stored per "project x user" on the document service (using the
+   * local stash copy when unreachable), used for 0.7.20 undo conflicts.
    */
   merge: { things: MergeThing[]; version: number; blocked: string | null };
-  /** 「冲突合并」窗口开着(导航栏的「冲突合并」按钮打开它) */
+  /** Whether the "Conflict merge" window is open (opened by the "Conflict merge" button in the nav bar) */
   mergeOpen: boolean;
 }
 
@@ -144,8 +154,8 @@ export function getSyncView(): SyncView {
   return view;
 }
 
-// 探针与排障的只读口子(同 __pcStore、__pcCloud 一类的 __pc* 钩子):这一刻连没连上、没确认的条数、离线改动存在哪。
-// 界面自己用 useSync,不走这里;探针拿它核对真状态,免得只能从界面上的提示倒推
+// Read-only hook for probes and troubleshooting (same family as __pcStore, etc.): whether connected right now,
+// count of unconfirmed ops, where offline edits live. UI components use useSync instead of this.
 if (typeof window !== "undefined") {
   (window as unknown as { __pcSync?: { view: () => SyncView } }).__pcSync = { view: () => view };
 }
@@ -161,8 +171,8 @@ export function useSync<T>(selector: (v: SyncView) => T): T {
 
 let toastSeq = 0;
 /**
- * `ms` 给 `Infinity` 就不自己消失(用户点 × 关)。回这条气泡的号(`dismissToast` 用)。
- * 给了 `key`:同键的旧气泡先撤掉,屏幕上同一类永远只有一条
+ * Pass `Infinity` for `ms` so it does not auto-dismiss (closed by clicking x). Returns the toast ID (for `dismissToast`).
+ * When `key` is given: any existing toast with the same key is dismissed first so at most one of that class is shown.
  */
 export function pushToast(text: string, tone: Toast["tone"] = "info", ms = 6000, action?: Toast["action"], key?: string): number {
   const t: Toast = { id: ++toastSeq, text, tone, ...(action ? { action } : {}), ...(key ? { key } : {}) };
@@ -181,13 +191,13 @@ export function dismissNotice() {
   patch({ notice: null });
 }
 
-/* ---------------- 连接 ---------------- */
+/* ---------------- Connection ---------------- */
 
 interface Current {
   link: SyncLink;
   kind: "local";
   docProjectId: string;
-  /** 这条连接连的文档服务地址(告诉 Agent 服务端,见 bindAgentSide) */
+  /** Document service URL this connection uses (reported to the Agent server, see bindAgentSide) */
   url: string;
   unbind: () => void;
   offs: (() => void)[];
@@ -202,12 +212,12 @@ export function pageSession(): string {
   return session;
 }
 
-/** 当前连着的项目号(本机项目是 project.id);没接文档服务时是 project.id */
+/** Currently connected project ID (`project.id` for local projects, or `project.id` when detached) */
 export function currentDocProjectId(): string {
   return cur?.docProjectId ?? getState().project.id ?? "";
 }
 
-/** 本页面是谁(撤销提示条里认「你在另一个页面」用) */
+/** Who this page is (used in the undo notice bar to recognize "You on another page") */
 export function me(): Me {
   return { session, userId: "local" };
 }
@@ -233,7 +243,7 @@ async function loadDevice(): Promise<DeviceInfo | null> {
   }
 }
 
-/* ---------------- 本地备份 ---------------- */
+/* ---------------- Local backups ---------------- */
 
 async function saveBackup(b: LocalBackup) {
   const project = getState().project;
@@ -245,11 +255,11 @@ async function saveBackup(b: LocalBackup) {
     const r = await fetch("/api/project-backups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!r.ok) throw new Error(String(r.status));
   } catch (e) {
-    pushToast(`本地备份没存下来(${(e as Error).message}),被覆盖的那一版找不回了。`, "warn", 10_000);
+    pushToast(tr("The local backup was not saved ({0}); the overwritten version cannot be recovered.", (e as Error).message), "warn", 10_000);
   }
 }
 
-/* ---------------- 远端改动描边 ---------------- */
+/* ---------------- Outline for remote changes ---------------- */
 
 const FLASH_MS = 1500;
 
@@ -281,7 +291,7 @@ function flashEntities(entities: string[]) {
   }, 30);
 }
 
-/* ---------------- 绑定 ---------------- */
+/* ---------------- Binding ---------------- */
 
 function onNotice(n: SyncNotice) {
   switch (n.kind) {
@@ -297,17 +307,17 @@ function onNotice(n: SyncNotice) {
     }
     case "overwritten": {
       const who = writerLabel(n.by, me(), displayNames());
-      pushToast(`你的近期修改已被 ${who} 覆盖。已将你修改的版本存入草稿备份（「项目」菜单 →「本地备份…」可找回）。`, "warn", 10_000);
+      pushToast(tr("Your recent edits were overwritten by {0}. Your edited version has been saved to the draft backups (find it under the \"Project\" menu → \"Local backups…\").", who), "warn", 10_000);
       return;
     }
     case "remote":
       flashEntities(n.entities);
       return;
     case "rejected":
-      pushToast(`有一步修改没被文档服务接受(${n.reason}),已撤回。`, "warn");
+      pushToast(tr("An edit was not accepted by the document service ({0}) and has been rolled back.", n.reason), "warn");
       return;
     case "replay-dropped":
-      pushToast("有一步离线时的修改在最新历史序号上落不下去,已丢弃。", "warn");
+      pushToast(tr("An offline edit could not be applied on top of the latest history sequence number and was discarded."), "warn");
       return;
     default:
       return;
@@ -325,11 +335,11 @@ function refreshStatus() {
 
 const cardSyncHooks = {
   ticket: async (): Promise<string> => {
-    throw new Error("本机项目不需要连接票据");
+    throw new Error(tr("This page is not connected to this shared project"));
   },
   toast: (text: string, tone: Toast["tone"], ms?: number) => pushToast(text, tone, ms),
   who: (actor: Record<string, unknown> | null | undefined) =>
-    actor ? writerLabel({ actor, session: typeof actor.session === "string" ? actor.session : undefined }, me(), displayNames()) : "别人",
+    actor ? writerLabel({ actor, session: typeof actor.session === "string" ? actor.session : undefined }, me(), displayNames()) : tr("Someone else"),
   conflict: (c: { key: string; mine: string; cloud: string; rev: number }) => {
     const table = mergeTable;
     if (!table) return false;
@@ -339,7 +349,7 @@ const cardSyncHooks = {
   },
 };
 
-/** 留在页面的 Agent 工具执行前记个位置,执行后取这期间本页面发出的提交(回包里带 opIds,server/agent/agent-side.mjs 用) */
+/** Mark a position before an Agent tool executes on the page, and afterwards collect commits emitted by this page in the meantime (returned in opIds for server/agent/agent-side.mjs) */
 export function pageOpMark(): number | null {
   return cur ? cur.link.ds.opMark() : null;
 }
@@ -394,7 +404,7 @@ export function detach() {
   patch({ active: false, kind: "off", status: "idle", paused: null, offlineOpen: false, notice: null, unconfirmed: 0 });
 }
 
-/** 换下来的连接:等它手里没确认的提交落地(最多 5 s)再关 */
+/** Replaced connection: wait for any unconfirmed commits it holds to settle (up to 5 s) before closing */
 function retire(link: SyncLink) {
   link.ds
     .whenSettled({ timeoutMs: 5000 })
@@ -416,7 +426,7 @@ function newLocalLink(docProjectId: string, initial: Project): SyncLink {
   return link;
 }
 
-/** 切到本机空间里的这个项目;`load` 为真时把这份内容以根替换写进去(文件内容为准) */
+/** Switch to this project in the local space; when `load` is true, write this content in as a root replacement (the file content wins) */
 function switchToLocal(project: Project, { load }: { load: boolean }): Project {
   const id = project.id || "untitled";
   const link = newLocalLink(id, project);
@@ -427,7 +437,7 @@ function switchToLocal(project: Project, { load }: { load: boolean }): Project {
   return link.ds.project;
 }
 
-/** store 的载入(loadProject)交到这里:同一个本机项目是根替换,别的项目换连接 */
+/** Store loads (loadProject) are routed here: loading the same local project is a root replacement, another project switches connections */
 function onLoad(project: Project): Project {
   patch({ rev: cur?.link.ds.rev ?? null });
   if (!started && !cur) return project;
@@ -435,7 +445,7 @@ function onLoad(project: Project): Project {
   return switchToLocal(project, { load: true });
 }
 
-/* ---------------- 其余消息:事件、通知 ---------------- */
+/* ---------------- Side messages: events, notifications ---------------- */
 
 const agentOps = new Map<string, AgentOp>();
 
@@ -443,12 +453,12 @@ function asOps(v: unknown): PathOp[] | undefined {
   return Array.isArray(v) && v.length ? (v as PathOp[]) : undefined;
 }
 
-/** 工具调用记录:eventId → 记录(插入序,超过上限丢最早的) */
+/** Tool call records: eventId -> record (insertion order, dropping the oldest once over the cap) */
 const eventRecords = new Map<string, EventRecord>();
 const EVENT_RECORDS_KEEP = 1000;
 const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
 
-/** 按 eventId 更新一条记录(创建、完成、文字、events.list 的条目都走这里);回合成后的记录 */
+/** Upsert one record by eventId (create, finish, text, and items from events.list all pass through here); returns the merged record */
 function upsertRecord(e: Record<string, unknown>): EventRecord | null {
   const eventId = str(e.eventId);
   if (!eventId) return null;
@@ -477,12 +487,12 @@ function upsertRecord(e: Record<string, unknown>): EventRecord | null {
   return rec;
 }
 
-/** AI 栏的操作记录(最新的在前) */
+/** Action records for the AI panel (newest first) */
 export function eventRecordList(): EventRecord[] {
   return [...eventRecords.values()].reverse();
 }
 
-/** 按 eventId 取 AI 栏「撤销这步」要的那条写入记录 */
+/** Look up the write record needed by "Undo this step" in the AI panel by eventId */
 export function agentOpOfEvent(eventId: string): AgentOp | null {
   return agentOps.get(eventId) ?? null;
 }
@@ -518,7 +528,7 @@ export function subscribeQueueEvents(cb: (msg: AnyMsg) => void): () => void {
 
 function onSideMessage(msg: AnyMsg) {
   if (msg.type === "task.done" || msg.type === "task.failed") {
-    for (const l of [...queueEventListeners]) { try { l(msg); } catch { /* 订阅方坏了不影响别人 */ } }
+    for (const l of [...queueEventListeners]) { try { l(msg); } catch { /* A broken subscriber must not affect others */ } }
     return;
   }
   switch (msg.type) {
@@ -541,7 +551,7 @@ function onSideMessage(msg: AnyMsg) {
   }
 }
 
-/* ---------------- 验收用的钩子(只在开发模式) ---------------- */
+/* ---------------- Acceptance test hooks (dev mode only) ---------------- */
 
 if (typeof window !== "undefined" && import.meta.env?.DEV) {
   (window as unknown as { __pcSyncTest?: unknown }).__pcSyncTest = {
@@ -559,9 +569,9 @@ if (typeof window !== "undefined" && import.meta.env?.DEV) {
   };
 }
 
-/* ---------------- 启动 ---------------- */
+/* ---------------- Startup ---------------- */
 
-/** 编辑器挂上时调一次(幂等)。连不上本机文档服务就什么都不接 */
+/** Called once when the editor mounts (idempotent). Does nothing if the local document service cannot be reached */
 export async function startSync(): Promise<void> {
   if (started) return;
   started = true;
@@ -581,7 +591,7 @@ export async function startSync(): Promise<void> {
   switchToLocal(getState().project, { load: true });
 }
 
-/** `?join=` 打开的页面:内容以文档服务为准,演示卡之类的开场填充不要做 */
+/** Page opened with `?join=`: content follows the document service, so skip demo-card starter population */
 export function isJoinPage(): boolean {
   try {
     return new URLSearchParams(location.search).has("join");
@@ -590,15 +600,15 @@ export function isJoinPage(): boolean {
   }
 }
 
-/* ---------------- 保存 ---------------- */
+/* ---------------- Saving ---------------- */
 
-/** `.proc` 只在所有本地修改都拿到确认之后写(语义「项目文件」);没接文档服务时直接放行 */
+/** `.proc` is written only after all local edits have been confirmed (semantics "Project file"); passes straight through when not attached to the document service */
 export async function whenSaved(timeoutMs = 10_000): Promise<void> {
   if (!cur) return;
   await cur.link.ds.whenSettled({ timeoutMs });
 }
 
-/* ---------------- 离线 ---------------- */
+/* ---------------- Offline ---------------- */
 
 export function setOfflineOpen(open: boolean) {
   patch({ offlineOpen: open });
@@ -616,7 +626,7 @@ export function discardOffline() {
   refreshStatus();
 }
 
-/* ---------------- 冲突合并:待合并表 ---------------- */
+/* ---------------- Conflict merge: pending merge table ---------------- */
 
 let mergeTable: MergeTable | null = null;
 let mergeAttached: SyncLink | null = null;
@@ -642,9 +652,12 @@ function attachMergeChannel(link: SyncLink | null) {
 const newBatchId = () => `b${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 /**
- * 按撤销(含 AI 栏「撤销这一步」)遇到冲突:被挡住的那几样按修改项细分(`undoConflict.ts`)。
- * 没被别人改过的直接撤(不进撤销栈);别人改过的进这位用户的待合并表(来源 `undo`),打开「冲突合并」窗口。
- * 没接上待合并表(还没连过文档服务)时回 false,退回原来的提示条。
+ * When undo (including "Undo this step" in the AI panel) hits a conflict: the blocked items are split into
+ * individual property changes (`undoConflict.ts`). Items untouched by others are undone directly (without
+ * entering the undo stack); items changed by others go into this user's pending merge table (`undo` source)
+ * and open the "Conflict merge" window.
+ * Returns false when no pending merge table is attached (the document service was never connected), falling
+ * back to the original notice bar.
  */
 function routeUndoConflict(conflict: NonNullable<UndoResult["conflict"]>): boolean {
   const table = mergeTable, ds = cur?.link.ds;
@@ -652,7 +665,7 @@ function routeUndoConflict(conflict: NonNullable<UndoResult["conflict"]>): boole
   const plan = undoConflictPlan(ds.project, conflict, { batch: newBatchId(), baseRev: ds.rev, at: Date.now() },
     { manualDuration: getState().durationManual });
   if (plan.direct) {
-    try { ds.commitAside(plan.direct); } catch (e) { pushToast(`没撤成：${(e as Error).message}`, "warn"); }
+    try { ds.commitAside(plan.direct); } catch (e) { pushToast(tr("Could not undo: {0}", (e as Error).message), "warn"); }
   }
   if (plan.things.length) {
     void table.add(plan.things);
@@ -665,16 +678,19 @@ export function setMergeOpen(open: boolean) {
   patch({ mergeOpen: open });
 }
 
-/** 合并、删除选中的结果:给窗口里显示的一句话 */
+/** Result of merging or deleting selected items: one sentence shown in the window */
 export interface MergeOutcome { ok: boolean; message: string; stale?: string[] }
 
 /**
- * 「合并」:把选中的二级项照我这边写进项目(一次普通修改,进撤销栈),写成的从待合并表里拿掉。
- * 每次都重新核对:`seen` 是窗口显示时各二级项的云端值,和现在的不一样(窗口打开后又被别人改过)的这次不并,交还给界面刷新再看。
+ * "Merge": write the selected secondary items into the project as on my side (a normal edit on the undo stack),
+ * and remove the ones that succeeded from the pending merge table.
+ * Re-checked every time: `seen` is each secondary item's cloud value when the window was shown; an item that
+ * differs from the current one (changed again by others after the window opened) is not merged this time and
+ * is handed back to the UI to refresh and review.
  */
 export function mergeSelected(sel: Selection, seen: Map<string, Box>): MergeOutcome {
   const table = mergeTable;
-  if (!table || !cur || view.status !== "online") return { ok: false, message: "当前离线，连上后再合并。" };
+  if (!table || !cur || view.status !== "online") return { ok: false, message: tr("Currently offline. Merge after reconnecting.") };
   const ds = cur.link.ds;
   const things = table.things;
   const stale = staleSelections(ds.project, things, seen, sel);
@@ -689,15 +705,15 @@ export function mergeSelected(sel: Selection, seen: Map<string, Box>): MergeOutc
     try {
       ds.mergeOffline(r.project, ds.rev);
     } catch (e) {
-      return { ok: false, message: `没合并成：${(e as Error).message}` };
+      return { ok: false, message: tr("Could not merge: {0}", (e as Error).message) };
     }
     void table.remove(r.done);
   }
   const n = r.done.reduce((k, d) => k + (chosen.get(d.key)?.size ? d.props.filter((p) => chosen.get(d.key)!.has(p)).length : 0), 0);
-  const parts = [n ? `已合并 ${n} 项。` : r.external.length ? "" : "没有合并任何项。"];
-  if (r.external.length) parts.push(`${r.external.length} 张卡片的源码正在照你这边写回去。`);
-  if (stale.length) parts.push(`${stale.length} 项在窗口打开后又被别人改过，这次没有合并，请看过现在的值再决定。`);
-  if (r.failed.length) parts.push(`${r.failed.length} 项没合并成：${[...new Set(r.failed.map((f) => f.reason))].join("；")}。`);
+  const parts = [n ? tr("Merged {0} items.", n) : r.external.length ? "" : tr("No items were merged.")];
+  if (r.external.length) parts.push(tr("The source of {0} cards is being written back to match your side.", r.external.length));
+  if (stale.length) parts.push(tr("{0} items were changed by someone else after the window was opened and were not merged this time. Please review the current values and decide.", stale.length));
+  if (r.failed.length) parts.push(tr("{0} items could not be merged: {1}.", r.failed.length, [...new Set(r.failed.map((f) => f.reason))].join(tr(";"))));
   return { ok: r.failed.length === 0 && stale.length === 0, message: parts.join(""), stale };
 }
 
@@ -705,21 +721,21 @@ async function mergeCards(list: { key: string; props: string[]; thing: MergeThin
   for (const x of list) {
     const r = await takeMineCard(x.thing.ref.id, String(x.thing.mine?.v ?? ""));
     if (r.ok) void mergeTable?.remove([{ key: x.key, props: x.props }]);
-    else pushToast(`卡片 ${x.thing.ref.id.replace(/^src\//, "")} 没写回去:${r.error ?? ""}`, "warn", 10_000);
+    else pushToast(tr("Card {0} was not written back: {1}", x.thing.ref.id.replace(/^src\//, ""), r.error ?? ""), "warn", 10_000);
   }
 }
 
-/** 「删除选中」:从待合并表里拿掉,云端保持现状;断网时也能删(连上后再交给文档服务) */
+/** "Delete selected": remove from the pending merge table, the cloud stays as is; works while offline too (handed to the document service after reconnecting) */
 export function deleteSelected(sel: Selection): MergeOutcome {
   const table = mergeTable;
-  if (!table) return { ok: false, message: "没有待合并项。" };
+  if (!table) return { ok: false, message: tr("No pending items to merge.") };
   const list = selectionList(sel);
   const n = list.reduce((k, x) => k + x.props.length, 0);
   void table.remove(list);
-  return { ok: true, message: `已删除 ${n} 项，云端保持现状。` };
+  return { ok: true, message: tr("Deleted {0} items, the cloud stays as it is.", n) };
 }
 
-/** 离线对话框里「这段时间项目有以下改动」:谁改了哪些实体 */
+/** "The project changed in the meantime in the following ways" in the offline dialog: who changed which entities */
 export function pausedSummary(): { who: string; what: string[] }[] {
   const since = view.paused?.since ?? [];
   const project = getState().project;
@@ -733,7 +749,7 @@ export function pausedSummary(): { who: string; what: string[] }[] {
   });
 }
 
-/* ---------------- 撤销:跳过去看 ---------------- */
+/* ---------------- Undo: jump to entity ---------------- */
 
 export function jumpToEntity(entity: string) {
   const clip = clipOfEntity(entity);
@@ -749,19 +765,19 @@ export function jumpToEntity(entity: string) {
   if (entity.startsWith("/meta/")) window.dispatchEvent(new Event("pc-open-project-settings"));
 }
 
-/* ---------------- AI 栏「撤销这一步」 ---------------- */
+/* ---------------- AI panel "Undo this step" ---------------- */
 
 export function agentOpFor(callId: string | undefined): AgentOp | null {
   if (!callId) return null;
   return agentOps.get(`call:${callId}`) ?? agentOps.get(callId) ?? null;
 }
 
-/** 撤 Agent 那一步:以本页面身份提交逆操作 + undoOf,进本页面的撤销栈 */
+/** Undo an Agent step: submit the inverse operation + undoOf under this page's identity, onto this page's undo stack */
 export function revertAgentOp(rec: AgentOp): UndoResult | null {
   if (!cur) return null;
   const ds = cur.link.ds;
   if (!ds.canRevertRemote(rec.opId, rec.inverse)) {
-    pushToast("这一步的改动记录不在本页面上,撤不了。", "warn");
+    pushToast(tr("The change record for this step is not on this page, so it cannot be undone."), "warn");
     return null;
   }
   const result = ds.revertRemote({ opId: rec.opId, inverse: rec.inverse, rev: rec.rev, by: rec.by });
@@ -769,7 +785,7 @@ export function revertAgentOp(rec: AgentOp): UndoResult | null {
     rec.state = "done";
     patch({ agentOpsVersion: view.agentOpsVersion + 1 });
   } else if (!result.skipped.length && !result.failed.length) {
-    pushToast("这一步没撤成:它改过的地方现在已经是撤之前的样子(可能已被撤回过),没有需要退回的内容。", "warn");
+    pushToast(tr("This step could not be undone: what it changed already looks the way it did before the step (it may have been undone already), so there is nothing to roll back."), "warn");
   }
   return result;
 }

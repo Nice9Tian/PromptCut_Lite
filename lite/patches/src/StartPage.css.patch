@@ -1,0 +1,43 @@
+diff --git a/src/StartPage.css b/src/StartPage.css
+index 5a7ec57d410b73ab556a69853d22f799e8ce7326..9f8fec7e798eb50d73ffd348c109c8510600f384 100644
+--- a/src/StartPage.css
++++ b/src/StartPage.css
+@@ -136,37 +136,10 @@
+ /* ── Local drafts ─────────────────────────────────────── */
+ .sp-grid {
+   display: grid;
+-  grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
++  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+   gap: 14px;
+ }
+ .sp-draft { position: relative; display: flex; flex-direction: column; gap: 6px; }
+-.sp-draft-actions {
+-  display: flex;
+-  flex-wrap: wrap;
+-  gap: 4px;
+-  margin-top: 2px;
+-}
+-.sp-draft-act {
+-  flex: 1 1 auto;
+-  font-family: inherit;
+-  font-size: 11px;
+-  padding: 4px 6px;
+-  border-radius: 5px;
+-  border: 1px solid var(--hairline);
+-  background: var(--fill-subtle);
+-  color: var(--ink);
+-  cursor: pointer;
+-  white-space: nowrap;
+-  text-align: center;
+-}
+-.sp-draft-act:hover:not(:disabled) {
+-  border-color: var(--accent);
+-  color: var(--accent);
+-}
+-.sp-draft-act:disabled {
+-  opacity: 0.5;
+-  cursor: default;
+-}
+ .sp-draft-thumb {
+   position: relative;
+   aspect-ratio: 16 / 10;

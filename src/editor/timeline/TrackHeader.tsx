@@ -1,21 +1,25 @@
 import { useState } from "react";
-import { Track } from "../../kernel/project";
-import { actions } from "../../store/project";
+import { activeCutKind, Track } from "../../kernel/project";
+import { actions, useStore } from "../../store/project";
 import { ContextMenu } from "./ContextMenu";
 import { useTimelineContext } from "./TimelineContext";
 import { useReorderDrag, useRowOffset } from "./useReorder";
 import { IconVolume, IconVolumeMute, IconDrag, IconEye, IconEyeOff, IconLock, IconUnlock } from "../../ui/icons";
 import { useReadOnly } from "../readOnly";
+import { tr } from "../../i18n/index.ts";
+import { shownName } from "../../i18n/names.ts";
 
 /**
- * 序列行头(配色诊断与修正 v2 整屏)。
- * 左边拖动把手,中间名字(双击改名),右边「可见 / 锁定」两个图标——**常驻显示**,
- * 不再悬停才出现:用户要一眼看出哪条被锁了、哪条被藏了,悬停才显示等于藏起了状态。
+ * Track header (color diagnosis and fix v2, full screen).
+ * Drag handle on the left, name in the middle (double-click to rename), and two icons on the right,
+ * "visible / locked": **always shown**, no longer appearing only on hover: users need to see at a glance
+ * which track is locked and which is hidden, and showing them only on hover amounts to hiding the state.
  */
 export function TrackHeader({ track, index }: { track: Track; index: number }) {
   const { trackH } = useTimelineContext();
+  const is3dCut = useStore((s) => activeCutKind(s.project) === "3d");
   const { start: startReorder } = useReorderDrag();
-  // 这个项目只给了只读权限(游客):换序、改名、静音 / 隐藏 / 锁定、删序列都不给
+  // This project only grants read-only permission (guest): reordering, renaming, mute / hide / lock, and deleting tracks are all disallowed
   const ro = useReadOnly();
   const offset = useRowOffset(index, track.id);
   const [isEditing, setIsEditing] = useState(false);
@@ -40,7 +44,7 @@ export function TrackHeader({ track, index }: { track: Track; index: number }) {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY });
   };
-  /** 双击行名改名:只读项目里不给 */
+  /** Double-click the row name to rename: not allowed in a read-only project */
   const startEditing = () => { if (!ro.locked) setIsEditing(true); };
 
   return (
@@ -53,7 +57,7 @@ export function TrackHeader({ track, index }: { track: Track; index: number }) {
           transform: offset.y ? `translateY(${offset.y}px)` : undefined,
           transition: offset.animated ? "transform 150ms cubic-bezier(0.2, 0, 0, 1)" : "none",
         }}
-        title={ro.title("按住上下拖 = 调整序列顺序")}
+        title={ro.title(tr("Press and drag up or down = reorder tracks"))}
         onContextMenu={handleContextMenu}
         onPointerDown={(e) => { if (!ro.locked) startReorder(e, index, track.id); }}
       >
@@ -69,16 +73,25 @@ export function TrackHeader({ track, index }: { track: Track; index: number }) {
               onPointerDown={(e) => e.stopPropagation()}
             />
           ) : (
-            track.name
+            shownName(track.name)
           )}
         </div>
-        {(track.muted || mutedClips > 0) && <span className="pc-track-mute-summary" title={track.muted ? "整条序列已静音" : `${mutedClips} 个片段已静音；放大时间轴可查看每段标记`}>
-          {track.muted ? "已静音" : `${mutedClips} 静音`}
+        {is3dCut && (
+          <span
+            data-pc="track-depth-hint"
+            className="pc-track-depth-badge"
+            title={tr("In a 3D cut, occlusion follows 3D depth rather than track order; tracks only group clips and break equal-depth ties")}
+          >
+            {tr("Depth")}
+          </span>
+        )}
+        {(track.muted || mutedClips > 0) && <span className="pc-track-mute-summary" title={track.muted ? tr("Whole track is muted") : tr("{0} clips muted; zoom in on the timeline to see each segment's marker", mutedClips)}>
+          {track.muted ? tr("Muted") : tr("{0} muted", mutedClips)}
         </span>}
         <div className="pc-tl-row-acts" onPointerDown={(e) => e.stopPropagation()}>
           <button type="button" className={track.muted ? "is-active" : ""} disabled={ro.locked}
             onClick={() => actions.updateTrack(track.id, { muted: !track.muted })}
-            title={ro.title(track.muted ? "打开序列声音" : "静音序列")} aria-label={track.muted ? "打开序列声音" : "静音序列"} aria-pressed={!!track.muted}>
+            title={ro.title(track.muted ? tr("Unmute track") : tr("Mute track"))} aria-label={track.muted ? tr("Unmute track") : tr("Mute track")} aria-pressed={!!track.muted}>
             {track.muted ? <IconVolumeMute size={12} /> : <IconVolume size={12} />}
           </button>
           <button
@@ -86,7 +99,7 @@ export function TrackHeader({ track, index }: { track: Track; index: number }) {
             className={track.hidden ? "is-active" : ""}
             disabled={ro.locked}
             onClick={() => actions.updateTrack(track.id, { hidden: !track.hidden })}
-            title={ro.title(track.hidden ? "已隐藏,点击显示" : "隐藏这条序列")}
+            title={ro.title(track.hidden ? tr("Hidden, click to show") : tr("Hide this track"))}
             aria-pressed={!!track.hidden}
           >
             {track.hidden ? <IconEyeOff size={12} /> : <IconEye size={12} />}
@@ -96,7 +109,7 @@ export function TrackHeader({ track, index }: { track: Track; index: number }) {
             className={track.locked ? "is-active" : ""}
             disabled={ro.locked}
             onClick={() => actions.updateTrack(track.id, { locked: !track.locked })}
-            title={ro.title(track.locked ? "已锁定,点击解锁" : "锁定这条序列")}
+            title={ro.title(track.locked ? tr("Locked, click to unlock") : tr("Lock this track"))}
             aria-pressed={!!track.locked}
           >
             {track.locked ? <IconLock size={12} /> : <IconUnlock size={12} />}
@@ -109,7 +122,7 @@ export function TrackHeader({ track, index }: { track: Track; index: number }) {
           x={contextMenu.x}
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
-          items={[{ label: ro.locked ? ro.why : "删除序列", disabled: ro.locked, action: () => actions.removeTrack(track.id) }]}
+          items={[{ label: ro.locked ? ro.why : tr("Delete track"), disabled: ro.locked, action: () => actions.removeTrack(track.id) }]}
         />
       )}
     </>

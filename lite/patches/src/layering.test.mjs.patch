@@ -1,23 +1,26 @@
 diff --git a/src/layering.test.mjs b/src/layering.test.mjs
-index f9dcd671bdfe2816112319bfc26346cb58b938fd..98e40854ff3fa1ef19f4d4af68071c189aa855ff 100644
+index 2f9cd4905a540745309809aa17625e2870f7bdb5..7070ccfe23bc6fa0f3b52b2aea57507cbdadeb3a 100644
 --- a/src/layering.test.mjs
 +++ b/src/layering.test.mjs
-@@ -7,10 +7,6 @@
-  *     ← src/render(舞台渲染、帧管线)
-  *       ← src/editor(编辑台界面)/ src/mcp / src/ai
+@@ -7,12 +7,6 @@
+  *     ← src/render (stage rendering, frame pipeline)
+  *       ← src/editor (editor UI) / src/mcp / src/ai
   *
-- * 为什么要钉死:在线浏览器模式和本地模式共用同一套渲染代码(docs/semantics/mechanism/platforms.md)。kernel / render 一旦反向
-- * 摸到编辑台,浏览器那边就得连整个编辑台一起打包 —— 而这种依赖是悄悄长出来的,
-- * 加一行 import 就成立,不报错也不掉帧,只有这里拦得住。
+- * Why pin this down: online browser mode and local mode share the same rendering code
+- * (docs/semantics/mechanism/platforms.md). If kernel / render reaches up into editor in reverse,
+- * the browser side has to bundle the entire editor along with it: and this kind of dependency
+- * creeps in silently: adding a single import line works without throwing errors or dropping
+- * frames, and only this check can catch it.
 - *
-  * 运行时 import 和**类型** import 都算:类型边编译后虽然不留下 import,但它一样
-  * 表达「这一层认识上一层的概念」,而且改起来最容易顺手把运行时也拖进来。
-  */
-@@ -26,8 +22,6 @@ const SRC = path.dirname(fileURLToPath(import.meta.url));
+  * Both runtime imports and **type** imports count: although type edges leave no imports after
+  * compilation, they still express that "this layer knows concepts from an upper layer", and when
+  * making edits it is all too easy to drag runtime code in with them.
+@@ -29,9 +23,6 @@ const SRC = path.dirname(fileURLToPath(import.meta.url));
  const FORBIDDEN = {
    kernel: ["render", "editor", "mcp", "ai", "store", "cards", "parts"],
    render: ["editor", "mcp", "ai"],
--  // c10a:在线浏览器模式的判定(`src/online/`)与 render 同层:只引 kernel、render 与同目录(主会话裁定)
+-  // c10a: Online browser mode detection (`src/online/`) is on the same layer as render: only
+-  // imports kernel, render, and the same directory (lead session ruling)
 -  online: ["editor", "mcp", "ai"],
  };
  

@@ -1,0 +1,51 @@
+diff --git a/README.ja.md b/README.ja.md
+index b4cc7efc06e792c45537e4ff2343f69981a9bea5..b50d0a9f041a14bce1ec5e26389a4f5f40069bcc 100644
+--- a/README.ja.md
++++ b/README.ja.md
+@@ -2,7 +2,7 @@
+   <img src="docs/assets/logo.svg" width="88" height="88" alt="PromptCut ロゴ">
+ </p>
+ 
+-<h1 align="center">PromptCut Community</h1>
++<h1 align="center">PromptCut Lite</h1>
+ 
+ <p align="center">
+   <strong>AI エージェントに話しかけて動画を編集。いつでも手動に切り替えられます。</strong>
+@@ -16,7 +16,7 @@
+ 
+ <p align="center">
+   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-6F69FC" alt="MIT ライセンス"></a>
+-  <a href="https://github.com/Nice9Tian/PromptCut_Community/actions/workflows/test.yml"><img src="https://github.com/Nice9Tian/PromptCut_Community/actions/workflows/test.yml/badge.svg" alt="テスト状態"></a>
++  <a href="https://github.com/Nice9Tian/PromptCut_Lite/actions/workflows/test.yml"><img src="https://github.com/Nice9Tian/PromptCut_Lite/actions/workflows/test.yml/badge.svg" alt="テスト状態"></a>
+   <img src="https://img.shields.io/badge/node-%E2%89%A5%2022-00A3A3" alt="Node.js 22 以上">
+   <img src="https://img.shields.io/badge/desktop-Windows%20x64-3a3f4b" alt="デスクトップ版：Windows x64">
+   <a href="CONTRIBUTING.en.md"><img src="https://img.shields.io/badge/PRs-welcome-00A3A3" alt="PR 歓迎"></a>
+@@ -36,7 +36,7 @@
+ 
+ PromptCut は AI 動画編集ワークベンチです。自然な言葉でエージェントに指示することも、自分の手でカットやパラメータ調整をすることもでき、同じプロジェクトで両方を同時に進められます。
+ 
+-**このリポジトリはコミュニティ版です。** お使いのマシンとローカルネットワーク内で動作します（デスクトップアプリとローカルブラウザ）。同じネットワーク上の別のコンピュータやスマートフォンからコードをスキャンして共有プロジェクトに参加し、一緒に編集できます。アカウント登録は不要です。Web サイトのアカウント、クラウドプロジェクト、ホスティングサービス、Web オンライン版はクローズドな商用版に含まれます。
++**このリポジトリは Lite 版です。** シングルユーザー・単一マシンのローカルデスクトップ専用です（デスクトップアプリとローカルのデスクトップブラウザ）。アカウント、クラウドプロジェクト、複数人での共同編集、LAN 機能、モバイル版は含まれません。すべてお使いのマシン上で動作し、アカウント登録も外部サーバーへの接続も不要です。LAN での共同編集やスマートフォン対応が必要な場合は、[コミュニティ版](https://github.com/Nice9Tian/PromptCut_Community)をご利用ください。
+ 
+ ## 作業スタイル
+ 
+@@ -62,7 +62,6 @@ PromptCut は AI 動画編集ワークベンチです。自然な言葉でエー
+ | **カード** | モーショングラフィックス、グラフ、字幕などを React コンポーネントとして実装した「カード」。内蔵ライブラリが付属し、自作もできます。 |
+ | **レンダリングと書き出し** | プリレンダリングによるスナップショット生成、ローカルの Chrome によるフレーム単位のレンダリング、ffmpeg による最終動画の合成。 |
+ | **素材** | ローカルからの読み込み、Web リンクからの取得（yt-dlp）、ショット境界検出、被写体検出、トラッキング、音声文字起こし。 |
+-| **LAN 共有** | プロジェクトをローカルネットワークに共有し、別のコンピュータやスマートフォンからコードをスキャンして参加すると、双方がリアルタイムに同期します。スマートフォンには専用の画面があります。 |
+ | **多言語** | 画面は英語、簡体字中国語、日本語に対応しています。最初はシステムの言語に合わせて表示され、言語メニューからいつでも切り替えられます。切り替えても開いているプロジェクトはそのままです。 |
+ | **デスクトップアプリ** | Tauri v2 のシェルに Node、Chrome for Testing、ffmpeg、内蔵 Python をまとめた Windows インストーラー。 |
+ 
+@@ -104,9 +103,9 @@ Python 側（音声文字起こし、ショット検出、被写体検出、ト
+ コードのコメントやセマンティクス文書には、このリポジトリに含まれないものへの参照がときどき出てきます。次の 2 種類です。
+ 
+ - **上流の内部文書**：`docs/plan/…`（計画と契約）、`docs/reports/…`（受け入れレポート）、および `docs/local.md`（マシンごとのメモ。設計上どのリポジトリにもコミットされません。`docs/semantics/guide_files/constraints.md` を参照）。
+-- **商用版のみのコード**：商用版リポジトリの `cloud/` 以下にあります（例：`cloud/src/account/…`、`cloud/server/hosted/…`。古いコメントでは移動前の `src/account/…`、`server/hosted/…` と書かれていることがあります）。`ONLINE_BUILD` のように、コミュニティ版では常に偽となるコンパイル時定数も含みます。
++- **商用版のみのコード**：`src/online/…`、`src/account/…`、`server/account/…`、`server/hosted/…` などのパスや、`ONLINE_BUILD` のように Lite 版では常に偽となるコンパイル時定数です。
+ 
+-どちらも意図的に残しています。判断の出どころを示すものであり、結論はコメント自体に書かれているので、参照先を開けなくてもコードの理解に支障はありません。ローカルとクラウドの境界はすでに分離されています。共有コードはインターフェースとレジストリだけを知っており、商用版は `cloud/` から自身の実装を登録し、コミュニティ版ではこれらのスロットに内蔵のローカル実装が使われます。
++どちらも意図的に残しています。判断の出どころを示すものであり、結論はコメント自体に書かれているので、参照先を開けなくてもコードの理解に支障はありません。上流でローカルとクラウドの境界の分離が完了した段階で（[CONTRIBUTING.en.md](CONTRIBUTING.en.md) の対象領域一覧を参照）、これらの参照は両方のエディションでまとめて書き換えられます。ここだけを先に書き換えると、同じファイルの内容がエディション間で食い違ってしまうため、あえてそのままにしています。
+ 
+ </details>
+ 

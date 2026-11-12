@@ -1,14 +1,21 @@
 /**
- * 保存时的界面:保存进行中盖一层「正在保存」(前台编辑暂停,见 `saveLock.ts`),保存结束后把结果说清楚。
+ * UI while saving: while a save is in progress, overlay a "Saving" layer (foreground editing paused,
+ * see `saveLock.ts`), and when saving ends, state the result clearly.
  *
- * - 保存中:整页盖一层半透明的罩子,中间一张小卡写「正在保存项目」和正在等的本机写入;罩子只是让用户看得见现在不能编辑,
- *   真正拦输入的是 `saveLock.ts` 在 window 捕获阶段挂的拦截。
- * - 结束后:没保存成(等本机写入超时、写盘失败)或保存成了但有话要说(退回浏览器下载、包里缺素材、预渲染快照没存进去)时,
- *   顶部出一张不挡操作的卡片 —— 锁已经解了,编辑照常,卡片点「知道了」或按 Esc 收起。
+ * - Saving: a semi-transparent scrim over the whole page, with a small card in the middle reading
+ *   "Saving project" and the local writes being waited on; the scrim only lets the user see that
+ *   editing is not possible right now, what actually blocks input is the interception that
+ *   `saveLock.ts` attaches in the window capture phase.
+ * - After it ends: when saving did not succeed (timeout waiting for local writes, disk write
+ *   failure) or succeeded but has something to say (fell back to a browser download, media missing
+ *   from the package, prerender snapshots not saved), a card that does not block operation appears
+ *   at the top: the lock is already released and editing continues as usual; the card is dismissed
+ *   with "Got it" or Esc.
  */
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { dismissSaveNotice, getSaveLockState, getSaveNotice, subscribeSaveLock, subscribeSaveNotice } from "./saveLock";
 import "./ExportDialog.css";
+import { tr } from "../i18n/index.ts";
 
 export function SaveStatusLayer() {
   const lock = useSyncExternalStore(subscribeSaveLock, getSaveLockState, getSaveLockState);
@@ -26,20 +33,20 @@ export function SaveStatusLayer() {
   }, [notice, lock.saving]);
 
   if (lock.saving) {
-    const what = lock.kind === "procp" ? "打包保存项目" : "保存项目";
+    const what = lock.kind === "procp" ? tr("packaging and saving project") : tr("Save project");
     return (
       <div className="pc-export-backdrop" data-pc="save-lock" data-step={lock.step ?? ""} style={{ zIndex: 400, cursor: "progress", background: "rgba(0, 0, 0, 0.35)" }}>
-        <div className="pc-export-dialog" role="alertdialog" aria-modal="true" aria-busy="true" aria-label={`正在${what}`} style={{ maxWidth: 380 }}>
-          <div className="pc-export-title">正在{what}…</div>
-          <div className="pc-export-hint">保存完成前暂时不能编辑。</div>
+        <div className="pc-export-dialog" role="alertdialog" aria-modal="true" aria-busy="true" aria-label={tr("Running {0}", what)} style={{ maxWidth: 380 }}>
+          <div className="pc-export-title">{tr("Now {0}…", what)}</div>
+          <div className="pc-export-hint">{tr("Editing is temporarily unavailable until saving finishes.")}</div>
           {lock.step === "writing" ? (
-            <div className="pc-export-ok" data-pc="save-lock-step">正在写入文件…</div>
+            <div className="pc-export-ok" data-pc="save-lock-step">{tr("Writing file…")}</div>
           ) : lock.waiting.length > 0 ? (
             <div className="pc-export-ok" data-pc="save-lock-waiting" style={{ whiteSpace: "pre-line" }}>
-              {`先等本机这些写入完成：\n${lock.waiting.map((w) => `· ${w}`).join("\n")}`}
+              {tr("Wait for these local writes to finish first:\n{0}", lock.waiting.map((w) => `· ${w}`).join("\n"))}
             </div>
           ) : (
-            <div className="pc-export-ok" data-pc="save-lock-step">正在检查本机的修改…</div>
+            <div className="pc-export-ok" data-pc="save-lock-step">{tr("Checking local changes…")}</div>
           )}
         </div>
       </div>
@@ -58,7 +65,7 @@ export function SaveStatusLayer() {
       <div className="pc-export-title">{notice.title}</div>
       <div className={notice.tone === "error" ? "pc-export-err" : "pc-export-ok"} style={{ whiteSpace: "pre-line" }}>{notice.message}</div>
       <div className="pc-export-actions">
-        <button ref={okRef} type="button" className="pc-export-btn pc-export-primary" onClick={dismissSaveNotice}>知道了</button>
+        <button ref={okRef} type="button" className="pc-export-btn pc-export-primary" onClick={dismissSaveNotice}>{tr("Got it")}</button>
       </div>
     </div>
   );

@@ -1,18 +1,18 @@
 diff --git a/src/editor/probeRunner.ts b/src/editor/probeRunner.ts
-index 6234fbe9a137a3d532f8090a3cc7a4a80f5febc8..4311bab2fe47b616d5af379449281518bba1fabd 100644
+index 06cc650e6bab81041c43169cf902ab60ebffc357..3df3d707c4b8a19910c34dc7aa643e6d3df7c82a 100644
 --- a/src/editor/probeRunner.ts
 +++ b/src/editor/probeRunner.ts
-@@ -69,7 +69,6 @@ import { mergePlanCosts, setPlanCosts } from "./planDispatch";
+@@ -93,7 +93,6 @@ import { mergePlanCosts, setPlanCosts } from "./planDispatch";
  import { backStage, pushProject, stageCapabilities, whenStageReady } from "./stageBridge";
  import { MAX_PROJECT_RESENDS, currentBackJob, renderAbortAction, runBackJob } from "./stageJobs";
  import { measureGateOpen, whenMeasureGateOpen } from "./measureGate";
 -import { tierGlRoute, tierState } from "../online/onlineTier";
  
- /* ------------------------------------------------------------------ 进度 */
+ /* ------------------------------------------------------------------ progress */
  
-@@ -548,7 +547,7 @@ function deviceInputs(project: Project | null): string {
+@@ -594,7 +593,7 @@ function deviceInputs(project: Project | null): string {
  
- /** 生效的 canvas 渲染路线:在线页面跟舞台闸门走(`tierGlRoute`),桌面按项目选项、缺省路线 1 */
+ /** Effective canvas render route: the online page follows the stage gate (`tierGlRoute`); desktop uses the project option, default route 1 */
  function effectiveGlRoute(project: Project | null): "perDocument" | "shared" {
 -  return tierState().online ? tierGlRoute() : resolveGlRoute(project?.glRoute ?? null);
 +  return resolveGlRoute(project?.glRoute ?? null);

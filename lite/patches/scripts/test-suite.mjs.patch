@@ -1,21 +1,24 @@
 diff --git a/scripts/test-suite.mjs b/scripts/test-suite.mjs
-index 1c7cc3e8a02376cfada15e1e0613fe65cf2990b7..8f149d3fc135415d9794dfaf8e6ab2231edcba5a 100644
+index e904236f2c80bedd759bf5a1cb36165caf7b7bc6..e2bfd62a1d0de34e02d85bb0afe615df277ce3fe 100644
 --- a/scripts/test-suite.mjs
 +++ b/scripts/test-suite.mjs
-@@ -21,25 +21,7 @@ import { canRecoverInitialRun, exitDescription, retryReason, rootSummaryCounts,
+@@ -24,28 +24,7 @@ import { canRecoverInitialRun, exitDescription, retryReason, rootSummaryCounts,
  const root = path.resolve(fileURLToPath(import.meta.url), '..', '..');
  const reporter = path.join(root, 'scripts', 'test-event-reporter.mjs');
  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'promptcut-test-'));
 -/*
-- * 缺省要跑哪些测试。
+- * Tests to run by default.
 - *
-- * A2（2026-10-28）把云端专属的测试与探针搬到了闭源目录下（镜像原来的目录结构）。私有仓库里它们
-- * 照样要跑，公开仓库里那个目录根本不存在、这几条就是空集。
+- * A2 (2026-10-28) moved cloud-exclusive tests and probes to the closed-source directory
+- * (mirroring the original directory structure). They still need to run in the private repository;
+- * in the public repository that directory does not exist at all, making these an empty set.
 - *
-- * 闭源目录按 `PROMPTCUT_CLOUD_DIR` 找，缺省是仓库根下的 `cloud` —— 和
-- * `server/docservice/extensions.mjs`、`server/vite-plugin-hosted-gate.ts` 同一个约定：
-- * 切到子模块布局之后，闭源目录不在公开仓库根下面，写死路径会让这几条永远落空。
-- * 本文件因此登记在 `server/test/community-ownership.mjs` 的 `LOADER_WHITELIST` 里。
+- * The closed-source directory is located via `PROMPTCUT_CLOUD_DIR`, defaulting to `cloud` under
+- * the repository root: the same convention as `server/docservice/extensions.mjs` and
+- * `server/vite-plugin-hosted-gate.ts`: after switching to the submodule layout, the closed-source
+- * directory is no longer under the public repository root, so hardcoding paths would make these
+- * entries always miss. This file is therefore registered in `LOADER_WHITELIST` of
+- * `server/test/community-ownership.mjs`.
 - */
 -function defaultGlobs() {
 -  const base = ['server/test/*.test.mjs', 'src/**/*.test.mjs', 'tools/report-worker/*.test.mjs'];

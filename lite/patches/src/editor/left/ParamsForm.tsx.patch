@@ -1,5 +1,5 @@
 diff --git a/src/editor/left/ParamsForm.tsx b/src/editor/left/ParamsForm.tsx
-index f0a9684227c305247173d8a4f9dfa448049bfbb2..e8ff827ca3e8e8c9112d8fdbdea8a9bf6801072f 100644
+index c21517b31cdc4c093abe1c4eeee87c5dea2f3cbb..687520c408b4635e362aeaf3652b4c0f3730a4bc 100644
 --- a/src/editor/left/ParamsForm.tsx
 +++ b/src/editor/left/ParamsForm.tsx
 @@ -1,6 +1,4 @@
@@ -10,13 +10,14 @@ index f0a9684227c305247173d8a4f9dfa448049bfbb2..e8ff827ca3e8e8c9112d8fdbdea8a9bf
  import { actions } from "../../store/project";
  import type { Control } from "../../kernel/types";
  import { paramsEmptyText, paramsPartialText, paramsSkippedText, type ParamsCardView } from "./paramsView";
-@@ -19,18 +17,6 @@ function isSpeakerVideoControl(ctrl: Control): boolean {
+@@ -21,19 +19,6 @@ function isSpeakerVideoControl(ctrl: Control): boolean {
    return keyMatch || labelMatch;
  }
  
 -/**
-- * 同步来的用户卡 / 素材效果卡没在这个浏览器里运行时,说明为什么(`docs/plan/online-card-exec-contract.md` 第 8 节的表)。
-- * 能运行、还在载入、不是同步来的卡:什么都不画。
+- * When a synced user card / media effect card is not running in this browser, explain why (the table in
+- * section 8 of `docs/plan/online-card-exec-contract.md`).
+- * Runnable, still loading, or not a synced card: draw nothing.
 - */
 -function CardRunNote({ cardId }: { cardId: string | undefined }) {
 -  useSyncExternalStore(onCardRunStatesChanged, cardRunStatesGen);
@@ -27,24 +28,21 @@ index f0a9684227c305247173d8a4f9dfa448049bfbb2..e8ff827ca3e8e8c9112d8fdbdea8a9bf
 -}
 -
  /**
-  * `cardDef`:能跑的定义,或在线页面同步来的用户卡的只读视图(`registry.syncedCardView`;没有组件,改参数照常经文档服务提交)。
-  */
-@@ -47,8 +33,7 @@ export function ParamsForm({ clip, cardDef }: { clip: TrackClip; cardDef: Params
+  * `cardDef`: a runnable definition, or the read-only view of a user card synced from the online page
+  * (`registry.syncedCardView`; no component, parameter changes are still submitted through the document
+@@ -53,7 +38,6 @@ export function ParamsForm({ clip, cardDef }: { clip: TrackClip; cardDef: Params
          {paramsSkippedText(cardDef) && (
            <div className="mt-2 text-left text-[11px]" data-pc="params-skipped">{paramsSkippedText(cardDef)}</div>
          )}
 -        <CardRunNote cardId={clip.cardId} />
--      </div>
-+        </div>
+       </div>
      );
    }
- 
-@@ -214,8 +199,6 @@ export function ParamsForm({ clip, cardDef }: { clip: TrackClip; cardDef: Params
+@@ -221,7 +205,6 @@ export function ParamsForm({ clip, cardDef }: { clip: TrackClip; cardDef: Params
          );
        })}
  
 -      <CardRunNote cardId={clip.cardId} />
--
-       {/* 同步来的卡:源码里有控件没认出来,认出的照常画,这里说明其余的在线改不了 */}
-       {paramsPartialText(cardDef) && (
-         <div className="px-3 pt-2 text-[11px] pc-left-muted" data-pc="params-partial">
+ 
+       {/* Synced card: the source has controls that were not recognized; the recognized ones are drawn as usual,
+    and this explains that the rest cannot be edited online */}

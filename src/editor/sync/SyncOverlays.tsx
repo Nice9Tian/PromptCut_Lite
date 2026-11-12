@@ -1,6 +1,8 @@
 /**
- * 同步相关的浮层:撤销提示条、气泡、离线对话框、冲突合并窗口(c65-undo-draft.md 第 2、3、6 节,c65-ux-draft.md 第 5 节)。
- * 文案一字不差照两份稿件的文案表;稿件里待裁定的地方按 c65-design.md 第 8、9 节的裁定。
+ * Sync-related overlays: undo notice bar, bubble, offline dialog, conflict merge window (c65-undo-draft.md
+ * sections 2, 3, 6, c65-ux-draft.md section 5). Copy follows the copy tables of the two drafts word
+ * for word; where the drafts left items to be ruled on, the rulings in c65-design.md sections 8 and
+ * 9 apply.
  */
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -21,10 +23,11 @@ import { clipOfEntity, entityLabel, writerLabel } from "./labels";
 import { foldLine, NOTICE_FOLD_AT, undoNoticeTitle } from "../undoNotice";
 import { ConflictMergeDialog } from "./ConflictMerge";
 import "./sync.css";
+import { tr } from "../../i18n/index.ts";
 
-/** 提示条停留多久(稿件:约 8 秒后消失,带关闭按钮) */
+/** How long the notice bar stays (draft: disappears after about 8 seconds, with a close button) */
 const NOTICE_MS = 8000;
-/** 多于这么多处就折叠(稿件:最多列 3 处;src/editor/undoNotice.ts) */
+/** Collapse when there are more places than this (draft: list at most 3 places; src/editor/undoNotice.ts) */
 const FOLD_AT = NOTICE_FOLD_AT;
 
 interface Item {
@@ -37,8 +40,8 @@ function itemsOf(n: UndoNoticeView): Item[] {
   const names = displayNames();
   const self = me();
   return [
-    ...n.result.skipped.map((s) => ({ entity: s.entity, label: entityLabel(s.entity, n.project), by: `由 ${writerLabel(s.by, self, names)} 修改` })),
-    ...n.result.failed.map((e) => ({ entity: e, label: entityLabel(e, n.project), by: "已不存在，没法退回" })),
+    ...n.result.skipped.map((s) => ({ entity: s.entity, label: entityLabel(s.entity, n.project), by: tr("Changed by {0}", writerLabel(s.by, self, names)) })),
+    ...n.result.failed.map((e) => ({ entity: e, label: entityLabel(e, n.project), by: tr("No longer exists, cannot be reverted") })),
   ];
 }
 
@@ -75,7 +78,7 @@ function UndoNoticeBar({ n }: { n: UndoNoticeView }) {
     >
       <div className="pc-undo-bar-head">
         <div className="pc-undo-bar-title">{title}</div>
-        <button type="button" className="pc-undo-bar-close" aria-label="关闭" title="关闭" onClick={dismissNotice}>
+        <button type="button" className="pc-undo-bar-close" aria-label={tr("Close")} title={tr("Close")} onClick={dismissNotice}>
           ×
         </button>
       </div>
@@ -103,11 +106,10 @@ function UndoNoticeBar({ n }: { n: UndoNoticeView }) {
       </ul>
       {!n.result.done ? (
         <div className="pc-sync-hint">
-          你可以{" "}
+          {tr("You can{0}", " ")}
           <button type="button" className="pc-undo-entity" disabled={!firstJumpable} onClick={() => firstJumpable && jumpToEntity(firstJumpable.entity)}>
-            [点击这里]
-          </button>{" "}
-          查看被修改处的现状，或直接手动调整。
+            {tr("[click here]")}
+          </button>{tr("{0}see the current state of the changed spots, or adjust manually.", " ")}
         </div>
       ) : null}
     </div>,
@@ -128,7 +130,7 @@ function Toasts() {
               {t.action.label}
             </button>
           ) : null}
-          <button type="button" className="pc-undo-bar-close" aria-label="关闭" onClick={() => dismissToast(t.id)}>
+          <button type="button" className="pc-undo-bar-close" aria-label={tr("Close")} onClick={() => dismissToast(t.id)}>
             ×
           </button>
         </div>
@@ -146,34 +148,34 @@ function OfflineDialog() {
   return createPortal(
     <div className="pc-dialog-mask">
       <div className="pc-dialog pc-sync-dialog" role="dialog" aria-modal="true" aria-labelledby="pc-offline-title" data-pc="offline-dialog" style={{ position: "relative" }}>
-        <button type="button" className="pc-dialog-x" title="暂不决定，保留离线修改先查看项目" aria-label="关闭" onClick={() => setOfflineOpen(false)}>
+        <button type="button" className="pc-dialog-x" title={tr("Decide later, keep offline changes and review the project first")} aria-label={tr("Close")} onClick={() => setOfflineOpen(false)}>
           ×
         </button>
         <div id="pc-offline-title" className="pc-dialog-title">
-          断网期间项目有新改动
+          {tr("The project changed while you were offline")}
         </div>
         <div className="pc-dialog-body">
           <div className="pc-sync-hint" style={{ fontSize: 13, color: "var(--ui-fg)" }}>
-            你有 {paused.queued} 步断网期间的修改。但这段时间项目有以下改动，可能会和你的修改重叠：
+            {tr("You have {0} offline changes. But the project changed in the meantime in the following ways, which may overlap with your changes:", paused.queued)}
           </div>
           <ul className="pc-offline-list">
             {summary.length ? (
               summary.map((s, i) => (
                 <li key={i}>
-                  {s.who}：{s.what.join("、") || "（没有列出具体位置）"}
+                  {tr("{0}: {1}", s.who, s.what.join(tr(", ")) || tr("(no specific locations listed)"))}
                 </li>
               ))
             ) : (
-              <li>（文档服务没有列出具体改动）</li>
+              <li>{tr("(the document service did not list specific changes)")}</li>
             )}
           </ul>
-          <div style={{ fontSize: 13 }}>还要把你的修改加进去吗？</div>
+          <div style={{ fontSize: 13 }}>{tr("Do you still want to add your changes?")}</div>
           <div className="pc-sync-choices-v">
             <button type="button" className="pc-dialog-opt" style={{ justifyContent: "flex-start" }} onClick={replayOffline}>
-              加进去（可能会盖掉他们刚改的地方）
+              {tr("Add them (may overwrite what they just changed)")}
             </button>
             <button type="button" className="pc-dialog-opt" style={{ justifyContent: "flex-start" }} onClick={discardOffline}>
-              不要了，用现在的最新版本
+              {tr("No, use the latest version")}
             </button>
           </div>
         </div>

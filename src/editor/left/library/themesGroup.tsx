@@ -2,11 +2,12 @@ import { useStore, actions } from "../../../store/project";
 import { themes, type Theme } from "../../../themes";
 import type { GroupData, GroupItem } from "./groups";
 import { useReadOnly } from "../../readOnly";
+import { tr } from "../../../i18n/index.ts";
 
-/** 色块卡的高宽比:上面一排色块,下面名字和一句描述 */
+/** Aspect ratio of the swatch card: a row of swatches on top, the name and a one-line description below */
 const TILE_ASPECT = 0.75;
 
-/** 配色预览:主色占两份,文字 / 玻璃底 / 边线各一份 */
+/** Color scheme preview: the primary color takes two parts; text / glass background / border take one part each */
 function ThemeSwatch({ th }: { th: Theme }) {
   const accent = th.vars.accent || "#3b82f6";
   const fg = th.vars.fg || "#ffffff";
@@ -14,10 +15,10 @@ function ThemeSwatch({ th }: { th: Theme }) {
   const glassBorder = th.vars["glass-border"] || "rgba(255,255,255,0.2)";
   return (
     <span className="pc-lib-theme-swatch">
-      <span className="is-wide" style={{ backgroundColor: accent }} title={`主色: ${accent}`} />
-      <span style={{ backgroundColor: fg }} title={`文字: ${fg}`} />
-      <span style={{ backgroundColor: glassBg }} title={`玻璃底: ${glassBg}`} />
-      <span style={{ backgroundColor: glassBorder }} title={`边线: ${glassBorder}`} />
+      <span className="is-wide" style={{ backgroundColor: accent }} title={tr("Accent: {0}", accent)} />
+      <span style={{ backgroundColor: fg }} title={tr("Text: {0}", fg)} />
+      <span style={{ backgroundColor: glassBg }} title={tr("Glass background: {0}", glassBg)} />
+      <span style={{ backgroundColor: glassBorder }} title={tr("Border: {0}", glassBorder)} />
     </span>
   );
 }
@@ -27,7 +28,7 @@ function ThemeBody({ th, current }: { th: Theme; current: boolean }) {
     <span className="pc-lib-theme-body">
       <span className="pc-lib-theme-name">
         <span className="pc-lib-ellipsis">{th.name}</span>
-        {current && <span className="pc-lib-tag is-accent">当前</span>}
+        {current && <span className="pc-lib-tag is-accent">{tr("Current")}</span>}
       </span>
       <span className="pc-lib-theme-desc">{th.description}</span>
     </span>
@@ -35,11 +36,12 @@ function ThemeBody({ th, current }: { th: Theme; current: boolean }) {
 }
 
 /**
- * 特效 → 全局风格组:主题做成色块卡,点一下切换项目全局主题(setProjectMeta({ themeId })),
- * 当前主题有强调色选中轮廓。
+ * Effects → global style group: themes are made into swatch cards, one click switches the project's
+ * global theme (setProjectMeta({ themeId })),
+ * and the current theme has an accent-color selection outline.
  */
 export function useThemesGroup(q: string): GroupData {
-  // 这个项目只给了只读权限(游客):换全局主题是写
+  // This project only has read-only permission (guest): switching the global theme is a write
   const ro = useReadOnly();
   const currentThemeId = useStore((s) => s.project.themeId);
   const hits = themes.filter(
@@ -68,7 +70,7 @@ export function useThemesGroup(q: string): GroupData {
     };
   });
 
-  // 缩略先放当前主题,一眼看到现在用的是哪套
+  // Put the current theme first in the thumbnails, so you can see at a glance which one is in use
   const ordered = [...hits].sort((a, b) => Number(b.id === currentThemeId) - Number(a.id === currentThemeId));
   const thumbs: GroupItem[] = ordered.slice(0, 2).map((th) => ({
     id: th.id,
@@ -80,5 +82,5 @@ export function useThemesGroup(q: string): GroupData {
     ),
   }));
 
-  return { items, thumbs, emptyDetail: <div className="pc-left-note">没有匹配的主题</div> };
+  return { items, thumbs, emptyDetail: <div className="pc-left-note">{tr("No matching themes")}</div> };
 }

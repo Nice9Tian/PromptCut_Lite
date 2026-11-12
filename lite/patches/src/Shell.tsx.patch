@@ -1,5 +1,5 @@
 diff --git a/src/Shell.tsx b/src/Shell.tsx
-index f7e7ce105991aa3eb47182181b524a5b21783eac..26347db4163cf19b7d4c51ac68a40ec6c30875a9 100644
+index 0c81746ac4d881d4c922582ec92b32116e143ce4..e7ccc90b956b2b0719ba7661a4ded8275d43972b 100644
 --- a/src/Shell.tsx
 +++ b/src/Shell.tsx
 @@ -1,4 +1,4 @@
@@ -18,28 +18,35 @@ index f7e7ce105991aa3eb47182181b524a5b21783eac..26347db4163cf19b7d4c51ac68a40ec6
 -import { currentDeviceKind, pickLayout } from "./online/deviceKind";
 -import { predictIdentity } from "./online/stageGate";
 -import { CODE_VERSION } from "./online/boot";
+ import { tr } from "./i18n/index.ts";
  
  /**
-  * 开始页和编辑器之间的门。
-@@ -27,33 +21,12 @@ import { CODE_VERSION } from "./online/boot";
-  *                      (`product/platforms.md`「桌面应用」的「局域网里的第二块屏」;接上文档服务那一步在
-  *                      `editor/sync/syncManager.ts` 的 `startSync`)。
-  *   `?headless=1`      自动化页面(探针、测试):不塞演示卡、不接文档服务、不弹素材迁移框(各处自己认这个参数)。
+@@ -34,41 +28,12 @@ import { tr } from "./i18n/index.ts";
+  *                      `editor/sync/syncManager.ts`).
+  *   `?headless=1`      automation pages (probes, tests): no demo cards, no document service, no
+  *                      media migration dialog (each place recognizes this parameter on its own).
 - *
-- * 在线浏览器模式(C10a 契约第 2 节)不认这几个参数:它们都要编辑器进程(草稿、磁盘路径);
-- * 打开就是开始页,从「加入别人的项目」进编辑器。在线构建里这几条连同草稿、按路径打开一起剪掉
-- * (`ONLINE_BUILD`,写法与用意见 `src/online/pageFlag.ts` 的「在线构建剪枝」;M8 遗留 L24)。
+- * Online browser mode (C10a contract, section 2) does not recognize these parameters: they all need
+- * an editor process (drafts, disk paths). Opening it lands on the start page, and you enter the
+- * editor from "Join someone else's project". In the online build these parameters, along with
+- * drafts and open-by-path, are pruned (`ONLINE_BUILD`; for how it is written and why, see
+- * "Online build pruning" in `src/online/pageFlag.ts`; M8 leftover L24).
 - */
 -const ONLINE_BUILD = typeof import.meta.env !== "undefined" && import.meta.env.VITE_PC_ONLINE === "1";
 -
 -/**
-- * 界面跟身份走(`product/platforms.md`「身份」):身份为手机的用手机版界面(`src/mobile/`),其余用桌面界面。
-- * **不看文档服务在哪**:局域网里的手机打开本机项目(`?join=`,见下)时同样是手机版界面
-- * (`product/platforms.md`「桌面应用」的「局域网里的第二块屏」)。桌面应用自己的窗口报桌面声明,照旧是桌面界面。
-- * 页面载入时判一次,同一个地址;`?layout=mobile|desktop` 只给开发和验收用(`src/online/deviceKind.ts` 的 `pickLayout`)。
-- * 在线页面的 iPad 身份看舞台闸门(`src/online/stageGate.ts` 的 `predictIdentity`:停在第一级的算手机);
-- * 本机页面没有闸门记录,按浏览器声明判(`currentDeviceKind`)。
-- * 手机版按需载入,桌面界面不下载它。
+- * The UI follows the identity (`product/platforms.md`, "Identity"): an identity of phone gets the
+- * mobile app UI (`src/mobile/`), everything else gets the desktop UI.
+- * **It does not look at where the document service is**: a phone on the LAN opening a local project
+- * (`?join=`, see below) also gets the mobile app UI
+- * (`product/platforms.md`, "Desktop app", "Second screen on the LAN"). The desktop app's own window
+- * declares itself as desktop, so it is still the desktop UI.
+- * It is decided once when the page loads, for the same address; `?layout=mobile|desktop` is only for
+- * development and acceptance checks (`pickLayout` in `src/online/deviceKind.ts`).
+- * The iPad identity of an online page is decided by the stage gate (`predictIdentity` in
+- * `src/online/stageGate.ts`: a device that stays at the first tier counts as a phone);
+- * a local page has no gate record, so it goes by what the browser declares (`currentDeviceKind`).
+- * The mobile app is loaded on demand; the desktop UI does not download it.
   */
 -const LAYOUT = pickLayout({ kind: ONLINE_BUILD ? predictIdentity(CODE_VERSION ?? "dev") : currentDeviceKind().kind, search: typeof location !== "undefined" ? location.search : "" });
 -const MobileApp = lazy(() => import("./mobile/MobileApp"));
@@ -49,17 +56,18 @@ index f7e7ce105991aa3eb47182181b524a5b21783eac..26347db4163cf19b7d4c51ac68a40ec6
    // The title bar is outside both routes, so its colors stay synchronized.
    useSkin();
    const [inEditor, setInEditor] = useState(() => {
--    // 在线页面打开就是开始页;只有在线模式的**开发服务**(探针用)认 `?editor`,
--    // 在线构建(vite build --mode online)里 DEV 为假,这一支被剪掉
+-    // An online page opens on the start page; only the **dev server** in online mode (for probes)
+-    // recognizes `?editor`. In the online build (vite build --mode online) DEV is false, and this
+-    // branch is pruned
 -    if (ONLINE_BUILD) return !!import.meta.env.DEV && new URLSearchParams(location.search).has("editor");
      try {
        const q = new URLSearchParams(location.search);
-       // `?join=` 是局域网里的第二块屏:那张页面只为进这个项目,不经开始页
-@@ -67,11 +40,8 @@ export function Shell(): JSX.Element {
-   // 顶栏的「回到首页」在 window 上派发这个事件,免得给 Editor 加一层 props
+       // `?join=` is a second screen on the LAN: that page exists only to enter this project, skipping the start page
+@@ -82,11 +47,8 @@ export function Shell(): JSX.Element {
+   // The "Back to home" button in the top bar dispatches this event on window, to avoid adding another layer of props to Editor
    useEffect(() => {
      const back = () => {
--      // 回开始页之后再刷新就留在开始页;在线页面的地址从项目直达地址换回 `/editor/`(`product/platforms.md`「项目直达地址」)
+-      // After going back to the start page, a refresh stays on the start page; for an online page, the address changes from the project's direct address back to `/editor/` (`product/platforms.md`, "Project direct address")
 -      forgetSharedResume();
        const url = new URL(location.href);
 -      if (ONLINE_BUILD) url.pathname = import.meta.env.BASE_URL;
@@ -68,19 +76,22 @@ index f7e7ce105991aa3eb47182181b524a5b21783eac..26347db4163cf19b7d4c51ac68a40ec6
        history.replaceState(null, "", url);
        setInEditor(false);
      };
-@@ -79,29 +49,8 @@ export function Shell(): JSX.Element {
+@@ -94,32 +56,8 @@ export function Shell(): JSX.Element {
      return () => window.removeEventListener("pc-go-home", back);
    }, []);
  
 -  /*
--   * 刷新之后回到刷新前打开的共享项目(C10a r2):这个标签页记着(syncManager 的 resumeShared)就照「加入别人的项目」
--   * 那样先换一份空项目、再进去,进去了直接进编辑器;没进去(离线、凭证失效)留在开始页。
--   * 打开的是邀请链接(`#invite=`)时以链接为准,不回旧项目。`?editor` 的页面由编辑器自己接(Editor.tsx)。
+-   * After a refresh, return to the shared project that was open before the refresh (C10a r2): if this
+-   * tab remembers it (`resumeShared` in syncManager), it first swaps in an empty project and then
+-   * enters, just like "Join someone else's project", and once in it goes straight to the editor; if
+-   * it cannot get in (offline, credentials expired) it stays on the start page.
+-   * When the page was opened from an invite link (`#invite=`), the link wins and the old project is
+-   * not restored. A page with `?editor` is handled by the editor itself (Editor.tsx).
 -   */
 -  useEffect(() => {
 -    if (inEditor || !hasSharedResume() || peekCapturedInvite()) return;
 -    let live = true;
--    newProject("未命名");
+-    newProject(tr("Untitled"));
 -    void resumeShared().then((ok) => {
 -      if (ok && live) {
 -        setActiveDraftId(null);
@@ -88,25 +99,25 @@ index f7e7ce105991aa3eb47182181b524a5b21783eac..26347db4163cf19b7d4c51ac68a40ec6
 -      }
 -    });
 -    return () => { live = false; };
--    // 启动时只看一次
+-    // Only checked once at startup
 -    // eslint-disable-next-line react-hooks/exhaustive-deps
 -  }, []);
 -
-   // 启动参数只看一次
+   // Launch parameters are only checked once
    useEffect(() => {
 -    if (ONLINE_BUILD) return;
      let q: URLSearchParams;
      try {
        q = new URLSearchParams(location.search);
-@@ -126,7 +75,6 @@ export function Shell(): JSX.Element {
+@@ -144,7 +82,6 @@ export function Shell(): JSX.Element {
  
-   // 桌面壳在已经开着的窗口上又收到一个 .proc(双击了文件):走同一条「复制再打开」的路
+   // The desktop shell received another .proc on an already open window (a file was double-clicked): take the same "copy, then open" path
    useEffect(() => {
--    if (ONLINE_BUILD) return; // 在线页面不在桌面壳里
+-    if (ONLINE_BUILD) return; // An online page is not inside the desktop shell
      const tauri = (window as unknown as {
        __TAURI__?: { event?: { listen?: (e: string, cb: (ev: { payload: unknown }) => void) => Promise<() => void> } };
      }).__TAURI__;
-@@ -152,13 +100,6 @@ export function Shell(): JSX.Element {
+@@ -170,13 +107,6 @@ export function Shell(): JSX.Element {
        </div>
      );
    }

@@ -1,13 +1,14 @@
 diff --git a/server/tools/ui-names.mjs b/server/tools/ui-names.mjs
-index 88cb2624b866360edc3debba0205bac714a78e93..f42260710c8fa4363954e738fb35ba6026f31b9d 100644
+index ca3ed076e525746996685f5e1fc7096109cb8697..4029b0cf891d5f2706328b8044e65685f7022b39 100644
 --- a/server/tools/ui-names.mjs
 +++ b/server/tools/ui-names.mjs
-@@ -11,7 +11,7 @@
-  *   - **模型看到的名字**(工具清单、系统提示词、工具说明):新名。旧名不再出现在交给模型的清单里;
-  *   - **工具调用入口**:新旧都认,旧名当场换成新名(老对话的历史里还是旧名,模型照着历史调旧名时照常执行);
-  *   - **发给页面的内部操作名**(SSE 的 `call`、反向通道请求里的 `tool`):保持旧名,0.7.18 桌面版当发起人页面时照常认;
-- *     页面一侧两种都认(`src/ai/mcpExecutor.ts`、`src/ai/cloud/pageRequests.ts` 进门先换回旧名)。
-+ *     页面一侧两种都认(`src/ai/mcpExecutor.ts` 进门先换回旧名)。
+@@ -19,8 +19,7 @@
+  *     the fly (old chat history still has old names; model calling old names executes normally);
+  *   - **Internal operation name sent to the page** (SSE `call`, `tool` in reverse channel
+  *     requests): keeps old name, 0.7.18 desktop app recognizes it normally as initiator page; the
+- *     page side recognizes both (`src/ai/mcpExecutor.ts`, `src/ai/cloud/pageRequests.ts` convert
+- *     back to old name on entry).
++ *     page side recognizes both (`src/ai/mcpExecutor.ts` converts back to old name on entry).
   *
-  * 本文件不引用 `src/`(Agent 服务的独立入口只许经载入缝引用 `src/`);页面那一侧直接 import 本文件。
-  */
+  * This file does not reference `src/` (standalone entry points for Agent services may only
+  * reference `src/` via loading seams); the page side imports this file directly.

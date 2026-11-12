@@ -7,9 +7,10 @@ import type { Plugin, ViteDevServer } from "vite";
 import { apiPath, clientAddressOf, isLocalOrigin, remoteTagOf } from "./http-guard.mjs";
 
 /**
- * 桌面版的本机文档服务插件：在同进程挂 `/docservice`（WebSocket）与 `/api/docservice/healthz`。
+ * Local document service plugin for the desktop app: mounts `/docservice` (WebSocket) and
+ * `/api/docservice/healthz` in the same process.
  *
- * 只服务本机回环（`local` 空间），不承载账号、云端房间或局域网广播。
+ * Serves only local loopback (`local` space); does not host accounts, cloud rooms, or LAN discovery.
  */
 export function localDocumentDir(root: string, env: NodeJS.ProcessEnv = process.env): string {
   return env.PROMPTCUT_DOCSERVICE_DATA || path.join(env.PROMPTCUT_DATA_DIR || path.join(root, "out"), "docservice");
@@ -35,7 +36,7 @@ export function prepareLocalDocumentDir(root: string, env: NodeJS.ProcessEnv = p
     force: false,
     filter(source) {
       if (fs.lstatSync(source).isSymbolicLink()) {
-        throw new Error("旧文档服务目录含外部符号链接，保留原数据，请显式恢复备份");
+        throw new Error("Legacy document service directory contains external symlinks; keeping original data, please restore backup explicitly");
       }
       return true;
     },
@@ -55,6 +56,10 @@ function sendJson(res: ServerResponse, status: number, body: object, head = fals
   res.end(head ? undefined : JSON.stringify(body));
 }
 
+/**
+ * Attach an empty `error` listener to the socket of every upgrade request on the http server
+ * so unhandled upgrade resets (`ECONNRESET`) cannot crash the dev server.
+ */
 function guardUpgradeSockets(httpServer: NonNullable<ViteDevServer["httpServer"]>) {
   const guarded = new WeakSet<Duplex>();
   const onUpgrade = (_req: IncomingMessage, socket: Duplex) => {

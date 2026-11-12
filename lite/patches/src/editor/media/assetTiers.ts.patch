@@ -1,8 +1,8 @@
 diff --git a/src/editor/media/assetTiers.ts b/src/editor/media/assetTiers.ts
-index f31e6812371962dedd810a0508d1aee025563f65..f21f0472e90c6f4c4780e2c859c9bb2cb30090c0 100644
+index 79cb42ca90ec7011f346c2b8a7f0baf3638278dd..146d3b86ab7dd7e1b95df2bdb95d95afed2960bf 100644
 --- a/src/editor/media/assetTiers.ts
 +++ b/src/editor/media/assetTiers.ts
-@@ -19,7 +19,6 @@ import { withoutConfirmedMissing } from "../../audio/missingMaterialRecord";
+@@ -30,7 +30,6 @@ import { withoutConfirmedMissing } from "../../audio/missingMaterialRecord";
  import { useSyncExternalStore } from "react";
  import type { Project } from "../../kernel/project";
  import { getState, subscribe } from "../../store/project";
@@ -10,12 +10,13 @@ index f31e6812371962dedd810a0508d1aee025563f65..f21f0472e90c6f4c4780e2c859c9bb2c
  import {
    TIERS_KNOWN_LOCAL, TIERS_KNOWN_REMOTE, missingOriginals, originalHashOf, prefetchOrder, smallHashOf, type MissingOriginal,
  } from "../../render/mediaTier";
-@@ -584,8 +583,6 @@ export function startUploadTarget(link: LinkLike | null, base: string | null, de
-   // 本机就是主机(有连接、挑不到远程素材服务):导入就是写进这个项目的素材服务,导入的素材不用记;没有连接(离开共享项目)时记下的丢掉
+@@ -635,9 +634,6 @@ export function startUploadTarget(link: LinkLike | null, base: string | null, de
+   // with no connection (left the shared project), whatever was recorded is dropped
    uploadTargetLocal = !!link && !base;
    if (!link || !base) deferredImports.clear();
--  // 自动渲染节点(`sync/renderNodeHandoff.ts`):预渲染进程推产物用同一个素材服务(本机就是主机时为 null,它推本机的)
+-  // Auto render node (`sync/renderNodeHandoff.ts`): the prerender process pushes its output to the same
+-  // asset service (null when this machine is the host, in which case it pushes to this machine's)
 -  noteRenderNodeAssetBase(link && base ? base : null);
    if (!link || !base) {
      void post({ base: null });
-     return () => { /* 本来就是本机 */ };
+     return () => { /* It was local all along */ };

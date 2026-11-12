@@ -12,17 +12,21 @@ import { mediaTierPolicy, originalMediaUrl, previewMediaUrl } from "../../../ren
 import { ThumbTile } from "./ThumbTile";
 import type { GroupData, GroupItem } from "./groups";
 import { useReadOnly } from "../../readOnly";
+import { tr } from "../../../i18n/index.ts";
 
 /**
- * 素材库的视频 / 图片 / 音频三个组:导入进来的素材。
- * 视频和图片是按素材比例排的预览卡(瀑布流),音频是一条条带波形的音频条。
- * 拖到时间轴、右键菜单(转写字幕 / 创建为声音 / 取比例 / 删除素材 + 确认框)都保留;
- * 右键菜单和确认框由分区这一级常驻渲染(useMediaMenu 的 overlay),在总览、详情、搜索结果里都能弹出来。
+ * The three media library groups, video / image / audio: imported media.
+ * Video and image use preview cards laid out by media aspect ratio (masonry layout); audio uses
+ * audio bars with a waveform, one per row.
+ * Dragging to the timeline and the context menu (transcribe captions / create as voice / get ratio /
+ * delete media + confirm dialog) are all kept;
+ * the context menu and confirm dialog are rendered persistently at the section level (the overlay of
+ * useMediaMenu), so they can pop up in the overview, the detail and the search results.
  */
 
 async function measureVideoDimensions(url: string): Promise<{ width: number; height: number }> {
   if (!url) {
-    throw new Error("视频 URL 为空");
+    throw new Error(tr("Video URL is empty"));
   }
   return new Promise((resolve, reject) => {
     const video = document.createElement("video");
@@ -43,7 +47,7 @@ async function measureVideoDimensions(url: string): Promise<{ width: number; hei
 
     const timer = setTimeout(() => {
       cleanup();
-      reject(new Error("读取视频元数据超时"));
+      reject(new Error(tr("Timed out reading video metadata")));
     }, 5000);
 
     video.onloadedmetadata = () => {
@@ -54,14 +58,14 @@ async function measureVideoDimensions(url: string): Promise<{ width: number; hei
       if (width > 0 && height > 0) {
         resolve({ width, height });
       } else {
-        reject(new Error("未能读取到有效的视频尺寸"));
+        reject(new Error(tr("Could not read a valid video size")));
       }
     };
 
     video.onerror = () => {
       clearTimeout(timer);
       cleanup();
-      reject(new Error("加载视频元数据失败"));
+      reject(new Error(tr("Failed to load video metadata")));
     };
 
     video.src = url;
@@ -70,43 +74,43 @@ async function measureVideoDimensions(url: string): Promise<{ width: number; hei
 
 async function measureImageDimensions(url: string): Promise<{ width: number; height: number }> {
   if (!url) {
-    throw new Error("图片 URL 为空");
+    throw new Error(tr("Image URL is empty"));
   }
   return new Promise((resolve, reject) => {
     const img = new Image();
-    const timer = setTimeout(() => reject(new Error("读取图片尺寸超时")), 5000);
+    const timer = setTimeout(() => reject(new Error(tr("Timed out reading image size"))), 5000);
     img.onload = () => {
       clearTimeout(timer);
       if (img.naturalWidth > 0 && img.naturalHeight > 0) {
         resolve({ width: img.naturalWidth, height: img.naturalHeight });
       } else {
-        reject(new Error("未能读取到有效的图片尺寸"));
+        reject(new Error(tr("Could not read a valid image size")));
       }
     };
     img.onerror = () => {
       clearTimeout(timer);
-      reject(new Error("加载图片失败"));
+      reject(new Error(tr("Failed to load image")));
     };
     img.src = url;
   });
 }
 
-/** 空态和「没有匹配的…」里的称呼跟着组走,免得音频组也说「视频」 */
-const KIND_NOUN: Record<MediaAsset["kind"], string> = { video: "视频", audio: "配乐", image: "图片" };
+/** The wording in the empty state and "No matching…" follows the group, so the audio group does not say "video" */
+const KIND_NOUN: Record<MediaAsset["kind"], string> = { video: tr("Video"), audio: tr("Background music"), image: tr("Images") };
 
-/** 时长写成 m:ss(0:13),角标和音频条都用它 */
+/** Duration written as m:ss (0:13), used by both the badge and the audio bar */
 export function fmtDur(sec: number | undefined): string {
   if (sec == null || !Number.isFinite(sec)) return "—";
   const s = Math.max(0, Math.floor(sec));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-/** 高 / 宽;没量到尺寸就给 undefined,排版按 9/16 兜底 */
+/** Height / width; undefined if the size was not measured, layout falls back to 9/16 */
 const aspectOf = (m: MediaAsset): number | undefined =>
   m.width && m.height && m.width > 0 && m.height > 0 ? m.height / m.width : undefined;
 
 const transcriptNote = (m: MediaAsset): string | undefined =>
-  m.transcript ? `字幕 ${m.transcript.segments.length} 段` : undefined;
+  m.transcript ? tr("Captions: {0} segments", m.transcript.segments.length) : undefined;
 
 function startMediaDrag(e: React.DragEvent, m: MediaAsset) {
   e.dataTransfer.setData(MIME_MEDIA, m.id);
@@ -115,13 +119,15 @@ function startMediaDrag(e: React.DragEvent, m: MediaAsset) {
 }
 
 /**
- * 视频 / 图片的预览卡。视频:平时停在首帧,悬停时静音循环播,底边一条强调色
- * 进度条跟着播放位置走(只看不拖),左下角是时长;图片:整张按比例裁切铺满,底下写尺寸。
+ * Preview card for video / image. Video: rests on the first frame, loops muted on hover, with an
+ * accent-color progress bar on the bottom edge following the playback position (view only, not
+ * draggable), duration at the bottom left; image: the whole picture is cropped to fill by aspect
+ * ratio, with the size written below.
  */
 function MediaTile({ m, onContextMenu }: { m: MediaAsset; onContextMenu: (e: React.MouseEvent) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [hot, setHot] = useState(false);
-  // 桌面是 m.url;在线浏览器模式换成远程素材服务的地址(只用小尺寸的素材只给小尺寸),没就绪时不挂 src
+  // On desktop this is m.url; in online browser mode it is replaced by the remote asset service address (media used only at small size gets only the small size); src is not set until ready
   const src = usePreviewMediaUrl(m) || undefined;
   const [progress, setProgress] = useState<number | null>(null);
 
@@ -130,12 +136,12 @@ function MediaTile({ m, onContextMenu }: { m: MediaAsset; onContextMenu: (e: Rea
     if (!v) return;
     if (hot) {
       v.currentTime = 0;
-      // 自动播放被浏览器拒了就算了,首帧还在
+      // If the browser rejects autoplay, never mind, the first frame is still there
       v.play().catch(() => {});
     } else {
       v.pause();
-      // 回到首帧:下次悬停从头看,不悬停时卡上也是可辨认的一帧
-      try { v.currentTime = 0; } catch { /* 还没加载出元数据 */ }
+      // Back to the first frame: the next hover starts from the beginning, and when not hovered the card still shows a recognizable frame
+      try { v.currentTime = 0; } catch { /* Metadata not loaded yet */ }
       setProgress(null);
     }
   }, [hot]);
@@ -176,18 +182,20 @@ function MediaTile({ m, onContextMenu }: { m: MediaAsset; onContextMenu: (e: Rea
       onDragStart={(e) => startMediaDrag(e, m)}
       onDragEnd={clearDragPayload}
       onContextMenu={onContextMenu}
-      titleAttr={m.kind === "video" ? "悬停预览;拖动 = 拖到时间轴;右键 = 更多" : "拖动 = 拖到时间轴;右键 = 更多"}
+      titleAttr={m.kind === "video" ? tr("Hover to preview; drag = drag to the timeline; right-click = more") : tr("Drag = drag to the timeline; right-click = more")}
       fill
     />
   );
 }
 
 /**
- * 总览里的缩略:图片 / 视频首帧 + 时长角标。
- * 视频:指针停在这一格上时静音从头循环播,移开就停下、回到首帧(只有悬停的那一格在播);
- * 除此之外不接任何交互,点下去照样冒泡到组框上打开组。
- * 格子被整块藏起来时(点开了组、切走分区、收起抽屉)不一定收得到 mouseleave,
- * 所以播放中每次 timeupdate 顺手看一眼自己还有没有布局盒,没有就停。
+ * Thumbnail in the overview: image / video first frame + duration badge.
+ * Video: while the pointer rests on this cell it loops muted from the start; when it moves away it
+ * stops and returns to the first frame (only the hovered cell plays);
+ * apart from that it takes no interaction, and a click still bubbles up to the group box to open the group.
+ * When the cell is hidden as a whole (a group was opened, the section switched away, the drawer
+ * collapsed) mouseleave may not be received,
+ * so on every timeupdate during playback it also checks whether it still has a layout box, and stops if not.
  */
 function MediaThumb({ m }: { m: MediaAsset }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -197,7 +205,7 @@ function MediaThumb({ m }: { m: MediaAsset }) {
     const v = videoRef.current;
     if (!v) return;
     v.pause();
-    try { v.currentTime = 0; } catch { /* 还没加载出元数据 */ }
+    try { v.currentTime = 0; } catch { /* Metadata not loaded yet */ }
   }, []);
 
   const onHover = useCallback(
@@ -208,8 +216,8 @@ function MediaThumb({ m }: { m: MediaAsset }) {
         stop();
         return;
       }
-      try { v.currentTime = 0; } catch { /* 还没加载出元数据 */ }
-      // 自动播放被浏览器拒了、或者还没播起来就移开了(play 被 pause 打断)都算了,首帧还在
+      try { v.currentTime = 0; } catch { /* Metadata not loaded yet */ }
+      // If the browser rejects autoplay, or the pointer moves away before playback starts (play interrupted by pause), never mind, the first frame is still there
       v.play().catch(() => {});
     },
     [stop],
@@ -243,7 +251,7 @@ function MediaThumb({ m }: { m: MediaAsset }) {
 
 const audioSub = (m: MediaAsset) => [fmtDur(m.duration), transcriptNote(m)].filter(Boolean).join(" · ");
 
-/** 音频一条:名字 + 时长(+ 已有字幕的段数),背景是整段波形。转写入口在右键菜单里 */
+/** One audio bar: name + duration (+ number of caption segments, if any), with the full waveform as background. The transcribe entry is in the context menu */
 function AudioRow({ m, onContextMenu }: { m: MediaAsset; onContextMenu: (e: React.MouseEvent) => void }) {
   const url = usePreviewMediaUrl(m) || undefined;
   return (
@@ -258,7 +266,7 @@ function AudioRow({ m, onContextMenu }: { m: MediaAsset; onContextMenu: (e: Reac
       onDragStart={(e) => startMediaDrag(e, m)}
       onDragEnd={clearDragPayload}
       onContextMenu={onContextMenu}
-      title="拖动 = 拖到时间轴;右键 = 转写字幕 / 删除"
+      title={tr("Drag = drop on timeline; right-click = transcribe captions / delete")}
     />
   );
 }
@@ -274,9 +282,9 @@ function EmptyMedia({ noun }: { noun: string }) {
           </svg>
         </div>
         <div className="pc-left-empty-text">
-          还没有导入的{noun}。
+          {tr("No imported {0} yet.", noun)}
           <br />
-          点上面的导入按钮加进来。
+          {tr("Click the import button above to add some.")}
         </div>
       </div>
     </div>
@@ -284,13 +292,15 @@ function EmptyMedia({ noun }: { noun: string }) {
 }
 
 /**
- * 素材的右键菜单 + 删除确认框。分区调一次,把 overlay 放在分区根节点里常驻渲染。
- * 菜单项:转写 / 查看字幕(有声音的才有)、创建为声音(视频才有)、取比例(有画面的才有)、删除。
+ * Context menu for media + delete confirm dialog. The section calls it once and puts the overlay in
+ * the section root node, rendered persistently.
+ * Menu items: transcribe / view captions (only with audio), create as voice (video only), get ratio
+ * (only with picture), delete.
  */
 export function useMediaMenu(flash: (text: string, ms?: number) => void) {
   const [ctx, setCtx] = useState<{ x: number; y: number; media: MediaAsset } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ mediaId: string; name: string } | null>(null);
-  // 这个项目只给了只读权限(游客):右键里只留「查看字幕」,别的(转写、创建为声音、改项目比例、删除)都是写,置灰并说明
+  // This project only has read-only permission (guest): the context menu keeps only "View captions"; the rest (transcribe, create as voice, change project ratio, delete) are writes, so they are greyed out with an explanation
   const ro = useReadOnly();
 
   const openMenu = useCallback((e: React.MouseEvent, m: MediaAsset) => {
@@ -300,19 +310,21 @@ export function useMediaMenu(flash: (text: string, ms?: number) => void) {
   const closeMenu = useCallback(() => setCtx(null), []);
 
   const guardMenu = (items: ContextMenuItem[]): ContextMenuItem[] =>
-    ro.locked ? items.map((it) => (it.label === "查看字幕" ? it : { ...it, disabled: true, title: ro.why })) : items;
+    ro.locked ? items.map((it) => (it.label === tr("View captions") ? it : { ...it, disabled: true, title: ro.why })) : items;
 
   const handleApplyAspectRatio = async (m: MediaAsset) => {
     try {
       let width = m.width;
       let height = m.height;
       if (!width || !height || width <= 0 || height <= 0) {
-        // 图片得用 <img> 量,拿 <video> 读它只会报「加载视频元数据失败」
-        // 量的必须是原尺寸(量小尺寸会把画幅设小):桌面原样 m.url,在线页面走远程素材服务上的原尺寸。
-        // 最低一档平时不拉原尺寸:素材没记下宽高就不量,照实说
+        // Images must be measured with <img>; reading them with <video> only reports "failed to load video metadata"
+        // The measurement must use the original size (measuring a small size would set the aspect ratio too
+        // small): on desktop m.url as is, on the online page the original size on the remote asset service.
+        // The lowest tier does not fetch the original size normally: if the media has no recorded width and
+        // height, it is not measured, and that is stated honestly
         const policy = mediaTierPolicy();
         const url = policy.smallOnly ? "" : originalMediaUrl(m, policy);
-        if (!url) { alert("这份素材没有记下分辨率，在这台设备上量不了"); return; }
+        if (!url) { alert(tr("This media has no recorded resolution and it can't be measured on this device")); return; }
         const measured = m.kind === "image" ? await measureImageDimensions(url) : await measureVideoDimensions(url);
         width = measured.width;
         height = measured.height;
@@ -320,11 +332,11 @@ export function useMediaMenu(flash: (text: string, ms?: number) => void) {
       if (width > 0 && height > 0) {
         actions.setProjectMeta({ width, height });
       } else {
-        alert("未能获取视频的有效分辨率");
+        alert(tr("Could not get a valid video resolution"));
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      alert(`获取视频分辨率失败: ${msg}`);
+      alert(tr("Failed to get video resolution: {0}", msg));
     }
   };
 
@@ -333,25 +345,25 @@ export function useMediaMenu(flash: (text: string, ms?: number) => void) {
       ? []
       : [
           {
-            label: m.transcript ? "查看字幕" : "转写字幕",
-            hint: m.transcript ? `${m.transcript.segments.length} 段` : undefined,
-            // 走全局入口:左栏切到「字幕」分区、展开抽屉、聚焦这份素材
+            label: m.transcript ? tr("View captions") : tr("Transcribe captions"),
+            hint: m.transcript ? tr("{0} segments", m.transcript.segments.length) : undefined,
+            // Go through the global entry: the left rail switches to the "Captions" section, expands the drawer, and focuses this media
             onClick: () => requestCaptions(m.id),
           },
         ]),
-    // 视频派生出「只要声音」的一份:同一个文件、不转码,拖到时间轴上就是纯音频段
+    // Derive a "sound only" copy from the video: same file, no transcoding; dragged onto the timeline it becomes an audio-only segment
     ...(m.kind === "video"
       ? [
           {
-            label: "创建为声音",
-            hint: "音频组",
+            label: tr("Create as sound"),
+            hint: tr("Audio group"),
             onClick: () => {
               const r = actions.audioFromVideo(m.id);
               flash(
                 r.ok
                   ? r.created
-                    ? `已创建「${r.media.name}」,在「音频」组`
-                    : `「${r.media.name}」早就建过了,在「音频」组`
+                    ? tr("Created \"{0}\" in the \"Audio\" group", r.media.name)
+                    : tr("\"{0}\" was already created, in the \"Audio\" group", r.media.name)
                   : r.error,
                 3000,
               );
@@ -363,13 +375,13 @@ export function useMediaMenu(flash: (text: string, ms?: number) => void) {
       ? []
       : [
           {
-            label: m.kind === "image" ? "以图片比例作为项目比例" : "以视频比例作为项目比例",
+            label: m.kind === "image" ? tr("Use image aspect ratio as project aspect ratio") : tr("Use video aspect ratio as project aspect ratio"),
             hint: m.width && m.height && m.width > 0 && m.height > 0 ? `${m.width}x${m.height}` : undefined,
             onClick: () => handleApplyAspectRatio(m),
           },
         ]),
     {
-      label: "删除素材",
+      label: tr("Delete media"),
       danger: true,
       onClick: () => setConfirmDelete({ mediaId: m.id, name: m.name }),
     },
@@ -381,8 +393,8 @@ export function useMediaMenu(flash: (text: string, ms?: number) => void) {
       {confirmDelete && (
         <ConfirmDialog
           open={true}
-          title="删除素材"
-          message={`确定删除「${confirmDelete.name}」?\n时间轴上引用它的片段会一起删除。`}
+          title={tr("Delete media")}
+          message={tr("Delete \"{0}\"?\nClips on the timeline that reference it will be deleted too.", confirmDelete.name)}
           onConfirm={() => {
             actions.removeMedia(confirmDelete.mediaId);
             setConfirmDelete(null);
@@ -396,7 +408,7 @@ export function useMediaMenu(flash: (text: string, ms?: number) => void) {
   return { openMenu, overlay };
 }
 
-/** 一种素材的组内容。q 是已经 trim + 小写的搜索词 */
+/** Group content for one kind of media. q is the search term, already trimmed and lowercased */
 export function useMediaGroup(
   kind: MediaAsset["kind"],
   q: string,
@@ -420,7 +432,7 @@ export function useMediaGroup(
     return {
       items,
       thumbs,
-      emptyDetail: list.length === 0 ? <EmptyMedia noun={noun} /> : <div className="pc-left-note">没有匹配的{noun}</div>,
+      emptyDetail: list.length === 0 ? <EmptyMedia noun={noun} /> : <div className="pc-left-note">{tr("No matching {0}", noun)}</div>,
     };
   }, [allMedia, kind, q, openMenu, tierPolicy]);
 }

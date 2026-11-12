@@ -1,9 +1,9 @@
 diff --git a/server/asset-store/stream-store.mjs b/server/asset-store/stream-store.mjs
-index d6f884c7d117f291d6ac1d904152a4e0488f1360..c2d1639fb1662ad6b4c4eab9e69c54026a9a5beb 100644
+index f08acc32ee174db37223f74a6812a77cdb5efdc8..1f4ec2ffb80b1995220a019b019b1cbf0c3797db 100644
 --- a/server/asset-store/stream-store.mjs
 +++ b/server/asset-store/stream-store.mjs
-@@ -1,12 +1,9 @@
- /** 素材流库与HTTP读口：从frame-stream纯移动，独立asset入口不加载渲染器。 */
+@@ -4,12 +4,9 @@
+  */
  import fs from 'node:fs/promises';
  import path from 'node:path';
 -import { randomUUID } from 'node:crypto';
@@ -14,8 +14,8 @@ index d6f884c7d117f291d6ac1d904152a4e0488f1360..c2d1639fb1662ad6b4c4eab9e69c5402
 -import { readProjectFile, publishProjectFile, projectFileAccepted } from './project-io.mjs';
  const KEY_RE = /^[a-f0-9]{64}$/;
  
- /** 清单里就绪的分段号(区间,C3 的 `stream` 表单位是分段号) */
-@@ -15,37 +12,26 @@ export function readySegmentRanges(manifest) {
+ /** Ready segment numbers in the manifest (range, C3's `stream` table unit is segment numbers) */
+@@ -18,37 +15,26 @@ export function readySegmentRanges(manifest) {
  }
  
  export class StreamStore {
@@ -61,18 +61,9 @@ index d6f884c7d117f291d6ac1d904152a4e0488f1360..c2d1639fb1662ad6b4c4eab9e69c5402
 +  async writeFile(target, bytes) {
 +    await atomic(target, bytes);
    }
-   /** 扫盘(F5):每条流的「键 → 就绪分段」 */
+   /** Disk scan (F5): each stream's "key → ready segments" */
    async scan() {
-@@ -73,8 +59,6 @@ export class StreamStore {
- export function publicManifest(manifest) {
-   if (!manifest) return null;
-   const segments = {};
--  // `stride`:1 = 满密度,大于 1 = 稀疏(只截了分段的第一帧,其余样本重复它)。`box`:这个分段的位置矩形(平面坐标,和 `bound` 同一个
--  // 坐标系;产稀疏版时量的那一张里不透明像素的外接框,`null` = 那一张全透明;没量过的分段不带这一项)
-   for (const [n, s] of Object.entries(manifest.segments ?? {})) segments[n] = { init: s.init, file: s.file, stride: s.stride, samples: s.samples, ...(s.box !== undefined ? { box: s.box } : {}) };
-   const inits = {};
-   for (const [id, i] of Object.entries(manifest.inits ?? {})) inits[id] = { codec: i.codec, width: i.width, height: i.height, rect: i.rect };
-@@ -97,24 +81,9 @@ export function handleStreamRequest(store, req, res, pathname) {
+@@ -107,24 +93,9 @@ export function handleStreamRequest(store, req, res, pathname) {
    if (!m) return false;
    const key = m[1];
    const fail = (status, error) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'no-store'); res.end(JSON.stringify({ error })); };
@@ -98,7 +89,7 @@ index d6f884c7d117f291d6ac1d904152a4e0488f1360..c2d1639fb1662ad6b4c4eab9e69c5402
        if (res.destroyed) return;
        if (!manifest) return fail(404, 'Stream is not ready');
        res.setHeader('Content-Type', 'application/json');
-@@ -124,10 +93,10 @@ export function handleStreamRequest(store, req, res, pathname) {
+@@ -134,10 +105,10 @@ export function handleStreamRequest(store, req, res, pathname) {
      return true;
    }
    const file = m[3] ? store.initFile(key, m[3]) : store.segFile(key, m[4]);

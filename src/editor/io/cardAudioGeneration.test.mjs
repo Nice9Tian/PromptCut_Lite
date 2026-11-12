@@ -9,11 +9,11 @@ const { findClip, flattenOverlay } = await import('../../kernel/project.ts');
 const { serializeProc, parseProc } = await import('./proc.ts');
 const { audioPlanOf } = await import('../../kernel/audioPlan.mjs');
 let sourceVersion = 'v1', evaluations = 0;
-const def = { id: 'av-fixture', name: '声画测试', defaults: { value: .25 }, controls: [], frameMode: 'direct', kind: 'animation', inputs: {}, Component() {},
+const def = { id: 'av-fixture', name: 'Audio-visual test', defaults: { value: .25 }, controls: [], frameMode: 'direct', kind: 'animation', inputs: {}, Component() {},
   audio(_sources, range, p) { evaluations++; return new Float32Array(range.count * 2).fill(p.value + range.start / 48000); } };
 registerCards([def]);
 configureCardAudio({ getCard: id => id === def.id ? def : undefined, sourceVersionOf: () => sourceVersion });
-function fresh(duration = .2) { sourceVersion = 'v1'; actions.newProject('声画'); return actions.addCardClip(def.id, 0, { duration }); }
+function fresh(duration = .2) { sourceVersion = 'v1'; actions.newProject('Audio-visual'); return actions.addCardClip(def.id, 0, { duration }); }
 function service(hold) {
   const old = fetch, calls = [], complete = new Set();
   globalThis.fetch = async (url, init = {}) => {
@@ -28,11 +28,11 @@ function service(hold) {
 }
 async function until(f) { for (let i = 0; i < 500; i++) { if (f()) return; await new Promise(r => setTimeout(r, 1)); } throw Error('timeout'); }
 
-test('实际采样到持久WAV，原片段画面保留，一步撤销和重开可复用', async () => {
+test('Actually samples into a persistent WAV, the original clip keeps its picture, and a single undo step and reopening can reuse it', async () => {
   const f = service();
   try {
     const clip = fresh(); const before = getState().project;
-    assert.equal(clip.embeddedAudio, true); assert.throws(() => audioPlanOf(before), /尚未生成/);
+    assert.equal(clip.embeddedAudio, true); assert.throws(() => audioPlanOf(before), /not generated yet/);
     const result = await generateCardAudio(clip.id);
     const project = getState().project, now = findClip(project, clip.id).clip;
     assert.equal(now.mediaId, undefined); assert.equal(now.cardId, def.id); assert.equal(project.tracks.flatMap(t => t.clips).length, 1);
@@ -46,7 +46,7 @@ test('实际采样到持久WAV，原片段画面保留，一步撤销和重开�
     assert.equal(getState().project.media.length, 0); assert.equal(findClip(getState().project, clip.id).clip.cardAudio, undefined);
   } finally { f.restore(); }
 });
-test('左裁切与切分延续同一音画源时间，不双加偏移', async () => {
+test('Left trim and split continue the same audio-visual source time, without adding the offset twice', async () => {
   const f = service();
   try {
     const clip = fresh(1); await generateCardAudio(clip.id);
@@ -61,7 +61,7 @@ test('左裁切与切分延续同一音画源时间，不双加偏移', async ()
   } finally { f.restore(); }
 });
 
-test('复用前核对素材服务：字节丢失会重新生成上传，而非只凭旧引用报成功', async () => {
+test('Before reuse, check the asset service: if the bytes are lost, regenerate and upload them instead of reporting success based only on the old reference', async () => {
   const f = service();
   try {
     const clip = fresh();
@@ -69,39 +69,40 @@ test('复用前核对素材服务：字节丢失会重新生成上传，而非�
     const count = evaluations, calls = f.calls.length;
     assert.equal((await generateCardAudio(clip.id)).reused, true);
     assert.equal(evaluations, count);
-    assert.equal(f.calls.length, calls + 1, '复用要请求一次 chunks.complete');
+    assert.equal(f.calls.length, calls + 1, 'Reuse requires one chunks.complete request');
     f.complete.clear();
     const restored = await generateCardAudio(clip.id);
     assert.equal(restored.reused, false);
     assert.ok(evaluations > count);
-    assert.equal(f.complete.size, 1, '重新生成的 WAV 经服务入库');
-    assert.equal(getState().project.tracks.flatMap(t => t.clips).length, 1, '修复不创建第二个视觉片段');
+    assert.equal(f.complete.size, 1, 'The regenerated WAV is stored via the service');
+    assert.equal(getState().project.tracks.flatMap(t => t.clips).length, 1, 'The repair does not create a second visual clip');
   } finally { f.restore(); }
 });
-test('源码和参数更新过期，取消/重开时晚到上传不改项目', async () => {
+test('Source and parameter updates make results stale; a late upload after cancel/reopen does not change the project', async () => {
   let release;
   const f = service(() => new Promise(r => { release = r; }));
   try {
     const clip = fresh(); const snapshot = getState().project;
-    const job = generateCardAudio(clip.id); const rejection = assert.rejects(job, /aborted|已变化/);
+    const job = generateCardAudio(clip.id); const rejection = assert.rejects(job, /aborted|has changed/);
     await until(() => release); assert.equal(cancelCardAudioGeneration(clip.id), true); release(); await rejection;
     assert.equal(getState().project.media.length, 0);
-    // 上一趟即使被取消，服务端仍可能收完字节。清理此测试服务的哈希以再次制造在途上传。
+    // Even if the previous pass was cancelled, the server might still finish receiving all bytes.
+    // Clear this test service's hashes to trigger an in-flight upload again.
     f.complete.clear();
     release = undefined;
-    const another = generateCardAudio(clip.id); const stale = assert.rejects(another, /已变化/);
+    const another = generateCardAudio(clip.id); const stale = assert.rejects(another, /has changed/);
     await until(() => release); actions.loadProject(structuredClone(snapshot)); release(); await stale;
     assert.equal(getState().project.media.length, 0);
   } finally { f.restore(); }
   const immediate = service();
   try {
     const clip = fresh(); await generateCardAudio(clip.id);
-    sourceVersion = 'v2'; assert.throws(() => persistentCardAudio(getState().project, findClip(getState().project, clip.id).clip), /已过期/);
+    sourceVersion = 'v2'; assert.throws(() => persistentCardAudio(getState().project, findClip(getState().project, clip.id).clip), /out of date/);
     sourceVersion = 'v1'; actions.setClipParams(clip.id, { value: .4 });
-    assert.throws(() => audioPlanOf(getState().project), /已过期/);
+    assert.throws(() => audioPlanOf(getState().project), /out of date/);
   } finally { immediate.restore(); }
 });
-test('换卡清掉旧音频能力，失败验证不会遗留取消任务', async () => {
+test('Switching cards clears the old audio capability, and a failed validation leaves no cancelled task behind', async () => {
   const clip = fresh(); actions.setClipParams(clip.id, { invalid: () => 1 });
   await assert.rejects(() => generateCardAudio(clip.id)); assert.equal(cancelCardAudioGeneration(clip.id), false);
   registerCards([{ ...def, id: 'silent-fixture', audio: undefined }]);
@@ -110,11 +111,11 @@ test('换卡清掉旧音频能力，失败验证不会遗留取消任务', async
   assert.equal(current.embeddedAudio, undefined); assert.equal(current.cardAudio, undefined);
 });
 
-test('同一片段的新请求替代旧请求，迟到完成最多提交当前版本一次', async () => {
+test('A new request for the same clip replaces the old one, and a late completion commits the current version at most once', async () => {
   const releases = [], f = service(() => new Promise(r => releases.push(r)));
   try {
     const clip = fresh();
-    const first = generateCardAudio(clip.id); const aborted = assert.rejects(first, /aborted|已变化/);
+    const first = generateCardAudio(clip.id); const aborted = assert.rejects(first, /aborted|has changed/);
     await until(() => releases.length === 1);
     actions.setClipParams(clip.id, { value: .75 });
     const second = generateCardAudio(clip.id, { force: true });
@@ -124,7 +125,7 @@ test('同一片段的新请求替代旧请求，迟到完成最多提交当前�
     assert.equal(p.media.length, 1); assert.equal(findClip(p, clip.id).clip.cardAudio.identity.params.value, .75);
   } finally { f.restore(); }
 });
-test('卡片生成串行且最多四项，排队取消不上传不落库', async () => {
+test('Card generation is serial with at most four items; a queued item that is cancelled is neither uploaded nor stored', async () => {
   const releases = [], f = service(() => new Promise(r => releases.push(r)));
   try {
     fresh(); const clips = getState().project.tracks.flatMap(t => t.clips);
@@ -132,28 +133,29 @@ test('卡片生成串行且最多四项，排队取消不上传不落库', async
     const first = generateCardAudio(clips[0].id); await until(() => releases.length === 1);
     const queued = clips.slice(1, 4).map(c => generateCardAudio(c.id));
     const rejected = queued.map(p => assert.rejects(p, /aborted/));
-    await assert.rejects(() => generateCardAudio(clips[4].id), /最多同时排队/);
+    await assert.rejects(() => generateCardAudio(clips[4].id), /At most 4 card audio jobs/);
     assert.equal(releases.length, 1); assert.equal(getState().project.media.length, 0);
     clips.slice(1, 4).forEach(c => assert.equal(cancelCardAudioGeneration(c.id), true));
     await Promise.all(rejected); releases[0](); await first;
     assert.equal(getState().project.media.length, 1); assert.equal(releases.length, 1);
   } finally { f.restore(); }
 });
-test('超大参数在生成上传前拒绝，保护共享文档的原子提交', async () => {
+test('Oversized parameters are rejected before generating and uploading, protecting the atomic commit of the shared document', async () => {
   const f = service();
   try {
     const clip = fresh(); actions.setClipParams(clip.id, { manyEvents: 'x'.repeat(100 * 1024) });
-    await assert.rejects(() => generateCardAudio(clip.id), /记录过大/);
+    await assert.rejects(() => generateCardAudio(clip.id), /parameter record is too large/);
     assert.equal(f.calls.length, 0); assert.equal(getState().project.media.length, 0);
     assert.equal(cancelCardAudioGeneration(clip.id), false);
   } finally { f.restore(); }
 });
 
-test('声画卡的audio-only类型误声明在添加、换卡、新轨添加前均拒绝', () => {
+test('An audio-visual card wrongly declared as the audio-only kind is rejected before adding, switching cards and adding to a new track', () => {
   const clip = fresh(); const p = getState().project;
   registerCards([{ ...def, id: 'invalid-av', kind: 'audio' }]);
-  assert.throws(() => actions.addCardClip('invalid-av', 1), /声画卡不能使用 kind:audio/);
-  assert.throws(() => actions.addClipOnNewTrack({ cardId: 'invalid-av', start: 1 }), /声画卡不能使用 kind:audio/);
-  assert.throws(() => actions.setClipCard(clip.id, 'invalid-av'), /声画卡不能使用 kind:audio/);
+  assert.throws(() => actions.addCardClip('invalid-av', 1), /Audio-visual cards cannot use kind:audio/);
+  assert.throws(() => actions.addClipOnNewTrack({ cardId: 'invalid-av', start: 1 }), /Audio-visual cards cannot use kind:audio/);
+  assert.throws(() => actions.setClipCard(clip.id, 'invalid-av'), /Audio-visual cards cannot use kind:audio/);
   assert.equal(getState().project, p);
 });
+

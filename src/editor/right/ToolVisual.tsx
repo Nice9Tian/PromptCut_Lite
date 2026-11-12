@@ -1,15 +1,19 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { prerenderUrl, usePrerenderBase, withBase } from "../../render/prerender";
+import { tr } from "../../i18n/index.ts";
 
 /**
- * 聊天栏里一步工具的「看得见的结果」:当时返回的位图、改了哪几个参数、前后两段动图。
+ * The "visible result" of one tool step in the chat panel: the bitmap returned at the time, which
+ * parameters were changed, and the before and after animated images.
  *
- * 记录由执行工具的那一方交给服务端存着(src/ai/mcpExecutor.ts 的 withVisual,或者服务端直接执行的
- * 看图工具),工具结果最前面带一个 visualId。四家的工具结果摘要都保留开头那一截,所以这里从摘要里
- * 认 id 就够了,不用关心这一步是 API 直连还是 agy / Claude / Codex 跑的。
+ * The record is handed by whoever executed the tool to the server to keep (`withVisual` in
+ * src/ai/mcpExecutor.ts, or the image-viewing tools the server executes directly), and the tool
+ * result carries a visualId at the very front. All four vendors' tool result summaries keep the
+ * leading part, so recognizing the id from the summary is enough here, with no need to care whether
+ * the step ran through direct API or agy / Claude / Codex.
  *
- * 本机模式下记录和动图存在预渲染进程上(/api/ai/visual)。
+ * In local mode the records and animated images are stored in the prerender process (/api/ai/visual).
  */
 export function visualIdOf(summary?: string): string | null {
   const m = /"visualId"\s*:\s*"(v-[0-9a-z]{6,40})"/.exec(summary || "");
@@ -50,12 +54,12 @@ export function loadVisualRecord(id: string): Promise<VisualRecord> {
   return p;
 }
 
-/** 已经取回来的记录,同步读;还没取回来或者取失败时是 undefined */
+/** A record that has already been fetched, read synchronously; undefined if not yet fetched or if the fetch failed */
 export function peekVisualRecord(id: string): VisualRecord | undefined {
   return loaded.get(id);
 }
 
-/** 取一份记录给界面用:缓存里有就直接给(不闪「正在取回」),没有就去取 */
+/** Get a record for the UI: if it is in the cache, hand it over directly (no "Retrieving" flicker), otherwise go and fetch it */
 export function useVisualRecord(id: string | null): { rec: VisualRecord | null; err: string } {
   const [state, setState] = useState<{ key: string; rec: VisualRecord | null; err: string }>(() => ({
     key: id ?? "",
@@ -96,14 +100,14 @@ export function ToolVisual({ id }: { id: string }): JSX.Element {
   const { rec, err } = useVisualRecord(id);
   const base = usePrerenderBase();
 
-  if (err) return <div className="ai-visual-note">这一步的画面取不回来了({err})</div>;
-  if (!rec) return <div className="ai-visual-note">正在取回画面…</div>;
-  if (base === null) return <div className="ai-visual-note">预渲染进程还没就绪,画面取不回来</div>;
+  if (err) return <div className="ai-visual-note">{tr("The visual for this step can no longer be retrieved ({0})", err)}</div>;
+  if (!rec) return <div className="ai-visual-note">{tr("Retrieving visual…")}</div>;
+  if (base === null) return <div className="ai-visual-note">{tr("The prerender process is not ready yet, can't retrieve the visual")}</div>;
 
   const resolveSrc = (u: string) => (isDirectAssetUrl(u) ? u : withBase(base ?? "", u));
   const hasGif = !!(rec.before || rec.after);
-  const afterLabel = rec.before ? "修改后" : rec.tool === "get_gif" ? "整段动效" : "新加的卡片";
-  const beforeLabel = rec.after ? "修改前" : "删掉的卡片";
+  const afterLabel = rec.before ? tr("After") : rec.tool === "get_gif" ? tr("Full animation") : tr("New card");
+  const beforeLabel = rec.after ? tr("Before") : tr("Deleted card");
 
   return (
     <div className="ai-visual">
@@ -111,7 +115,7 @@ export function ToolVisual({ id }: { id: string }): JSX.Element {
         <div className="ai-visual-images">
           {rec.images.map((im, i) => (
             <figure key={i}>
-              <img src={resolveSrc(im.url)} alt={im.label || `画面 ${i + 1}`} loading="lazy" />
+              <img src={resolveSrc(im.url)} alt={im.label || tr("Frame {0}", i + 1)} loading="lazy" />
               {im.label ? <figcaption>{im.label}</figcaption> : null}
             </figure>
           ))}
@@ -130,7 +134,7 @@ export function ToolVisual({ id }: { id: string }): JSX.Element {
           ))}
         </ul>
       ) : rec.before && rec.after ? (
-        <div className="ai-visual-note">参数没有变化(可能只改了别的轨道,或者这一步被夹回了原值)</div>
+        <div className="ai-visual-note">{tr("Parameters unchanged (maybe only other tracks were changed, or this step was clamped back to the original value)")}</div>
       ) : null}
 
       {hasGif ? (
@@ -145,10 +149,12 @@ export function ToolVisual({ id }: { id: string }): JSX.Element {
 }
 
 /**
- * 动图第一次打开时服务端才去渲(8 帧 + 编码),要等几秒到几十秒 —— 转圈,失败了能重试。
- * 轮播也用它;挂载即开始加载,所以别在还没翻到的页里挂它。
+ * The server only renders the animated image (8 frames + encoding) when it is first opened, which
+ * takes a few seconds to tens of seconds: show a spinner, and allow retry on failure.
+ * The carousel uses it too; it starts loading as soon as it mounts, so don't mount it in a page that
+ * has not been flipped to yet.
  */
-/** onSettled:动图出来或确定失败时调(操作详细预览控件靠它判断这一页渲染好没有,好了才让翻过去) */
+/** onSettled: called when the animated image is ready or has definitively failed (the operation detail preview control uses it to tell whether this page has finished rendering, and only then lets you flip past it) */
 export function Gif({ src, label, onSettled }: { src: string; label: string; onSettled?: () => void }): JSX.Element {
   const [state, setState] = useState<"loading" | "ok" | "err">("loading");
   const [attempt, setAttempt] = useState(0);
@@ -160,7 +166,7 @@ export function Gif({ src, label, onSettled }: { src: string; label: string; onS
     <figure className={`ai-visual-gif is-${state}`}>
       <div className="box">
         {state === "err" ? (
-          <button type="button" onClick={() => { setState("loading"); setAttempt((n) => n + 1); }}>动图没做出来,点这里重试</button>
+          <button type="button" onClick={() => { setState("loading"); setAttempt((n) => n + 1); }}>{tr("The animation failed to generate, click here to retry")}</button>
         ) : (
           <>
             {state === "loading" ? <span className="ai-spinner" aria-hidden /> : null}
@@ -174,7 +180,7 @@ export function Gif({ src, label, onSettled }: { src: string; label: string; onS
           </>
         )}
       </div>
-      <figcaption>{label}{state === "loading" ? " · 正在渲染…" : ""}</figcaption>
+      <figcaption>{label}{state === "loading" ? tr(" · Rendering…") : ""}</figcaption>
     </figure>
   );
 }

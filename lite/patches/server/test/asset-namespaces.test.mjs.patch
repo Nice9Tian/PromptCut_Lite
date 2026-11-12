@@ -1,11 +1,11 @@
 diff --git a/server/test/asset-namespaces.test.mjs b/server/test/asset-namespaces.test.mjs
-index f1dfa0b2c9890b9c472983540d3484da70f88a87..acf74aaa2aea82042b7554aac54a486368f2e214 100644
+index 9b95d657ae5c17e8687d45a2476fadeb23fb2e8f..b47928d570c9f722832089d6707925aa5292649e 100644
 --- a/server/test/asset-namespaces.test.mjs
 +++ b/server/test/asset-namespaces.test.mjs
-@@ -23,7 +23,7 @@ const NS = ['media', 'snap', 'px'];
- const CHUNK = 1024;
- // M6a：非本机来源读写都凭素材票据（auth-contract 第 8 节）。原来这里是集群令牌，只管写；
- // 现在 TOKEN 是一张 rw 素材票据，剧本里的读也带上它，另加一步「读不带票据 401」
+@@ -27,7 +27,7 @@ const CHUNK = 1024;
+ // M6a: non-local origins require asset tickets for reads and writes (auth-contract section 8).
+ // Previously this was a cluster token, covering only writes; now TOKEN is an rw asset ticket,
+ // reads in the script also include it, plus an added step: "read without ticket returns 401"
 -const { assetTicketKit } = await import('./fake-shared-env.mjs');
 +const { assetTicketKit } = await import('./fake-asset-service.mjs');
  const KIT = await assetTicketKit();

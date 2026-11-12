@@ -1,20 +1,20 @@
 export const cutsTools = [
   {
     name: "list_transitions",
-    description: "列出当前剪辑里的全部转场(交叉溶解 / 淡入 / 淡出)。**转场会把它引用的片段绑成一组**:那几段的相对时间关系被锁住 —— 单独改时长、换序列、split_clip 都会被拒(update_clip 只给 start 的整组平移仍然可以,同组的会跟着一起走)。要单独调先 remove_transition。返回每条的 id、kind、aId/bId、dur。",
+    description: "List all transitions in the current cut (crossfade / fade in / fade out). **A transition binds the clips it references into a group**: the relative timing of those clips is locked: changing a duration alone, changing the track, or split_clip are all rejected (update_clip with only start, shifting the whole group, still works, and the others in the group move along). To adjust one alone, run remove_transition first. Returns each one's id, kind, aId/bId, dur.",
     inputSchema: { type: "object", properties: {} },
     side: "agent"
   },
   {
     name: "add_transition",
-    description: "加一处转场,并把相关片段绑成一组。kind 三种:crossfade 交叉溶解——要两段**首尾相接**的片段(clipId 和 otherClipId,前后顺序写反也认),会把后一段往前拉出重叠、必要时挪到另一条序列(同一条序列内不允许重叠);fadeIn 淡入——只加在片段**开头**;fadeOut 淡出——只加在**结尾**。dur 是秒(默认交叉溶解 0.5、淡入淡出 0.6)。加完那几段的相对时间关系就锁住了,要再单独调先 remove_transition。中间空着一段、时长比片段还长、那一端已经有转场了,都会被拒并告诉你原因。",
+    description: "Add a transition and bind the related clips into a group. kind has three values: crossfade needs two **back-to-back** clips (clipId and otherClipId, either order is accepted), pulls the later clip forward to overlap and, if needed, moves it to another track (overlap is not allowed within the same track); fadeIn fades in, only added at a clip's **start**; fadeOut fades out, only added at the **end**. dur is in seconds (default 0.5 for crossfade, 0.6 for fade in/out). After adding, the relative timing of those clips is locked; to adjust one alone, run remove_transition first. Gaps in between, a duration longer than the clip, or a transition already on that end are all rejected with the reason given.",
     inputSchema: {
       type: "object",
       properties: {
         kind: { type: "string", description: "crossfade / fadeIn / fadeOut" },
-        clipId: { type: "string", description: "淡入淡出:那一段;交叉溶解:两段中的任意一段" },
-        otherClipId: { type: "string", description: "只有交叉溶解要:另一段" },
-        dur: { type: "number", description: "秒,0.1~10" }
+        clipId: { type: "string", description: "Fade in/out: that clip; crossfade: either of the two clips" },
+        otherClipId: { type: "string", description: "Only needed for crossfade: the other clip" },
+        dur: { type: "number", description: "Seconds, 0.1~10" }
       },
       required: ["kind", "clipId"]
     },
@@ -22,7 +22,7 @@ export const cutsTools = [
   },
   {
     name: "remove_transition",
-    description: "删掉一处转场(transitionId 从 list_transitions 或 get_project 的 transitions 里拿)。淡化会被擦掉,交叉溶解还会尽量把后一段放回加转场之前的位置;删完这几段就解锁,可以单独改时间了。",
+    description: "Remove a transition (get transitionId from list_transitions or from transitions in get_project). Fades are erased, and for a crossfade the later clip is also moved back to where it was before the transition was added where possible; after removal those clips are unlocked and their timing can be changed individually.",
     inputSchema: {
       type: "object",
       properties: { transitionId: { type: "string" } },
@@ -32,47 +32,164 @@ export const cutsTools = [
   },
   {
     name: "list_cuts",
-    description: "列出项目里的全部剪辑(时间轴)。**用户要你改的片段在别的剪辑里时,先看这个工具的返回,不要 user_interface_switch_cut**:没激活的剪辑里的片段(id、cardId / 标签、起止、所在序列)就在返回的 `parkedCuts` 里,拿到 clipId 直接交给 update_clip 等就地改。一个项目可以有多条剪辑,新项目只有「剪辑1」,其余由用户或你新建(add_cut)。用户在时间轴上方的标签栏和素材库的「剪辑」组里切换、打开。**add_clip / 序列 / 导出 / get_layout 等工具只作用于当前激活的那条剪辑**(active:true 的;see_frames 可以传 cutId 看别的剪辑),get_project 的 tracks 也是它的内容。**但改别的剪辑里已有的片段不用 user_interface_switch_cut**:返回里的 `parkedCuts` 已列出各停放剪辑的片段(太多时有上限,会指路);要某一条的全部就传 `cutId` 给本工具,多返回那条剪辑的 timeline 一览(片段 id、起止)。拿到 clipId 后把 clipId 直接交给 update_clip / set_clip / get_clip / set_position / set_rect / align / nudge / set_emphasis / set_clip_volume / set_clip_muted,它们会就地改那条剪辑里的片段,**不切换激活的剪辑**(激活的剪辑是共享状态,切换会让所有成员的界面一起翻,所以能不切就不切)。**看它的画面也不用切**:see_frames 传 cutId。只有要在别的剪辑里新增 / 删除 / 切分 / 复制片段时才 user_interface_switch_cut(名字带 user_interface_ 的工具会动用户的界面)。一条剪辑可以作为**剪辑段**放进另一条剪辑(add_cut_segment),引用而不是复制。返回每条的 id、name、active、trackCount、clipCount、duration,以及 referencedBy(哪些剪辑的哪几段引用了它)和 references(它里面的剪辑段引用了哪些剪辑)。",
+    description: "List all cuts (timelines) in the project. **When the clip the user wants you to change is in another cut, check this tool's result first, do not user_interface_switch_cut**: clips in inactive cuts (id, cardId / label, start and end, track) are in the returned `parkedCuts`; take the clipId and hand it straight to update_clip etc. to edit in place. A project can have multiple cuts; a new project has only \"Cut 1\", the rest are created by the user or by you (add_cut). Each cut is either a **2D cut** (`kind: \"2d\"`, default: flat canvas + track stacking, optional 2D camera pan/zoom/rotate, captions stay screen-locked) or a **3D cut** (`kind: \"3d\"`: perspective 3D space with true depth occlusion, 3D camera dolly/truck/orbit/FOV on the camera lane, and both cards and video/image media placed as 3D boards). The user switches and opens cuts in the tab bar above the timeline and in the \"Cuts\" group of the media library. **Tools such as add_clip / track / export / get_layout only act on the currently active cut** (the one with active:true; see_frames and list_cameras / add_camera / update_camera / remove_camera / set_cut_kind / prerender_cut_to_2d can take a cutId to act on other cuts without switching), and the tracks in get_project are also its content. **But editing existing clips in other cuts does not need user_interface_switch_cut**: the `parkedCuts` in the result already lists the clips of each parked cut (with a cap when there are too many, and it will point you to the next step); to get everything in one cut, pass `cutId` to this tool and it returns that cut's timeline overview (clip ids, start and end, kind, cameras) in addition. Once you have the clipId, hand it straight to update_clip / set_clip / get_clip / set_position / set_rect / align / nudge / set_emphasis / set_clip_volume / set_clip_muted; they edit the clip in that cut in place, **without switching the active cut**. **Viewing its frames does not need a switch either**: pass cutId to see_frames. Only call user_interface_switch_cut when you need to add / delete / split / duplicate clips in another cut. A cut can be placed into another cut as a **cut segment** (add_cut_segment), by reference rather than by copy. Returns each cut's id, name, kind (\"2d\" | \"3d\"), active, trackCount, clipCount, cameraCount, duration, optional spaceWidth/spaceHeight/camera3dFov, plus referencedBy and references.",
     inputSchema: {
       type: "object",
       properties: {
-        cutId: { type: "string", description: "给了就多返回这条剪辑的 timeline 一览(各序列和片段的 id、起止),不用切换过去;要改它里面已有的片段,拿到 clipId 直接交给 update_clip 等" }
+        cutId: { type: "string", description: "If given, additionally return this cut's timeline overview (ids, start and end of each track and clip, plus camera clips) without switching to it; to change an existing clip inside it, take the clipId and hand it straight to update_clip etc." }
       }
     },
     side: "agent"
   },
   {
     name: "user_interface_switch_cut",
-    description: "**会动用户的界面**:把所有成员共享的激活剪辑切到另一条(按 cutId 或 name 二选一),所有成员的界面一起翻过去,播放头回到这条上次离开的位置,选中清空。" +
-      "**只有用户明说要「切到 / 打开某某剪辑」,或你要在别的剪辑里新增 / 删除 / 切分 / 复制片段时才用。**" +
-      "只是改别的剪辑里已有的片段不要用它(clipId 在 list_cuts 或 get_project 的 parkedCuts 里,直接交给 update_clip 等就地改);" +
-      "只是看别的剪辑的画面也不要用它(see_frames 传 cutId)。切过去再切回来是两次多余的写入,也会打断别人正在看的时间轴。" +
-      "切换后 get_project / add_clip / update_clip 等看到和改到的都是这条的内容。返回切换后的 cuts 列表和这条的 timeline 摘要。",
+    description: "**Acts on the user's interface**: switches the active cut shared by all members to another one (by cutId or name, pick one); every member's interface flips over together, the playhead returns to where it was when this cut was last left, and the selection is cleared." +
+      "**Use only when the user explicitly says \"switch to / open such-and-such cut\", or when you need to add / delete / split / duplicate clips in another cut.**" +
+      "Do not use it just to change existing clips in other cuts (the clipId is in list_cuts or in the parkedCuts of get_project; hand it straight to update_clip etc. to edit in place);" +
+      " Do not use it just to view the frames of other cuts either (pass cutId to see_frames). Switching over and back is two redundant writes, and it also interrupts the timeline others are watching." +
+      " After switching, what get_project / add_clip / update_clip etc. see and change is this cut's content. Returns the cuts list after switching and a summary of this cut's timeline.",
     inputSchema: {
       type: "object",
       properties: {
         cutId: { type: "string" },
-        name: { type: "string", description: "剪辑名,和 cutId 二选一" }
+        name: { type: "string", description: "Cut name, pick one of this and cutId" }
       }
     },
     side: "agent"
   },
   {
     name: "add_cut",
-    description: "新建一条剪辑(默认名 剪辑N),带两条空序列、时长 30 秒。**只建不切**:激活的剪辑不变,谁的界面都不动;返回新剪辑的 id。" +
-      "要往里放东西:新增片段要先 user_interface_switch_cut 切过去(会动所有成员的界面,用户明说要切或非切不可时才用);" +
-      "或者把它当剪辑段放进当前剪辑(add_cut_segment)。用户说「另起一条时间轴 / 再做一版」就是它。",
+    description: "Create a new cut (default name Cut N), with two empty tracks and a duration of 30 seconds. `kind` selects `\"2d\"` (default: 2D canvas + track layering) or `\"3d\"` (3D perspective space where cards and video/image media stand in space with depth occlusion and 3D camera movement). **Create only, no switch**: the active cut stays the same and nobody's interface moves; returns the new cut's id and kind." +
+      " To put things into it: to add track clips you must first user_interface_switch_cut to it (camera clips can be added directly by passing cutId to add_camera), or place it into the current cut as a cut segment (add_cut_segment). For a 3D walkthrough segment inside a 2D video, create a `\"3d\"` cut, build the walkthrough there, and place it into the main `\"2d\"` cut via `add_cut_segment` so captions and HUD in the outer 2D cut stay screen-locked on top.",
     inputSchema: {
       type: "object",
       properties: {
-        name: { type: "string" }
+        name: { type: "string" },
+        kind: { type: "string", enum: ["2d", "3d"], description: "\"2d\" (default) or \"3d\"" },
+        spaceWidth: { type: "number", description: "[2D cuts] Optional virtual canvas width in pixels when panning across a wider 2D canvas than the output frame" },
+        spaceHeight: { type: "number", description: "[2D cuts] Optional virtual canvas height in pixels when panning across a taller 2D canvas than the output frame" },
+        camera3dFov: { type: "number", description: "[3D cuts] Default field of view in degrees (5~120, default 40) when no active camera clip overrides fovDeg" }
       }
     },
     side: "agent"
   },
   {
+    name: "set_cut_kind",
+    description: "Set a cut's spatial kind (`\"2d\"` or `\"3d\"`) and optional cut-level space metadata (`spaceWidth`, `spaceHeight`, `camera3dFov`). Converting `\"2d\" -> \"3d\"` is lossless (all existing clips sit on z = 0 facing the default straight-on 3D camera). Converting a `\"3d\"` cut back to `\"2d\"` is **never** done by overwriting in place because 3D depth occlusion, `translateZ`/`rotateX`/`rotateY` boards, and 3D camera moves have no lossless 2D track equivalent: passing `kind: \"2d\"` on a 3D cut is rejected and directs you to `prerender_cut_to_2d`, which pre-renders the 3D cut to an `.mp4` media asset in a new 2D cut while preserving the original 3D cut untouched.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cutId: { type: "string", description: "Target cut id from list_cuts; defaults to the currently active cut" },
+        kind: { type: "string", enum: ["2d", "3d"], description: "\"2d\" or \"3d\"" },
+        spaceWidth: { type: "number", description: "[2D cuts] Optional virtual 2D canvas width in pixels" },
+        spaceHeight: { type: "number", description: "[2D cuts] Optional virtual 2D canvas height in pixels" },
+        camera3dFov: { type: "number", description: "[3D cuts] Default 3D camera FOV in degrees (5~120)" }
+      },
+      required: ["kind"]
+    },
+    side: "agent"
+  },
+  {
+    name: "prerender_cut_to_2d",
+    description: "Pre-render a `\"3d\"` cut's exact camera output (picture + audio mix) into an `.mp4` video asset in the media library, and create a new `\"2d\"` cut with that video clip placed on Track 1, **keeping the original `\"3d\"` cut completely untouched** so you or the user can always go back and edit the 3D space later. Does not switch the active cut. Returns the new 2D cut, the imported media asset, and the placed Track 1 clip.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cutId: { type: "string", description: "Id of the 3D cut to pre-render (from list_cuts); defaults to the currently active cut" },
+        name: { type: "string", description: "Optional name for the new 2D cut (defaults to \"<3D cut name> (2D)\")" }
+      }
+    },
+    side: "agent",
+    timeoutMs: 180000
+  },
+  {
+    name: "list_cameras",
+    description: "List all camera clips on a cut's dedicated camera lane (`cut.cameras`). Defaults to the currently active cut, or pass `cutId` to inspect another cut without switching. Returns the cut's `kind` (`\"2d\"` | `\"3d\"`), default uncovered pose, and each camera clip's `id`, `name`, `row` (higher row overrides lower row when active simultaneously), `start`, `end`, `enabled`, and `params`.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cutId: { type: "string", description: "Cut id from list_cuts; defaults to the currently active cut" }
+      }
+    },
+    side: "agent"
+  },
+  {
+    name: "add_camera",
+    description: "Add a camera clip to a cut's dedicated camera lane (`cut.cameras`) to drive a continuous one-take camera move across multiple timeline clips. Camera clips **do not** extend `contentEnd` (deleting all track clips shrinks duration even if a camera clip spans 0..60). Within the same `row` (default 0), camera clips cannot overlap (adjacent touching `end === next.start` is allowed); when multiple rows are active at the same moment `t` (`start <= t < end`), the **highest `row` wins** (upper row overrides lower row). Moments not covered by any enabled camera clip fall back to the cut's default pose (2D: `x=0, y=0, zoom=1, rotate=0`; 3D: straight-on `(0, 0, cameraDistance(height, fovDeg))`, `rx=0, ry=0, rz=0`). Every parameter accepts either a **number** OR a deterministic **expression string** in `t` (seconds into this camera clip), `d` (camera clip duration), and `p = t/d` (0..1): for **2D cuts** `params` takes `{ x, y, zoom, rotate }` (captions on `caption-track` stay screen-locked and never pan away!); for **3D cuts** `params` takes `{ x, y, z, rx, ry, rz, fovDeg }`.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cutId: { type: "string", description: "Target cut id from list_cuts; defaults to the currently active cut" },
+        name: { type: "string", description: "Optional display label for the camera clip on the timeline" },
+        row: { type: "number", description: "0-based camera lane row (default 0). Higher row overrides lower row at overlapping times" },
+        start: { type: "number", description: "Start time in seconds (>= 0)" },
+        end: { type: "number", description: "End time in seconds (> start)" },
+        enabled: { type: "boolean", description: "Default true; false disables this camera clip without deleting it" },
+        params: {
+          type: "object",
+          description: "Camera pose fields (numbers or t/d/p expression strings such as \"1920 * p\" or \"1500 - 2200 * p\"). 2D cut keys: x, y, zoom (>0), rotate (deg). 3D cut keys: x, y, z, rx, ry, rz (deg), fovDeg (5~120)."
+        },
+        x: { anyOf: [{ type: "number" }, { type: "string" }], description: "Convenience shorthand for params.x (number or t/d/p expression)" },
+        y: { anyOf: [{ type: "number" }, { type: "string" }], description: "Convenience shorthand for params.y (number or t/d/p expression)" },
+        z: { anyOf: [{ type: "number" }, { type: "string" }], description: "[3D cut] Convenience shorthand for params.z (number or t/d/p expression)" },
+        rx: { anyOf: [{ type: "number" }, { type: "string" }], description: "[3D cut] Convenience shorthand for params.rx pitch in degrees (number or t/d/p expression)" },
+        ry: { anyOf: [{ type: "number" }, { type: "string" }], description: "[3D cut] Convenience shorthand for params.ry yaw in degrees (number or t/d/p expression)" },
+        rz: { anyOf: [{ type: "number" }, { type: "string" }], description: "[3D cut] Convenience shorthand for params.rz roll in degrees (number or t/d/p expression)" },
+        fovDeg: { anyOf: [{ type: "number" }, { type: "string" }], description: "[3D cut] Convenience shorthand for params.fovDeg (5~120, number or t/d/p expression)" },
+        zoom: { anyOf: [{ type: "number" }, { type: "string" }], description: "[2D cut] Convenience shorthand for params.zoom (> 0, number or t/d/p expression)" },
+        rotate: { anyOf: [{ type: "number" }, { type: "string" }], description: "[2D cut] Convenience shorthand for params.rotate in degrees (number or t/d/p expression)" }
+      },
+      required: ["start", "end"]
+    },
+    side: "agent"
+  },
+  {
+    name: "update_camera",
+    description: "Update an existing camera clip's timing (`start`, `end`), `row`, `name`, `enabled`, or `params` (numbers or `t`/`d`/`p` expression strings; pass `null` inside `params` to clear a parameter back to default). Validates same-row non-overlap and expression syntax.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cameraId: { type: "string", description: "Camera clip id from list_cameras or add_camera" },
+        cutId: { type: "string", description: "Target cut id from list_cuts; defaults to the currently active cut" },
+        name: { type: "string" },
+        row: { type: "number", description: "0-based camera lane row (higher row overrides lower row)" },
+        start: { type: "number" },
+        end: { type: "number" },
+        enabled: { type: "boolean" },
+        params: {
+          type: "object",
+          description: "Camera pose patch (numbers, t/d/p expression strings, or null to reset a key)"
+        },
+        x: { anyOf: [{ type: "number" }, { type: "string" }], description: "Convenience shorthand for params.x" },
+        y: { anyOf: [{ type: "number" }, { type: "string" }], description: "Convenience shorthand for params.y" },
+        z: { anyOf: [{ type: "number" }, { type: "string" }], description: "[3D cut] Convenience shorthand for params.z" },
+        rx: { anyOf: [{ type: "number" }, { type: "string" }], description: "[3D cut] Convenience shorthand for params.rx" },
+        ry: { anyOf: [{ type: "number" }, { type: "string" }], description: "[3D cut] Convenience shorthand for params.ry" },
+        rz: { anyOf: [{ type: "number" }, { type: "string" }], description: "[3D cut] Convenience shorthand for params.rz" },
+        fovDeg: { anyOf: [{ type: "number" }, { type: "string" }], description: "[3D cut] Convenience shorthand for params.fovDeg" },
+        zoom: { anyOf: [{ type: "number" }, { type: "string" }], description: "[2D cut] Convenience shorthand for params.zoom" },
+        rotate: { anyOf: [{ type: "number" }, { type: "string" }], description: "[2D cut] Convenience shorthand for params.rotate" }
+      },
+      required: ["cameraId"]
+    },
+    side: "agent"
+  },
+  {
+    name: "remove_camera",
+    description: "Remove a camera clip from a cut's dedicated camera lane.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cameraId: { type: "string", description: "Camera clip id from list_cameras" },
+        cutId: { type: "string", description: "Target cut id from list_cuts; defaults to the currently active cut" }
+      },
+      required: ["cameraId"]
+    },
+    side: "agent"
+  },
+  {
     name: "rename_cut",
-    description: "给剪辑改名。",
+    description: "Rename a cut.",
     inputSchema: {
       type: "object",
       properties: {
@@ -85,7 +202,7 @@ export const cutsTools = [
   },
   {
     name: "remove_cut",
-    description: "删除一条剪辑。最后一条不能删。里面有内容(clipCount > 0)、或正被别的剪辑引用着(list_cuts 的 referencedBy 不为空)时会被拒并告诉你被哪些剪辑的哪几段用着;确实要删就传 force:true 并在 reason 里写明理由(用户会看到),引用它的剪辑段(连同绑着它们的转场)会一起删掉,返回里 removedSegments 列出删了哪些;用户可以撤销。删的是当前激活那条时会自动切到相邻的一条,返回里 switchedTo 说明切去了哪。",
+    description: "Delete a cut. The last one cannot be deleted. If it has content (clipCount > 0), or is referenced by other cuts (referencedBy of list_cuts is not empty), the call is rejected and tells you which segments of which cuts use it; if you really need to delete, pass force:true and state the reason in reason (the user will see it); the cut segments that reference it (together with the transitions bound to them) are deleted too, and removedSegments in the result lists what was deleted; the user can undo. When the deleted cut is the active one, it automatically switches to an adjacent one, and switchedTo in the result says where it went.",
     inputSchema: {
       type: "object",
       properties: {
@@ -99,16 +216,16 @@ export const cutsTools = [
   },
   {
     name: "add_cut_segment",
-    description: "在当前激活的剪辑里放一个**剪辑段**:引用另一条剪辑(cutId 或 name 二选一),画面是那条剪辑在对应时刻的整帧,声音是它的混音。引用不是复制 —— 被引用的剪辑改了,这里跟着变。start 是放在当前剪辑的第几秒;duration 缺省 = 被引用剪辑(从 cutOffset 起)剩下的长度,给了也不能超出它;cutOffset 是从被引用剪辑的第几秒开始(缺省 0);trackId 缺省挑一条这段时间空着的序列。**不能放进它自己,也不能形成循环引用**(A 引用 B、B 再引用 A,任意深度),会被拒并说明原因。放好以后和别的片段一样用 update_clip 改起止 / 不透明度 / 淡入淡出、set_position / set_rect 改框、set_clip_volume / set_clip_muted 调声音、split_clip 切开(后半段的 cutOffset 自动累加)、duplicate_clip 复制;get_clip 的 cutSegment 里看引用哪条、偏移和被引用剪辑的总时长。返回 segment 与 timeline。",
+    description: "Place a **cut segment** in the currently active cut: it references another cut (cutId or name, pick one); the picture is that cut's full frame at the corresponding moment, and the sound is its mix. A reference is not a copy: when the referenced cut changes, this follows. start is the second of the current cut to place it at; duration defaults to the remaining length of the referenced cut (from cutOffset), and if given it cannot exceed that; cutOffset is the second of the referenced cut to start from (default 0); trackId defaults to a track that is empty during this time. **It cannot be placed into itself, and cannot form a circular reference** (A references B, B references A again, at any depth); this is rejected with the reason. Once placed, like other clips use update_clip to change start and end / opacity / fades, set_position / set_rect to change the frame, set_clip_volume / set_clip_muted to adjust sound, split_clip to split (the cutOffset of the second half accumulates automatically), duplicate_clip to duplicate; in cutSegment of get_clip you can see which cut is referenced, the offset and the total duration of the referenced cut. Returns segment and timeline.",
     inputSchema: {
       type: "object",
       properties: {
-        cutId: { type: "string", description: "被引用的剪辑 id(list_cuts 里拿)" },
-        name: { type: "string", description: "被引用的剪辑名,和 cutId 二选一" },
-        start: { type: "number", description: "放在当前剪辑的第几秒" },
-        duration: { type: "number", description: "秒;缺省 = 被引用剪辑剩下的长度,不能超出它" },
-        cutOffset: { type: "number", description: "从被引用剪辑的第几秒开始,缺省 0" },
-        trackId: { type: "string", description: "放到哪条序列;缺省挑这段时间空着的" }
+        cutId: { type: "string", description: "Id of the referenced cut (get it from list_cuts)" },
+        name: { type: "string", description: "Name of the referenced cut, pick one of this and cutId" },
+        start: { type: "number", description: "Second of the current cut to place it at" },
+        duration: { type: "number", description: "Seconds; default = the remaining length of the referenced cut, cannot exceed it" },
+        cutOffset: { type: "number", description: "Second of the referenced cut to start from, default 0" },
+        trackId: { type: "string", description: "Which track to place it on; defaults to one that is empty during this time" }
       },
       required: ["start"]
     },
@@ -116,12 +233,12 @@ export const cutsTools = [
   },
   {
     name: "set_cut_segment",
-    description: "改一个剪辑段从被引用剪辑的第几秒开始(cutOffset)。偏移超出被引用剪辑的总时长会被拒;改完段比被引用剪辑剩下的还长时,出点截到剩下的长度。**剪辑段引用哪条剪辑不能改**:带了 cutId / name 会被拒;要换就 remove_clip 删掉这段,用 add_cut_segment 放一段新的。起止、框、不透明度、淡入淡出、音量与静音不在这里改(见 add_cut_segment 的说明)。不是剪辑段的片段用 update_clip。",
+    description: "Change the second of the referenced cut at which a cut segment starts (cutOffset). An offset beyond the referenced cut's total duration is rejected; when the segment is longer than what remains of the referenced cut after the change, the out point is trimmed to the remaining length. **Which cut a cut segment references cannot be changed**: passing cutId / name is rejected; to replace it, remove_clip to delete this segment and place a new one with add_cut_segment. Start and end, frame, opacity, fades, volume and mute are not changed here (see the description of add_cut_segment). For clips that are not cut segments, use update_clip.",
     inputSchema: {
       type: "object",
       properties: {
         clipId: { type: "string" },
-        cutOffset: { type: "number", description: "秒,不小于 0" }
+        cutOffset: { type: "number", description: "Seconds, not less than 0" }
       },
       required: ["clipId"]
     },

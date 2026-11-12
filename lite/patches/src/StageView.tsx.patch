@@ -1,5 +1,5 @@
 diff --git a/src/StageView.tsx b/src/StageView.tsx
-index 78e6d9bf82f044787a04af632ffd87f110bb36e3..7343d336e31c0f56eecc39be8f1a9c8254faeab9 100644
+index 6cfd4db790a90c13caa3129ade99934e48509ba9..31ff7ed6467ae49196fa4b86bfa3e4d3a15061db 100644
 --- a/src/StageView.tsx
 +++ b/src/StageView.tsx
 @@ -36,7 +36,7 @@ import { budgetOf, CATCHUP_STEPS_PER_BEAT, clipWeight, pipelineAt } from "./rend
@@ -11,12 +11,12 @@ index 78e6d9bf82f044787a04af632ffd87f110bb36e3..7343d336e31c0f56eecc39be8f1a9c82
  import {
    applyPlaceholders, hideAllPlaceholders, localOnlyClipIds, onlineBrowserMode, setPlaceholderViewScale, noteInkBox, removePlaceholderStyle, PLACEHOLDER_SLOT_ATTR, placeholdersEnabled, placeholderWanted,
    resetPlaceholderGeometry, setCatchingUpClips, setOnlineBrowserMode, setPlaceholdersEnabled, keepTopOfGroups, setOverBoxSource, setStreamBoxSource, shownPlaceholders, stageBoxToLocal, shownSince,
-@@ -48,21 +48,15 @@ import {
-  * 显式打开(截图和探针用,编辑页的同名参数经 `stageSrc` 转发过来)。开着时这台设备跑不了的卡(用户卡、素材效果卡)不挂组件,
-  * 照贴预渲染结果,什么都贴不上才显示 `unsupported` 占位(C10 契约第 9 节)。
+@@ -51,21 +51,15 @@ import {
+  * their component but get the prerender output pasted instead, and only if nothing can be pasted
+  * is an `unsupported` placeholder shown (C10 contract, section 9).
   */
--try { setOnlineBrowserMode(ONLINE || new URLSearchParams(location.search).get("platform") === "browser"); } catch { /* 没有 location:导出 / 单测 */ }
-+try { setOnlineBrowserMode(new URLSearchParams(location.search).get("platform") === "browser"); } catch { /* 没有 location:导出 / 单测 */ }
+-try { setOnlineBrowserMode(ONLINE || new URLSearchParams(location.search).get("platform") === "browser"); } catch { /* No location: export / unit tests */ }
++try { setOnlineBrowserMode(new URLSearchParams(location.search).get("platform") === "browser"); } catch { /* No location: export / unit tests */ }
  import { PLACEHOLDER_SHOW_DELAY_MS } from "./render/placeholder/contract";
  import { measureLocalContentBox, type CanvasPixels } from "./render/contentBox";
  import { createGlHost } from "./render/gl/glHost";
@@ -24,43 +24,52 @@ index 78e6d9bf82f044787a04af632ffd87f110bb36e3..7343d336e31c0f56eecc39be8f1a9c82
  import { resolveGlRoute } from "./render/costDevice.mjs";
  import { themeStyle } from "./themes";
 -import { ONLINE } from "./online/mode";
- import { mediaTierPolicy, setMediaTierPolicy } from "./render/mediaTier";
+-import { mediaTierPolicy, setMediaTierPolicy } from "./render/mediaTier";
 -import { netSpeedState, startNetSpeed } from "./render/netSpeed";
 -import { cardExecGate as stageExecGate, cardVisualExecAllowed, noteMediaPolicy, subscribeCardExecGate as subscribeStageExecGate } from "./online/isolation/execGate";
 -import type { StageCardRuntime } from "./online/cardRuntime/stageRuntime";
 -import type { StageSound } from "./online/cardRuntime/stageSound";
 -import type { CardBundle } from "./online/cardRuntime/protocol";
 -import { announceStageIsolation } from "./online/isolation/stageGuard";
++import { setMediaTierPolicy } from "./render/mediaTier";
 +import { netSpeedState } from "./render/netSpeed";
  import { clampSettleTimeout, runSettle, settleKindOf, type DrawOutcome, type SettleItem, type SettleResult } from "./render/settleFrame";
  import { cardCapabilities, clipFrameMode } from "./kernel/frameMode.mjs";
  import { resolveFrameSize } from "./kernel/frameSize.mjs";
-@@ -411,7 +405,7 @@ export default function StageView() {
+@@ -473,7 +467,7 @@ export default function StageView() {
       */
-     /** 某条流的画面有无变了(异步解出第一帧、留到时限清空);实现在下面,等用到的函数都定义了再接上 */
+     /** Whether the picture of a stream changed (first frame decoded asynchronously, cleared when the time limit passes); implemented below, wired up once all the functions it uses are defined */
      let onStreamShowing: () => void = () => {};
 -    const player = new StreamPlayer({ root: () => rootRef.current, ...(ONLINE ? { source: new PushedStreamSource() } : {}), onShowingChange: () => onStreamShowing(),
 +    const player = new StreamPlayer({ root: () => rootRef.current, onShowingChange: () => onStreamShowing(),
-       // 超出预算的层的位置矩形变了(清单到了、播放头进了下一个分段):占位符的几何是渲染时取的,提交一次让它重取
+       // The position rectangle of an over-budget layer changed (the manifest arrived, or the playhead entered
+       // the next segment): the placeholder geometry is read at render time, so commit once to make it read again
        onBoxChange: () => onStreamBoxes() });
-     let onStreamBoxes: () => void = () => {};
-@@ -439,93 +433,10 @@ export default function StageView() {
-      * 路线先按宿主能力的缺省建,收到项目后按 `project.glRoute` 的生效值改(`setProject`)。
-      * 路线 2 的端口由父页在握手之后、任何 RPC 之前经 `{ type: 'gl-port' }` 交来(下面那个监听)。
+@@ -508,114 +502,10 @@ export default function StageView() {
+      * (`setProject`). The port for route 2 is handed over by the parent page via `{ type: 'gl-port' }` after
+      * the handshake and before any RPC (the listener below).
       */
 -    const caps = detectHostCapabilities({ online: ONLINE });
--    // 最低一档(父页在 src 里给 `lowest=1`)起手就只用小尺寸;远程素材服务的基址与票据、素材闸门的结果等父页 `setMediaPolicy` 下发
+-    // At the lowest tier (the parent page gives `lowest=1` in src), start by using only small sizes; the base
+-    // URL and ticket of the remote asset service, the result of the asset gate, etc. are sent down by the
+-    // parent page via `setMediaPolicy`
 -    setMediaTierPolicy({ smallOnly: caps.lowest, online: ONLINE });
 -    /*
--     * 主线程画布丢了 WebGL 上下文:素材效果卡的图形能力按「运行中丢过上下文」算不够(`cardRuntime`,契约 4.3)。
--     * 它不再用来判整台设备的性能(原来的「运行中整体降档」2026-10-07 用户定撤销),只在线页面接。
--     * 事件不冒泡,在 document 上按捕获阶段接;OffscreenCanvas 在 Worker 里丢上下文不经这里(glHost 自己有退路)。
+-     * The main-thread canvas lost its WebGL context: the graphics capability of media effect cards is counted
+-     * as insufficient because "a context was lost while running" (`cardRuntime`, contract 4.3). It is no longer
+-     * used to judge the performance of the whole device (the earlier "overall downgrade while running" was
+-     * revoked by user decision, 2026-10-07), and is only hooked up on the online page. The event does not
+-     * bubble, so it is caught in the capture phase on document; a context lost by an OffscreenCanvas in the
+-     * Worker does not come through here (glHost has its own fallback).
 -     */
 -    const onContextLost = () => { cardExec.runtime?.noteContextLost(); };
 -    if (ONLINE) document.addEventListener("webglcontextlost", onContextLost, true);
 -    /*
--     * 素材闸门的网速(`render/netSpeed.ts`):看素材实际下载的快慢,慢就先拉小尺寸、再拉原尺寸替换,快就只拉原尺寸;使用中随时切换。
--     * 素材是这一台舞台自己读的,所以在舞台里看、写进这一台的取档策略;切换时报父页一声(查看口)。只在线页面。
+-     * Network speed of the asset gate (`render/netSpeed.ts`): it watches how fast assets actually download;
+-     * if slow, it first pulls the small size and then pulls the original size to replace it, and if fast, it
+-     * pulls only the original size; it can switch at any time during use. Assets are read by this stage
+-     * itself, so we watch it in the stage and write it into this stage's tier policy; when it switches, the
+-     * parent page is notified (viewing port). Online page only.
 -     */
 -    const stopNetSpeed = ONLINE ? startNetSpeed((st) => {
 -      setMediaTierPolicy({ smallFirst: st.smallFirst });
@@ -68,11 +77,20 @@ index 78e6d9bf82f044787a04af632ffd87f110bb36e3..7343d336e31c0f56eecc39be8f1a9c82
 -      postStageEvent({ type: "net-speed", mbps: st.mbps, samples: st.samples, smallFirst: st.smallFirst });
 -    }) : () => {};
 -    /*
--     * 在线执行同步来的用户卡与素材效果卡(`docs/plan/online-card-exec-contract.md` 第 2、3、4、8 节)。编辑页面经 `loadUserCards` 发来转译好的包;
--     * 这里只在**本文档自己的执行闸门**开着时执行(`online/isolation/execGate.ts`:是跨源舞台入口、自检通过、父页点头、从没见过票据、没出过加固拦下的事):
--     *   - 画面那一半还要本文档的出口由浏览器拦(`cardVisualExecAllowed`;〔裁:主会话 2026-10-06〕只靠脚本加固的浏览器上不执行画面);
--     *   - 声音那一半在这一台起的后台线程里执行(线程从 blob 地址引导,继承本文档的策略),只有父页点名的那一台(实例 B)起。
--     * 闸门晚开:包先记着,开了再执行;闸门关上(出了加固拦下的事):已载入的全部撤下。加载器与声音宿主都按需载入,桌面构建里整段剪掉。
+-     * Execute the user cards and media effect cards synced over (`docs/plan/online-card-exec-contract.md`,
+-     * sections 2, 3, 4 and 8). The editor page sends the transpiled bundle via `loadUserCards`; here it is
+-     * executed only when **this document's own execution gate** is open (`online/isolation/execGate.ts`: it is
+-     * a cross-origin stage entry, the self-check passed, the parent page gave its approval, no ticket has ever
+-     * been seen, and no hardening block has occurred):
+-     *   - the visual half also requires that this document's egress is blocked by the browser
+-     *     (`cardVisualExecAllowed`; [ruling: lead session 2026-10-06] visuals are not executed in a browser
+-     *     that relies only on script hardening);
+-     *   - the audio half runs in a background thread started on this machine (the thread is bootstrapped from
+-     *     a blob URL and inherits this document's policy), and only the one the parent page names (instance B)
+-     *     starts it.
+-     * When the gate opens late: the bundle is remembered first and executed once it opens; when the gate
+-     * closes (a hardening block occurred): everything already loaded is taken down. The loader and the audio
+-     * host are both loaded on demand, and the whole section is cut out of desktop builds.
 -     */
 -    const cardExec: { bundles: CardBundle[] | null; sound: boolean; runtime: StageCardRuntime | null; soundHost: StageSound | null; seq: number; stopped: boolean } =
 -      { bundles: null, sound: false, runtime: null, soundHost: null, seq: 0, stopped: false };
@@ -101,7 +119,8 @@ index 78e6d9bf82f044787a04af632ffd87f110bb36e3..7343d336e31c0f56eecc39be8f1a9c82
 -              longSide: () => Math.max(ref.current.project?.width ?? 1920, ref.current.project?.height ?? 1080),
 -              onStates: (states, graph) => {
 -                postStageEvent({ type: "card-states", states, graph, visual: true });
--                // 能运行的卡换了一批:重渲一次(活组件挂上 / 撤下、占位符重算)
+-                // The set of runnable cards changed: re-render once (live components mounted / unmounted, placeholders
+-                // recomputed)
 -                commitPlanes();
 -              },
 -            });
@@ -112,7 +131,8 @@ index 78e6d9bf82f044787a04af632ffd87f110bb36e3..7343d336e31c0f56eecc39be8f1a9c82
 -          cardExec.runtime?.dispose(); cardExec.runtime = null;
 -          postStageEvent({ type: "card-states", states: [], graph: "unknown", visual: false });
 -        }
--        // 没有同步来的卡就不起声音线程(也不报声音状态):项目里没有用户卡、素材效果卡时这一台与以前一样安静
+-        // With no synced cards, no audio thread is started (and no audio status is reported): when the project
+-        // has no user cards or media effect cards, this machine is as silent as before
 -        if (cardExec.sound && (bundles.length > 0 || cardExec.soundHost)) {
 -          if (!cardExec.soundHost) {
 -            const [m, sp] = await Promise.all([import("./online/cardRuntime/stageSound"), import("./online/cardRuntime/soundSpawn")]);
@@ -125,13 +145,15 @@ index 78e6d9bf82f044787a04af632ffd87f110bb36e3..7343d336e31c0f56eecc39be8f1a9c82
 -          postStageEvent({ type: "sound-state", state: null });
 -        }
 -      } catch (err) {
--        console.warn("[stage] 载入同步来的卡片出错", err);
+-        console.warn("[stage] error loading synced cards", err);
 -      }
 -    };
 -    const offCardExecGate = ONLINE ? subscribeStageExecGate(() => { void applyCardBundles(); }) : () => {};
 -    /*
--     * 在线页面的路线由父页按舞台闸门定(起手看 src 里的 `gl=`,试第三级时经 `setGlRoute` 换),不看项目选项;
--     * 桌面运行环境照旧按项目选项(`setProject` 里 `resolveGlRoute(project.glRoute)`),缺省路线 1。
+-     * On the online page the route is decided by the parent page according to the stage gate (it starts from
+-     * `gl=` in src, and switches via `setGlRoute` when trying the third tier), not by project options;
+-     * the desktop runtime still follows the project options (`resolveGlRoute(project.glRoute)` in
+-     * `setProject`), with route 1 as the default.
 -     */
 -    let onlineGlRoute: "perDocument" | "shared" = caps.glRoute ?? "perDocument";
 -    const gl = createGlHost({ stageId: caps.stageId, compact: caps.compact, route: ONLINE ? onlineGlRoute : resolveGlRoute(null) });
@@ -142,19 +164,21 @@ index 78e6d9bf82f044787a04af632ffd87f110bb36e3..7343d336e31c0f56eecc39be8f1a9c82
      const onGlPort = (e: MessageEvent) => {
        if (e.source !== window.parent) return;
        const d = e.data as { type?: string; port?: MessagePort | null } | null;
-@@ -1780,10 +1691,8 @@ export default function StageView() {
+@@ -1993,11 +1883,9 @@ export default function StageView() {
+         const nextKey = layoutKeyOf(full);
          ref.current.project = full;
          ref.current.layoutKey = nextKey;
-         // R9:项目选项的路线(生效值;切了就重建 glHost 那一侧的连接,M2 / 约束第 1 条)。在线页面的路线跟舞台闸门走,不看项目选项
+-        // R9: route of the project options (effective value; on a switch, rebuild the connection on the glHost side, M2 / constraint 1). The online page's route follows the stage gate, not the project options
 -        gl.setRoute(ONLINE ? onlineGlRoute : resolveGlRoute(full.glRoute));
++        // R9: route of the project options (effective value; on a switch, rebuild the connection on the glHost side, M2 / constraint 1).
 +        gl.setRoute(resolveGlRoute(full.glRoute));
          flushSync(() => setProject(full));
--        // 画幅可能变了:素材效果卡的图形能力(最大纹理尺寸那一条)按新的长边重判
+-        // The aspect ratio may have changed: re-judge the graphics capability of media effect cards (the max texture size rule) against the new long edge
 -        if (!prev || prev.width !== full.width || prev.height !== full.height) cardExec.runtime?.refreshGraph();
          window.clearTimeout(ref.current.settle);
-         // 项目变了,在飞的补跑作废:探针会按新项目重发
+         // The project changed, so the in-flight catch-up run is invalidated: the probe will resend against the new project
          renderGen.current++;
-@@ -1978,7 +1887,7 @@ export default function StageView() {
+@@ -2200,7 +2088,7 @@ export default function StageView() {
              await clock.advanceToAsync(target * 1000, {
                step: 1000 / fps,
                maxCatchUp: opts.maxCatchUp,
@@ -163,16 +187,18 @@ index 78e6d9bf82f044787a04af632ffd87f110bb36e3..7343d336e31c0f56eecc39be8f1a9c82
                gate,
                abort: () => {
                  if (gen !== renderGen.current) return true;
-@@ -2093,7 +2002,7 @@ export default function StageView() {
+@@ -2326,8 +2214,8 @@ export default function StageView() {
+        * `unsupported` and does not throw.
         */
        async setRole(role, opts = {}) {
-         // `bake`:本地模式不支持(预渲染者是预渲染进程);在线构建的后台舞台兼做纯浏览器节点(M7 契约 D3)
+-        // `bake`: not supported in local mode (the prerender process does the prerendering); the background stage of the online build doubles as a pure-browser node (M7 contract D3)
 -        if (role === "back" && opts.job === "bake" && !ONLINE) return { ok: false, reason: "unsupported" as const };
++        // `bake`: not supported in local mode (the prerender process does the prerendering)
 +        if (role === "back" && opts.job === "bake") return { ok: false, reason: "unsupported" as const };
          /*
-          * K5 (6):**从 `back` 转正**的舞台要报一次 `settled`(`clipIds` 为空数组)。
+          * K5 (6): a stage **promoted from `back`** must report `settled` once (`clipIds` is an empty array).
           *
-@@ -2259,7 +2168,7 @@ export default function StageView() {
+@@ -2512,7 +2400,7 @@ export default function StageView() {
           */
          {
            const showing = ref.current.streamPlanes.length ? player.showingClips() : NO_CLIPS;
@@ -181,17 +207,17 @@ index 78e6d9bf82f044787a04af632ffd87f110bb36e3..7343d336e31c0f56eecc39be8f1a9c82
            const waiting = new Map<string, number>();
            const now = realNow();
            for (const id of ref.current.parentSuppressed) {
-@@ -2386,7 +2295,7 @@ export default function StageView() {
-          * 在线页面的流平面另带清单与字节(`streamPlayer.ts` 的 `PushedStreamSource`),播放中每取到一段就来一次;
-          * `Stage` 只看每条平面的 `clipIds`,分组没变就不为它多做一次 React 提交(占位符的显隐下面照样当场重算)。桌面照旧每次都提交。
+@@ -2654,7 +2542,7 @@ export default function StageView() {
+          * for it (the placeholder's show/hide is still recomputed on the spot below). The desktop app
+          * still commits every time.
           */
 -        if (!ONLINE || groupsOf(ref.current.streamPlanes) !== before) commitPlanes();
 +        commitPlanes();
          const fps = Math.max(1, ref.current.project?.fps || 30);
-         // 清单与字节只交给播放器,不进 `ref.current.streamPlanes`(那一份会进 React 的 props)
+         // The manifest and bytes go only to the player, not into `ref.current.streamPlanes` (that copy goes into React's props)
          player.setPlanes(ref.current.streamPlanes.map((p, i) => {
-@@ -2469,7 +2378,7 @@ export default function StageView() {
-        * 核对时按同一个式子算期望值,允许差一帧(两边的浮点次序不同)。顶层的卡一个字不变。
+@@ -2771,7 +2659,7 @@ export default function StageView() {
+        * unchanged by a single character.
         */
        async bakeFrame(req) {
 -        if (!ONLINE || !clock) return { ok: false, reason: "unsupported" } satisfies BakeFrameReply;
@@ -199,15 +225,15 @@ index 78e6d9bf82f044787a04af632ffd87f110bb36e3..7343d336e31c0f56eecc39be8f1a9c82
          if (ref.current.role !== "back") return { ok: false, reason: "role" } satisfies BakeFrameReply;
          const p = ref.current.project;
          if (!p) return { ok: false, reason: "no-project" } satisfies BakeFrameReply;
-@@ -2628,20 +2537,11 @@ export default function StageView() {
+@@ -2932,20 +2820,11 @@ export default function StageView() {
          bakeCursor = null;
          return { ok: true as const };
        },
--      /** 在线执行同步来的用户卡与素材效果卡:收下编辑页面发来的包(全量);执行不执行看本文档自己的闸门(见上面 `applyCardBundles`) */
+-      /** User cards and media effect cards synced by online execution: accept the bundle sent by the editor page (full set); whether to execute is decided by this document's own gate (see `applyCardBundles` above) */
 -      async loadUserCards(bundles, opts = {}) {
 -        if (import.meta.env.VITE_PC_ONLINE !== "1") return { ok: false, reason: "unsupported" as const };
 -        const gate = stageExecGate();
--        // 不是跨源舞台入口的文档(同源单舞台、编辑页面):不记、不执行
+-        // A document that is not a cross-origin stage entry (same-origin single stage, editor page): do not record, do not execute
 -        if (gate.reason === "not-stage") return { ok: false, reason: "unsupported" as const };
 -        cardExec.bundles = Array.isArray(bundles) ? (bundles as CardBundle[]) : [];
 -        cardExec.sound = opts?.sound === true;
@@ -217,26 +243,27 @@ index 78e6d9bf82f044787a04af632ffd87f110bb36e3..7343d336e31c0f56eecc39be8f1a9c82
 +        return { ok: false, reason: "unsupported" as const };
        },
 -      async synthCardAudio(request) {
--        if (!cardExec.soundHost || !stageExecGate().allowed) throw new Error("这一台舞台没有声音线程");
+-        if (!cardExec.soundHost || !stageExecGate().allowed) throw new Error(trText("This stage has no sound thread"));
 -        return cardExec.soundHost.render(request);
 +      async synthCardAudio() {
-+        throw new Error("这一台舞台没有声音线程");
++        throw new Error(trText("This stage has no sound thread"));
        },
        /**
-        * 在线页面读内容库卡片源码得到的「已知但本机不能运行」的用户卡(C10 契约第 9 节「识别」)。舞台是另一份文档,
-@@ -2663,8 +2563,7 @@ export default function StageView() {
+        * User cards "known but not runnable on this machine" that the online page learned by reading the
+@@ -2971,9 +2850,7 @@ export default function StageView() {
+       },
        async setMediaPolicy(next) {
-         // 最低一档只进不出:起手的 `lowest=1` 不被父页的 false 盖掉
-         // 执行闸门(契约 `online-card-exec-contract.md` 第 3.1 节):带票据的策略让本文档永久不执行用户卡;闸门开过之后再来的票据不收
+         // The lowest tier is enter-only: the initial `lowest=1` is not overwritten by the parent page's false
+-        // Execution gate (contract `online-card-exec-contract.md`, section 3.1): a policy carrying a ticket makes this document never run user cards; tickets arriving after the gate has opened are rejected
 -        const gate = ONLINE ? noteMediaPolicy({ ticket: next?.remote?.ticket ?? null, cardExec: next?.cardExec }) : { acceptTicket: true };
 -        const remote = next?.remote && !gate.acceptTicket && next.remote.ticket ? { ...next.remote, ticket: null } : next?.remote ?? null;
 +        const remote = next?.remote ?? null;
          const decode = typeof next?.decodeMaxPixels === "number" && Number.isFinite(next.decodeMaxPixels) && next.decodeMaxPixels > 0 ? next.decodeMaxPixels : null;
-         // 网速(`smallFirst`)由这一台自己看(`netSpeed.ts`),父页不给;给了(测试)才照它
+         // Network speed (`smallFirst`) is judged by this machine itself (`netSpeed.ts`); the parent page does not supply it; if one is given (tests), use that
          setMediaTierPolicy({ smallOnly: caps.lowest || next?.smallOnly === true, decodeMaxPixels: decode, smallFirst: typeof next?.smallFirst === "boolean" ? next.smallFirst : netSpeedState().smallFirst, remote });
-@@ -2675,11 +2574,7 @@ export default function StageView() {
-        * 在线页面换 canvas 卡的渲染路线(舞台闸门试第三级时父页发 `perDocument`;语义 `mechanism/platforms.md`「舞台闸门的步骤」)。
-        * 原地换(`glHost.setRoute` 拆掉旧连接、下一拍按新路线接上),不重建舞台、不重灌项目。桌面运行环境的路线跟项目选项走,这里不收。
+@@ -2984,11 +2861,7 @@ export default function StageView() {
+        * The online page switches the render route of canvas cards (the parent page sends `perDocument` when the stage gate tries the third level; semantics: `mechanism/platforms.md`, "Stage gate steps").
+        * Switched in place (`glHost.setRoute` tears down the old connection and reconnects with the new route on the next tick), without rebuilding the stage or reloading the project. The route of the desktop runtime follows the project options, so it is not accepted here.
         */
 -      async setGlRoute(route) {
 -        if (!ONLINE || (route !== "perDocument" && route !== "shared")) return { ok: true as const, route: onlineGlRoute, mode: gl.diag().mode };
@@ -247,11 +274,11 @@ index 78e6d9bf82f044787a04af632ffd87f110bb36e3..7343d336e31c0f56eecc39be8f1a9c82
          return { ok: true as const, route: onlineGlRoute, mode: gl.diag().mode };
        },
        async setLocalHashes(hashes) {
-@@ -2764,18 +2659,10 @@ export default function StageView() {
+@@ -3076,18 +2949,10 @@ export default function StageView() {
      (window as unknown as Record<string, unknown>).__pcGlWorkerDiag = () => gl.workerDiag();
      window.__pcStagePipelineAt = (clipId: string, tSec: number) => pipelineAt(ref.current.plan?.plan ?? null, clipId, tSec);
      postStageReady(caps);
--    // 跨源舞台的自检结果排在握手之后发(`online/isolation/stageGuard.ts`);别的文档什么都不发
+-    // The self-check result of the cross-origin stage is sent after the handshake (`online/isolation/stageGuard.ts`); other documents send nothing
 -    if (ONLINE) announceStageIsolation();
      return () => {
        stopRpc();

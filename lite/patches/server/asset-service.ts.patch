@@ -1,8 +1,8 @@
 diff --git a/server/asset-service.ts b/server/asset-service.ts
-index 2e81bb511063595a1d7b4d9f56ca451abe636ed5..ab069676d4f16fe612d35e90cb51f8f2fe28b400 100644
+index 2cd1cd8662f181e37508f0aee873a7b08bbab408..1bbaef004350e060de52ab72b6ccb7dcd059e9f6 100644
 --- a/server/asset-service.ts
 +++ b/server/asset-service.ts
-@@ -120,7 +120,7 @@ import { Readable } from "stream";
+@@ -176,7 +176,7 @@ import { Readable } from "stream";
  import path from "path";
  import { createHash } from "crypto";
  import { apiPath, isAssetServicePath, clientAddressOf, isLocalOrigin } from "./http-guard.mjs";
@@ -11,25 +11,25 @@ index 2e81bb511063595a1d7b4d9f56ca451abe636ed5..ab069676d4f16fe612d35e90cb51f8f2
  import {
    mediaDir, isMediaHash, extOfName, contentTypeForExt, resolveHashFile, writeMediaIndex, parseRange,
  } from "./vite-plugin-media";
-@@ -250,8 +250,6 @@ function artifactContentType(ext: string): string {
+@@ -313,8 +313,6 @@ function artifactContentType(ext: string): string {
  
- /** 产物命名空间的 fs 目录:`<root>/out/asset-store/<ns>`(契约第 1 节) */
+ /** fs directory for artifact namespaces: `<root>/out/asset-store/<ns>` (contract section 1) */
  export function artifactStoreDir(root: string, ns: "snap" | "px"): string {
 -  const scoped = projectScopeOfRoot(root);
 -  if (scoped) return scoped.dirs[ns];
    return process.env.PROMPTCUT_ARTIFACT_DIR ? path.resolve(process.env.PROMPTCUT_ARTIFACT_DIR, ns) : path.resolve(root, "out", "asset-store", ns);
  }
  
-@@ -445,7 +443,6 @@ async function serveBlob(req: IncomingMessage, res: ServerResponse, store: Asset
-   // 流先打开再发头:入库的东西万一刚被删,还能干净地回 404
+@@ -522,7 +520,6 @@ async function serveBlob(req: IncomingMessage, res: ServerResponse, store: Asset
+   // Open stream before sending headers: in case stored content was just deleted, can still return 404 cleanly
    const stream = head ? null : await store.read(hash, range ? { start: range.start, end: range.end } : {});
    if (!head && !stream) return sendJson(res, 404, { ok: false, error: "not-found" });
 -  await assetContextOf(req)?.lease.assert();
    if (res.destroyed) { stream?.destroy(); return; }
    if (longCache) {
      headers["Cache-Control"] = ASSET_MEDIA_CACHE_CONTROL;
-@@ -579,16 +576,16 @@ function accessOf(req: IncomingMessage, write: boolean, tickets: AssetTicketVeri
-     // 不许写预渲染产物;它写的块算成员的,不进托管方服务的容量账(回的结果不带 `service`)
+@@ -677,16 +674,16 @@ function accessOf(req: IncomingMessage, write: boolean, tickets: AssetTicketVeri
+     // the member and do not enter host service usage accounting (returned result omits `service`)
      if (v.actsFor === "member") {
        if (write && ns !== "media") return DENY_403;
 -      return { ok: true, projectId: v.projectId, accountId: guestIdOfUserId(v.userId) ?? v.userId };
@@ -39,7 +39,7 @@ index 2e81bb511063595a1d7b4d9f56ca451abe636ed5..ab069676d4f16fe612d35e90cb51f8f2
 -    return { ok: true, service: v.service, projectId: v.projectId, accountId: guestIdOfUserId(v.userId) ?? v.userId };
 +    return { ok: true, service: v.service, projectId: v.projectId, accountId: v.userId };
    }
-   if (write) return DENY_401; // 写入一律不认查询串
+   if (write) return DENY_401; // Writes never accept query strings
    const q = queryTicketOf(req);
    if (q === null) return DENY_401;
    const v = verify(q);
@@ -48,10 +48,12 @@ index 2e81bb511063595a1d7b4d9f56ca451abe636ed5..ab069676d4f16fe612d35e90cb51f8f2
  }
  
  /* ------------------------------------------------------------------ *
-@@ -740,70 +737,13 @@ export function assetServiceMiddleware(root: string, opts: AssetServiceOptions =
+@@ -865,80 +862,15 @@ export function assetServiceMiddleware(root: string, opts: AssetServiceOptions =
+     if (ns === "media") return media;
      return (artifactStores[ns] ??= defaultArtifactStore(root, ns));
    };
-   // 缺省的核对器惰性加载:第一次有非本机请求带票据时才打开凭证存储
+-  // Default verifier is loaded lazily: opens the credential store only when a non-local request
+-  // brings a ticket for the first time
 -  let defaultTickets: AssetTicketVerifier | null | undefined;
 -  const ticketsOf = async (): Promise<AssetTicketVerifier | null> => {
 -    if (opts.tickets !== undefined) return opts.tickets;
@@ -66,24 +68,32 @@ index 2e81bb511063595a1d7b4d9f56ca451abe636ed5..ab069676d4f16fe612d35e90cb51f8f2
 -    }
 -    return defaultTickets;
 -  };
++  // Default verifier: supplied via options (null by default in local-only mode)
 +  const ticketsOf = async (): Promise<AssetTicketVerifier | null> => opts.tickets ?? null;
    const isTrusted = typeof opts.isTrusted === "function" ? opts.isTrusted : isLoopbackRequest;
    /*
-    * 游客素材限额(`asset-store/guest-quota.mjs`):只管游客往 media 写。按数据层排队:托管下每个项目一个数据层,
-    * 用项目编号当键;本机只有一个 media 数据层,用它本身当键。
+    * Guest asset quota (`asset-store/guest-quota.mjs`): only governs guest writes to media. Queued
+    * per store: under hosted mode, each project has one store, keyed by project id; locally there is
+    * only one media store, keyed by itself.
     */
 -  const guestQuota: GuestQuotaHook = createGuestAssetQuota({ isVideoExt: (ext: string) => contentTypeForExt(ext).startsWith("video/") });
 -  const guestTrace = (who: { projectId?: string; accountId?: string }) =>
 -    ({ accountId: who.accountId, guest: who.accountId ? { quota: guestQuota, key: opts.projectStores && who.projectId ? `project:${who.projectId}` : media } : null });
 -  /**
--   * 托管下媒体中间件的整件上传(`POST /api/media/upload/<名>`)与补算内容键(`POST /api/media/adopt`)也往项目的 media 写,
--   * 不经下面的分片路由。它们由 `vite-plugin-media.ts` 自己核权,这里只先看一眼是不是游客:是就按游客限额拦,
--   * 放行后占着这个项目的游客队直到回完包;不是游客原样 next。
--   * - 核权出错(包括暂时性的 503)照错误回,不往下放(claude/guest-fix〔裁〕,审查 S2):原先 `catch` 了就 next,
--   *   媒体中间件再核一次、碰巧成功,这次游客的整件上传就没经过限额;
--   * - 游客不能补算内容键(审查 S3):那条路给素材收集用,游客用不到;它会把媒体目录里任何文件(包括还没收尾、
--   *   没核哈希的分片暂存 `.chunks/<哈希>/data`)挂进库,绕过收尾时的视频条数;
--   * - 整件上传报的扩展名不是视频时,先从请求体里读出开头几十个字节按文件头认(`peekBody`,审查 A2)。
+-   * Under hosted mode, whole-file uploads (`POST /api/media/upload/<name>`) and content key
+-   * backfilling (`POST /api/media/adopt`) from media middleware also write to the project's media,
+-   * bypassing the chunked routes below. They authorize themselves via `vite-plugin-media.ts`; here
+-   * we only check first whether it is a guest: if so, intercept by guest quota, and once admitted,
+-   * hold this project's guest queue until the response completes; non-guests call next as-is.
+-   * - Authorization errors (including transient 503s) return the error and do not pass down
+-   *   (claude/guest-fix [ruling], review S2): previously it called next upon `catch`, and the media
+-   *   middleware re-verified and happened to succeed, so this guest whole-file upload bypassed quota;
+-   * - Guests cannot backfill content keys (review S3): that route is for media collection and is not
+-   *   used by guests; it mounts any file in the media directory into the store (including unfinalized
+-   *   staging `.chunks/<hash>/data` without hash verification), bypassing video count limits during
+-   *   finalization;
+-   * - When reported extension for whole-file upload is not a video, first read the first few dozen
+-   *   bytes from the request body to identify it by file header (`peekBody`, review A2).
 -   */
 -  const isWholeMediaWrite = (req: IncomingMessage) => req.method === "POST" && (String(req.url || "").startsWith("/api/media/upload/") || String(req.url || "").startsWith("/api/media/adopt"));
 -  const gateWholeMediaWrite = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
@@ -99,7 +109,8 @@ index 2e81bb511063595a1d7b4d9f56ca451abe636ed5..ab069676d4f16fe612d35e90cb51f8f2
 -      else {
 -      const declared = Number(req.headers["content-length"]);
 -      const bytes = upload && req.headers["content-length"] !== undefined && Number.isSafeInteger(declared) && declared >= 0 ? declared : null;
--      // 扩展名:整件上传从 URL 里的文件名拿(和 vite-plugin-media 的 handleMediaUpload 同一取法),补算内容键从 `path` 参数的文件名拿
+-      // Extension: whole-file upload takes file name from URL (same way as handleMediaUpload in
+-      // vite-plugin-media); content key backfilling takes it from file name in `path` parameter
 -      let ext = "";
 -      try {
 -        const u = new URL(String(req.url || "/"), "http://promptcut.local");
@@ -108,7 +119,7 @@ index 2e81bb511063595a1d7b4d9f56ca451abe636ed5..ab069676d4f16fe612d35e90cb51f8f2
 -      verdict = await guestQuota.whole({ accountId, bytes, ext, peek: () => peekBody(req, SNIFF_BYTES), store: opts.projectStores.project(lease.projectId).stores.media, key: `project:${lease.projectId}`, needsLength: upload });
 -      }
 -    } catch (err: any) {
--      // 读开头时对面断了、数据层出错:照错误回,不往下放
+-      // Peer disconnected while reading head or store failed: return error, do not pass down
 -      verdict = { ok: false, status: err?.status ?? 500, error: err?.code ?? "media-failed" };
 -    } finally { void lease.release(); }
 -    if (!verdict.ok) return reject(req, res, verdict.status as 403, { ok: false, error: verdict.error });
@@ -119,9 +130,9 @@ index 2e81bb511063595a1d7b4d9f56ca451abe636ed5..ab069676d4f16fe612d35e90cb51f8f2
 -  };
 +  const guestTrace = (who: { projectId?: string; accountId?: string }) => ({ accountId: who.accountId, guest: null });
    /*
-    * px 的容量淘汰:在本进程内部做,不对外开删除接口。只拿 px 这一个数据层,media / snap 碰不到。
-    * 惰性 import(好几个单测把本文件单独转译,静态 import 兄弟模块会解析失败)。
-@@ -839,20 +779,6 @@ export function assetServiceMiddleware(root: string, opts: AssetServiceOptions =
+    * Capacity eviction for px: handled inside this process, exposing no external deletion API.
+    * Only accesses the px store; media / snap are untouched. Lazy import (several unit tests
+@@ -979,20 +911,6 @@ export function assetServiceMiddleware(root: string, opts: AssetServiceOptions =
        res.setHeader("Cache-Control", "no-store");
        res.setHeader("Referrer-Policy", "no-referrer");
      }
@@ -142,7 +153,7 @@ index 2e81bb511063595a1d7b4d9f56ca451abe636ed5..ab069676d4f16fe612d35e90cb51f8f2
      let trusted = false;
      try { trusted = !!isTrusted(req); } catch { trusted = false; }
      const access = accessOf(req, write, trusted ? null : await ticketsOf(), () => trusted, ns);
-@@ -862,7 +788,6 @@ export function assetServiceMiddleware(root: string, opts: AssetServiceOptions =
+@@ -1002,7 +920,6 @@ export function assetServiceMiddleware(root: string, opts: AssetServiceOptions =
    };
    const handler = async function assetService(req: Connect.IncomingMessage, res: ServerResponse, next: () => void) {
      if (isAssetMergePath(req.url)) return answerMerge(req, res);
@@ -150,7 +161,7 @@ index 2e81bb511063595a1d7b4d9f56ca451abe636ed5..ab069676d4f16fe612d35e90cb51f8f2
      if (!isAssetCorsPath(req.url)) return next();
      applyCors(req, res);
      if (req.method === "OPTIONS") { res.statusCode = 204; return res.end(); }
-@@ -884,10 +809,7 @@ export function assetServiceMiddleware(root: string, opts: AssetServiceOptions =
+@@ -1026,10 +943,7 @@ export function assetServiceMiddleware(root: string, opts: AssetServiceOptions =
      const method = String(req.method || "GET").toUpperCase();
      try {
        if (!isMediaHash(hash)) return sendJson(res, 400, { ok: false, error: "bad-hash" });

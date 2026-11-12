@@ -1,5 +1,5 @@
 diff --git a/CONTRIBUTING.en.md b/CONTRIBUTING.en.md
-index 74b4ec6a56ff6abceae68362fbbc1963129b1a87..f0031755fd076d1ff5a07968cf2c5a577fcf8b49 100644
+index 188d244c65c4c7ce3e6fb543b94ee5a00a957370..f4ee4e33ca954363fdf5059dd6599f0b288cebf1 100644
 --- a/CONTRIBUTING.en.md
 +++ b/CONTRIBUTING.en.md
 @@ -1,4 +1,4 @@
@@ -30,6 +30,6 @@ index 74b4ec6a56ff6abceae68362fbbc1963129b1a87..f0031755fd076d1ff5a07968cf2c5a57
  
 +To work in an "on hold" area, open an issue first and we'll tell you where that seam stands.
 +
- ## What to run before you submit
+ ## Interface text
  
- ```bash
+ The interface comes in English, Simplified Chinese and Japanese, and English is the source language.

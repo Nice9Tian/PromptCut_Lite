@@ -6,21 +6,28 @@ import { openDraft, setActiveDraftId } from "./editor/io/drafts";
 import { openProcPath } from "./editor/io/openPath";
 import { WindowTitleBar } from "./ui/WindowTitleBar";
 import { useSkin } from "./skins/useSkin";
+import { tr } from "./i18n/index.ts";
 
 /**
- * 开始页和编辑器之间的门。
+ * The gate between the start page and the editor.
  *
- * 编辑器本身不知道有开始页这回事 —— 它照旧渲染 store 里的当前项目。开始页在
- * 切过来之前就已经把项目 load 进 store 了,所以这里只管换视图。
+ * The editor itself knows nothing about the start page: it just renders the current project in the
+ * store. The start page has already loaded the project into the store before switching over, so
+ * all that is left to do here is swap the view.
  *
- * 几个启动参数:
- *   `?editor`          直接进编辑器:导出、自动化脚本和老书签都还指着这条路;
- *   `?draft=<id>`      打开某份草稿再进编辑器;
- *   `?open=<路径>`     按磁盘路径打开一份 .proc(桌面壳双击文件时带过来),会先复制一份再读;
- *   `?join=<项目号>`   局域网里的第二块屏:同一个本机项目的第二个页面,直接进编辑器,内容以本机文档服务为准
- *                      (`product/platforms.md`「桌面应用」的「局域网里的第二块屏」;接上文档服务那一步在
- *                      `editor/sync/syncManager.ts` 的 `startSync`)。
- *   `?headless=1`      自动化页面(探针、测试):不塞演示卡、不接文档服务、不弹素材迁移框(各处自己认这个参数)。
+ * Launch parameters:
+ *   `?editor`          go straight to the editor: export, automation scripts and old bookmarks
+ *                      all still point at this path;
+ *   `?draft=<id>`      open a draft, then enter the editor;
+ *   `?open=<path>`     open a .proc by disk path (passed in when the desktop shell opens a file by
+ *                      double-click); it copies the file first, then reads the copy;
+ *   `?join=<project id>`   second screen on the LAN: a second page for the same local project, goes
+ *                      straight to the editor, and the content follows the local document service
+ *                      (`product/platforms.md`, "Desktop app", "Second screen on the LAN"; the step
+ *                      that connects to the document service is `startSync` in
+ *                      `editor/sync/syncManager.ts`).
+ *   `?headless=1`      automation pages (probes, tests): no demo cards, no document service, no
+ *                      media migration dialog (each place recognizes this parameter on its own).
  */
 export function Shell(): JSX.Element {
   // Keep the shared --ui-* palette mounted on the start page as well as the editor.
@@ -29,7 +36,7 @@ export function Shell(): JSX.Element {
   const [inEditor, setInEditor] = useState(() => {
     try {
       const q = new URLSearchParams(location.search);
-      // `?join=` 是局域网里的第二块屏:那张页面只为进这个项目,不经开始页
+      // `?join=` is a second screen on the LAN: that page exists only to enter this project, skipping the start page
       return q.has("editor") || q.has("join");
     } catch {
       return false;
@@ -37,7 +44,7 @@ export function Shell(): JSX.Element {
   });
   const [bootError, setBootError] = useState("");
 
-  // 顶栏的「回到首页」在 window 上派发这个事件,免得给 Editor 加一层 props
+  // The "Back to home" button in the top bar dispatches this event on window, to avoid adding another layer of props to Editor
   useEffect(() => {
     const back = () => {
       const url = new URL(location.href);
@@ -49,7 +56,7 @@ export function Shell(): JSX.Element {
     return () => window.removeEventListener("pc-go-home", back);
   }, []);
 
-  // 启动参数只看一次
+  // Launch parameters are only checked once
   useEffect(() => {
     let q: URLSearchParams;
     try {
@@ -73,7 +80,7 @@ export function Shell(): JSX.Element {
     }
   }, []);
 
-  // 桌面壳在已经开着的窗口上又收到一个 .proc(双击了文件):走同一条「复制再打开」的路
+  // The desktop shell received another .proc on an already open window (a file was double-clicked): take the same "copy, then open" path
   useEffect(() => {
     const tauri = (window as unknown as {
       __TAURI__?: { event?: { listen?: (e: string, cb: (ev: { payload: unknown }) => void) => Promise<() => void> } };
@@ -96,7 +103,7 @@ export function Shell(): JSX.Element {
   if (bootError) {
     return (
       <div style={{ padding: 24, color: "var(--ui-danger)", fontFamily: "var(--ui-font)" }}>
-        打不开:{bootError}
+        {tr("Cannot open: {0}", bootError)}
       </div>
     );
   }

@@ -1,9 +1,13 @@
 /**
- * 守门:页面(编辑器页与舞台页,入口 `src/main.tsx`)的静态依赖链里不许出现 Node 内置模块(`node:*` 或 `fs`、`crypto` 这类裸名)。
- * 跑:node --test src/pageNodeImports.test.mjs
+ * Gatekeeper: Node built-in modules (`node:*` or bare names like `fs`, `crypto`) are not allowed
+ * in static dependency chains of pages (editor page and stage page, entry point `src/main.tsx`).
+ * Run: node --test src/pageNodeImports.test.mjs
  *
- * 做法:从 `src/main.tsx` 出发,顺着**静态** import / re-export(`import type`、`export type` 不算;`import()` 是按需载入、不跟)
- * 走遍会被载入的仓库内模块(`src/` 与 `server/` 都跟),遇到 Node 内置模块就判红,并给出引用链。包名(`react` 等)不跟。
+ * Approach: starting from `src/main.tsx`, follow **static** import / re-export (`import type` and
+ * `export type` do not count; `import()` is on-demand loading and is not followed), traverse all
+ * in-repo modules that will be loaded (following both `src/` and `server/`); flag as red whenever
+ * a Node built-in module is encountered and provide the reference chain. Package names (`react`, etc.)
+ * are not followed.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -24,12 +28,12 @@ function resolveFrom(fromAbs, spec) {
   const base = clean.startsWith("/") ? path.join(ROOT, clean) : path.resolve(path.dirname(fromAbs), clean);
   for (const e of EXTS) {
     const p = base + e;
-    try { if (fs.statSync(p).isFile()) return p; } catch { /* 下一个 */ }
+    try { if (fs.statSync(p).isFile()) return p; } catch { /* Next */ }
   }
   return null;
 }
 
-/** 源码里的静态 import / re-export(不含 `import type`、`export type`) */
+/** Static import / re-export in source code (excluding `import type`, `export type`) */
 function staticSpecs(text) {
   const out = [];
   const code = text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
@@ -41,8 +45,8 @@ function staticSpecs(text) {
 
 const isNodeBuiltin = (spec) => spec.startsWith("node:") || BUILTIN.has(spec) || BUILTIN.has(spec.split("/")[0]) && !spec.includes(".");
 
-test("页面的静态依赖链里没有 Node 内置模块(否则开发服务器整页白屏)", () => {
-  assert.ok(fs.existsSync(ENTRY), "入口 src/main.tsx 在");
+test("the page's static dependency chain has no Node built-in modules (otherwise the dev server shows a blank page)", () => {
+  assert.ok(fs.existsSync(ENTRY), "entry src/main.tsx exists");
   const parent = new Map([[ENTRY, null]]);
   const queue = [ENTRY];
   const bad = [];
@@ -65,6 +69,6 @@ test("页面的静态依赖链里没有 Node 内置模块(否则开发服务器�
       queue.push(next);
     }
   }
-  assert.ok(visited > 100, `走到了页面的模块:${visited}`);
-  assert.deepEqual(bad, [], `页面的静态依赖链里出现了 Node 内置模块:\n${bad.join("\n")}`);
+  assert.ok(visited > 100, `reached page modules: ${visited}`);
+  assert.deepEqual(bad, [], `Node built-in modules appear in the page's static dependency chain:\n${bad.join("\n")}`);
 });
