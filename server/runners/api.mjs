@@ -2,8 +2,8 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { Agent } from '../harness/agent.mjs';
-import { runReviewLoop, presentLoopEvent } from '../harness/loop.mjs';
+import { Agent } from 'promptcut-harness/agent';
+import { runReviewLoop, presentLoopEvent } from 'promptcut-harness/loop';
 
 /**
  * Persist review loop lessons across runs: lessons accepted by judger during rewriting are passed
@@ -29,13 +29,13 @@ export function lessonsStore() {
     },
   };
 }
-import { MessageHistory } from '../harness/history.mjs';
+import { MessageHistory } from 'promptcut-harness/history';
 import { buildTools } from '../agent/build-promptcut-tools.mjs';
-import { resolveMaxOutput } from '../harness/model-limits.mjs';
+import { resolveMaxOutput } from 'promptcut-harness/model-limits';
 import { createCodeCacheStore } from '../tools/code-cache.mjs';
 import { modelToolName } from '../tools/ui-names.mjs';
-import { createRetryingFetch } from '../harness/retry-fetch.mjs';
-import { outputSpeedBookFor, withOutputSpeed } from '../harness/output-speed.mjs';
+import { createRetryingFetch } from 'promptcut-harness/retry-fetch';
+import { outputSpeedBookFor, withOutputSpeed } from 'promptcut-harness/output-speed';
 import { BUILTIN_SKILLS_DIR, loadSkillCatalog, skillCatalogPrompt } from '../tools/agent-skills.mjs';
 
 /**
@@ -70,8 +70,9 @@ export function localOutputSpeedFile() {
  * timeouts: context is preserved in history, only no reply was received this time.
  */
 const STREAM_DROPPED = /upstream stream ended|before the response was complete|response stream ended early|terminated|other side closed|socket hang up/i;
-import { withIdleTimeout } from '../harness/idle-timeout.mjs';
+import { withIdleTimeout } from 'promptcut-harness/idle-timeout';
 import { tr } from '../i18n.mjs';
+import { ensureAppTempDir, sessionHistoryDir } from '../app-temp.mjs';
 
 /**
  * Pad partial turns with "tool_use without matching tool_result" before persisting to disk.
@@ -240,13 +241,16 @@ export function startRun(opts) {
     cfg = { ...cfg, model: picked, schemaCompat, effort: opts.effort || '' };
 
     /*
-     * Where history files are stored: by default placed in the system temp directory by sessionId
-     * (desktop: one user per machine). Use `opts.historyFile` if provided: Agent services on the hosted
+     * Where history files are stored: by default in the app's own temporary directory, by sessionId
+     * (`sessionHistoryDir()` in app-temp.mjs; per user off Windows). Use `opts.historyFile` if provided: Agent services on the hosted
      * tier determine paths by "project, owner, chat", ignoring sessionId in the request (contract
      * cloud-agent-contract.md section 3.2, item 32).
      */
-    const historyDir = path.join(os.tmpdir(), 'promptcut', 'harness-sessions');
-    const historyFile = typeof opts.historyFile === 'string' && opts.historyFile ? opts.historyFile : path.join(historyDir, `${sessionId}.json`);
+    let historyFile = typeof opts.historyFile === 'string' && opts.historyFile ? opts.historyFile : '';
+    if (!historyFile) {
+      ensureAppTempDir();
+      historyFile = path.join(sessionHistoryDir(), `${sessionId}.json`);
+    }
     fs.mkdirSync(path.dirname(historyFile), { recursive: true });
     
     let initialMessages = [];
@@ -275,13 +279,13 @@ export function startRun(opts) {
 
     let providerModule;
     if (cfg.vendor === 'anthropic') {
-      providerModule = await import('../harness/providers/anthropic.mjs');
+      providerModule = await import('promptcut-harness/providers/anthropic');
     } else if (cfg.vendor === 'openai') {
-      providerModule = await import('../harness/providers/openai.mjs');
+      providerModule = await import('promptcut-harness/providers/openai');
     } else if (cfg.vendor === 'gemini') {
-      providerModule = await import('../harness/providers/gemini.mjs');
+      providerModule = await import('promptcut-harness/providers/gemini');
     } else if (cfg.vendor === 'mock') {
-      providerModule = await import('../harness/providers/mock.mjs');
+      providerModule = await import('promptcut-harness/providers/mock');
     } else {
       safeOnEvent({ type: 'error', message: tr("Unknown vendor") });
       return;

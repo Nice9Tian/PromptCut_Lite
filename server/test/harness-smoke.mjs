@@ -1,8 +1,9 @@
 import { startRun } from '../runners/api.mjs';
-import { createTextEditorTool } from '../harness/tools/textEditor.mjs';
+import { createTextEditorTool } from 'promptcut-harness/tools/textEditor';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { sessionHistoryDir } from '../app-temp.mjs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -56,7 +57,7 @@ async function main() {
     if (!s) throw new Error('Missing session event');
     if (mockEvents[0].type !== 'session') throw new Error('Session event is not the first event');
     sessionId = s.sessionId;
-    mockHistoryFile = path.join(os.tmpdir(), 'promptcut', 'harness-sessions', `${sessionId}.json`);
+    mockHistoryFile = path.join(sessionHistoryDir(), `${sessionId}.json`);
   });
 
   await runTest('Group 1 - tool_call get_editor_state present', () => {
@@ -206,7 +207,7 @@ async function main() {
     let cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'smoke-dry-'));
     
     const sessionId = `dryrun-${vendor}`;
-    const historyDir = path.join(os.tmpdir(), 'promptcut', 'harness-sessions');
+    const historyDir = sessionHistoryDir();
     fs.mkdirSync(historyDir, { recursive: true });
     const historyFile = path.join(historyDir, `${sessionId}.json`);
     const mockHistory = [
@@ -297,7 +298,7 @@ async function main() {
       if (content.includes('xoxb-')) throw new Error(`Secret leaked in ${file}`);
     };
     
-    const harnessDir = path.join(__dirname, '..', 'harness');
+    const harnessDir = path.dirname(fileURLToPath(import.meta.resolve('promptcut-harness')));
     const walk = (dir) => {
       for (const item of fs.readdirSync(dir)) {
         const full = path.join(dir, item);

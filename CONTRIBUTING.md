@@ -24,7 +24,8 @@ Lite 版由脚本从[社区版](https://github.com/Nice9Tian/PromptCut_Community
 | `src/cards/`、`server/catalog/`（卡片与内置库） | 欢迎 PR，**最容易上手** |
 | `src/skins/`、`src/themes/`、`src/ui/` | 欢迎 PR |
 | `src/mcp/`、`src/voice/` | 欢迎 PR |
-| `server/bakery/`、`server/harness/`、`server/runners/`、`server/vision/`、`server/voice/`、`server/render-queue/` | 欢迎 PR |
+| `server/bakery/`、`server/runners/`、`server/vision/`、`server/voice/`、`server/render-queue/` | 欢迎 PR |
+| Agent 循环、模型接入、skill、对话压缩 | 在单独的仓库 [promptcut-harness](https://github.com/Nice9Tian/promptcut-harness) 里（本仓库依赖的 npm 包），这部分的 PR 提到那边；这里的 `server/agent/`、`server/runners/` 只放把它接到 PromptCut 上的那一层 |
 | `python/`、`scripts/`、`docs/` | 欢迎 PR |
 | `src/editor/`（除下面两处） | 欢迎 PR |
 | `src/editor/sync/`、`src/editor/right/` | 暂缓：上游正在把本地与云端的接缝拆开，这两处两边内容还不一致 |
@@ -54,10 +55,46 @@ npm test src/你改的/那个.test.mjs   # 也可以只跑一部分
 
 `scripts/probes/` 下是各功能的探针（端到端小程序，起真的浏览器）。改到对应功能时跑一下相关探针，把输出贴进 PR。
 
+## 在 Linux 上开发
+
+这个项目是在 Windows 上写的，CI 原先也只在 Windows 上跑。`npm run build` 和测试在 Linux 上同样能跑；下面列的是 Linux 机器比 Windows 多要准备的东西，在 Ubuntu 26.04、Node 24 上验证过。还没解决的 Linux 问题在 issue 里（搜 "Linux"），现状看 `.github/workflows/test.yml` 里的 `test-linux` 任务。
+
+**ffmpeg** 要在 `PATH` 上（`sudo apt install ffmpeg`）。导出和音频工具要用它，它们的测试也要用。
+
+**Chrome 的沙箱（Ubuntu 23.10 起）。** Ubuntu 只允许有 AppArmor 配置的程序创建非特权用户命名空间，而 Chrome 的沙箱需要它。系统自带了 Google Chrome 的配置，但 `npm ci` 时 puppeteer 下载的那份 Chrome 没有，所以它一启动就报 `No usable sandbox!`。照系统给自家 Chrome 的那份配置，给它也做一份：
+
+```bash
+cache="${PUPPETEER_CACHE_DIR:-$HOME/.cache/puppeteer}"
+sed -e "s|^profile chrome [^ ]* |profile chrome-puppeteer $cache/{chrome,chrome-headless-shell}/linux-*/chrome{,-headless-shell}-linux64/{chrome,chrome-headless-shell} |" \
+    -e 's|<local/chrome>|<local/chrome-puppeteer>|' /etc/apparmor.d/chrome | sudo tee /etc/apparmor.d/chrome-puppeteer
+sudo apparmor_parser -r /etc/apparmor.d/chrome-puppeteer
+```
+
+配置是按路径生效的。默认缓存目录在你的主目录下，拷到那个路径的任何程序也就都能创建用户命名空间。如果你的机器在意这一点，把浏览器放到只有 root 能写的目录（`PUPPETEER_CACHE_DIR`），配置指向那里。另一个办法是 `PROMPTCUT_CHROME_NO_SANDBOX=1`，它让 Chrome 不带沙箱启动，只在没别的办法时用。
+
+**没有显示器。** AI 助手的网页浏览器（`server/web/browser.mjs`）会开一个真的 Chrome 窗口，所以在没有桌面会话的机器上，要在虚拟显示下启动开发服务器：`xvfb-run -a npm run dev`。跑测试不需要。
+
+**Python。** 语音转文字、素材收集、镜头 / 主体 / 运动识别都跑在 Python 上。Linux 上没有随包的解释器，自己建一个虚拟环境，并告诉开发服务器它在哪：
+
+```bash
+python3 -m venv python/.venv
+# 让虚拟环境能 import 到 python/ 下的包。语音转文字用 -I 启动 Python，-I 会忽略 PYTHONPATH，
+# 所以要靠一个 .pth 文件让这些包可见。
+python/.venv/bin/python -c "import pathlib, sysconfig; pathlib.Path(sysconfig.get_paths()['purelib'], 'promptcut-src.pth').write_text(str(pathlib.Path('python').resolve()) + '\n')"
+export PROMPTCUT_PYTHON="$PWD/python/.venv/bin/python3"
+```
+
+Debian 和 Ubuntu 上 `python3 -m venv` 需要先装 `python3-venv`。这一步不会装重的库。语音转文字和素材收集要的库（whisper、yt-dlp）由它们各自的面板装进 `out/pylibs`。
+
+**开发端口。** `npm run dev` 监听 5190，被占用就拒绝启动。同一台机器上的第二个检出要自己换端口起 vite：`npx vite --port 5191 --strictPort --host 0.0.0.0`。
+
+**AI 命令行工具。** AI 服务面板里的一键安装在 Linux 和 macOS 上也能用，跑的是各家官方的 shell 安装脚本：Claude Code 装到 `~/.local/bin`，Codex 和 Antigravity 装到应用自己的目录 `~/promptcut/cli`。自己装的工具放在 `PATH` 或 `~/.local/bin` 里也能被找到。
+
 ## 提交规范
 
 - **一个 PR 一件事。** 顺手重构请单独开。
-- **提交信息写清"改了什么、为什么"**，中文英文都行。
+- **PR、issue、提交信息一律用英文**，标题、正文、评论都是（2026-11-13 起，之前的历史不改）。
+- **提交信息写清“改了什么、为什么”**。标题写成 `<类别>: <做了什么>`，类别见 [docs/semantics/guide_files/git_and_release.md](docs/semantics/guide_files/git_and_release.md)。
 - **签署 DCO**：每个提交都要带 `Signed-off-by` 一行，`git commit -s` 会自动加。这表示你确认自己有权把这段代码按 MIT 贡献出来。没有 CLA，不需要签别的东西。
 - 代码风格**跟着周围的代码走**：注释密度、命名、惯用写法。这个仓库的注释写得比一般项目密，而且注释是正式文档的一部分——新加的代码请照这个密度写。
 

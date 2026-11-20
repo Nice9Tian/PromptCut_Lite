@@ -1,5 +1,5 @@
 diff --git a/.github/workflows/test.yml b/.github/workflows/test.yml
-index 94802cc971d24744eeddea6354cc8d214dd11de1..ff9a07c42326b100ad533fa92721e046f1137ecc 100644
+index 0153b927f3a7899c2ea636187a659ac73cbc7d7e..0fd3824f99405234d9340b1a46f40988fe7352f7 100644
 --- a/.github/workflows/test.yml
 +++ b/.github/workflows/test.yml
 @@ -22,6 +22,10 @@ jobs:
