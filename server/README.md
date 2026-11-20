@@ -33,7 +33,7 @@ AI 面板的分页栏、Agent 之间的范围声明与互相通知（`declare_sc
 
 * Claude Code / Codex 驱动的额度记账与熔断,`GET /api/ai/quota` 看当前额度;机制说明见 [server/runners/QUOTA.md](runners/QUOTA.md)。
 
-### 参数兼容模式（server/harness/schema.mjs）
+### 参数兼容模式（promptcut-harness/schema.mjs）
 
 * 工具参数的 JSON Schema 有两档：完整的（Claude / GPT 系吃得下 `additionalProperties`、`default`、`format` 这些）和 Gemini 那套最窄的子集。清洗由 `sanitizeSchema(schema, vendor, { compat })` 做，`compat` 和厂商字段解耦——走 OpenAI 兼容接口的 Router 也可能接的是 Gemini。
 * 前端请求带 `schemaCompat`：`on` / `off` 是定论，`auto` 由 `server/runners/api.mjs` 按厂商字段和模型名（含 gemini 就开）再推一次。AI 面板模型栏的「参数兼容」按钮：Claude Code / Codex 和模型名带 claude / gpt / o 系的锁死关，Antigravity 和模型名带 gemini 的锁死开，别家模型用户自己点（策略在 `src/ai/modelOptions.ts` 的 `compatPolicy`）。三条 CLI 路本来就各自走原生协议，这个开关只影响 API 直连 / Router。
@@ -82,7 +82,7 @@ MCP 工具 `collect_login / collect_login_check / collect_logout`。验证：`no
 
 前端胶水在 `src/ai/collect.ts`；MCP 工具 `collect_status / collect_install / collect_probe / collect_download / collect_job` 的实现在 `src/editor/right/index.tsx`，下完自动用 `importVideoFromServer`（`src/editor/io/index.ts`）登记进素材库、放到视频轨，不再上传一遍。角色卡 `src/ai/roles/collector.md`（素材收集员）。
 
-验证：`node --test server/test/collect-plugin.test.mjs`（用 `server/test/fake-collect.cmd` 冒充 Python，不联网）；真实链路见 python/README.md 的实测记录。
+验证：`node --test server/test/collect-plugin.test.mjs`（用 `server/test/fake-collect.cmd` 冒充 Python，Linux / macOS 上用内容相同的 `fake-collect.sh`，不联网）；真实链路见 python/README.md 的实测记录。
 
 ## 登录状态探测（server/runners/auth.mjs）
 - Claude：以 `claude auth status` 的 JSON 为准。
@@ -127,7 +127,7 @@ POST `/api/ai/config` 时:`api.profiles.custom / router` 各写各的;老写法�
 
 ## 端口发现顺序
 1. 环境变量 `PROMPTCUT_PORT`。
-2. `%TEMP%\promptcut\port.json`。该锁文件现在除了 `port` 外还带有 `host` 字段（桥实际监听地址，`::` 或 `0.0.0.0` 会被规范化成 `127.0.0.1`）。`mcp-server.mjs` 调用桥的探测请求地址顺序为：锁文件 `host` → `127.0.0.1` → `[::1]` → `localhost`，**并且只有遇到 ECONNREFUSED 才会回退至下一个地址**。为避免因 Windows 系统下 `localhost` 可能只解析到 IPv6 `::1` 导致双栈连接失败，`server/vite.ai.config.ts` 已强制将 `server.host` 固定成 `127.0.0.1`。
+2. `%TEMP%\promptcut\port.json`。Linux 和 macOS 上临时目录是所有用户共用的，这个目录按用户分开：`<临时目录>/promptcut-<uid>/port.json`（`server/app-temp.mjs`）。该锁文件现在除了 `port` 外还带有 `host` 字段（桥实际监听地址，`::` 或 `0.0.0.0` 会被规范化成 `127.0.0.1`）。`mcp-server.mjs` 调用桥的探测请求地址顺序为：锁文件 `host` → `127.0.0.1` → `[::1]` → `localhost`，**并且只有遇到 ECONNREFUSED 才会回退至下一个地址**。为避免因 Windows 系统下 `localhost` 可能只解析到 IPv6 `::1` 导致双栈连接失败，`server/vite.ai.config.ts` 已强制将 `server.host` 固定成 `127.0.0.1`。
 3. 默认 5177。
 
 ## 运行测试

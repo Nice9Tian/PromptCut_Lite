@@ -3,10 +3,6 @@
   "private": true,
   "version": "0.7.30",
   "type": "module",
-  "imports": {
-    "#promptcut-harness": "./server/harness/index.mjs",
-    "#promptcut-harness/*": "./server/harness/*"
-  },
   "scripts": {
     "dev": "vite --port 5190 --strictPort --host 127.0.0.1",
     "test": "node scripts/test-suite.mjs",
@@ -23,6 +19,7 @@
     "lottie-web": "^5.13.0",
     "motion": "^12.23.0",
     "node-pty": "1.1.0",
+    "promptcut-harness": "^0.1.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-markdown": "^10.1.0",

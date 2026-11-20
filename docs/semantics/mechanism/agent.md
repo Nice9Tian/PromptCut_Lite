@@ -17,28 +17,28 @@
 - **清单**：最多 32 个，超出的不收。清单拼在系统提示词末尾，每条的用途截到 300 字；工具说明不随技能数量变长。一个技能都没有时不给工具，系统提示词也不变。
 - **读取**：工具 `load_skill`，参数 `name` 和可选的 `file`。不带 `file` 回 `SKILL.md` 去掉开头字段后的全文，并列出文件夹里的 `.md`、`.txt` 附带文档（最多 50 个、3 层，`scripts/` 不列）；文件夹里有 `scripts/` 时回一句脚本不能运行。带 `file` 回那份附带文档，一次一份，同样不超过 60000 字。
 - **路径限制**：`file` 只收文件夹内的相对路径和 `.md`、`.txt`。带 `..`、绝对路径、带冒号（Windows 的备用数据流）的都拒绝；解析符号链接之后落到文件夹外、或不再是 `.md`、`.txt` 的也拒绝。读不了时回错误代号，不回文件系统的报错原文（里面有磁盘路径）。
-- **工具闸**：`load_skill` 和代码块工具一样由 `server/harness/tools/index.mjs` 加进清单，不受云端开放清单限制，也不经 `callTool`：它只读说明，不碰项目、素材和别的文件。
+- **工具闸**：`load_skill` 和代码块工具一样由 `promptcut-harness/tools/index.mjs` 加进清单，不受云端开放清单限制，也不经 `callTool`：它只读说明，不碰项目、素材和别的文件。
 - **诊断**：每轮进一条 `diagnostic`（`stage: 'skills'`：收了哪些、跳过了哪些和原因，跳过的最多列 20 条），放了文件夹不生效时看这里。原因里只有错误代号，不带磁盘路径。
 
 ## 单次输出上限、截断续写与代码块空间（2026-10-22 用户定方向，见 `../product/agent.md`「工具」；下面的做法与数字都是〔裁：output-cache 2026-10-22，`docs/archive/agent-reports/AGENT-output-cache.md`〕）
 
-只管 API 直连（本机 API 驱动，走 `server/runners/api.mjs` → `server/harness/`）；经 MCP 接入的命令行 Agent 用它们自己的输出上限，不在这里。
+只管 API 直连（本机 API 驱动，走 `server/runners/api.mjs` → npm 包 `promptcut-harness`，下文写作 `promptcut-harness/<文件>` 的都是这个包里的文件）；经 MCP 接入的命令行 Agent 用它们自己的输出上限，不在这里。
 
-- **输出上限**（`server/harness/model-limits.mjs`）：按模型名查表：Claude 当前各型号 128000（Haiku 4.5、Sonnet 4.5、Opus 4.5、Sonnet 4 为 64000，Opus 4 / 4.1 为 32000）；GPT-5 及以后 128000，o 系 100000，gpt-4.1 32768，gpt-4o 16384；Gemini 2.5 及以后 65536，2.0 / 1.5 为 8192；认不出的 16384。配置（本机 `ai.json`）的 `maxTokens` 是上限的上限：发出去的是它和模型上限里小的那个；没写、写 0、或等于旧缺省 4096 时当作没写，用模型上限。
+- **输出上限**（`promptcut-harness/model-limits.mjs`）：按模型名查表：Claude 当前各型号 128000（Haiku 4.5、Sonnet 4.5、Opus 4.5、Sonnet 4 为 64000，Opus 4 / 4.1 为 32000）；GPT-5 及以后 128000，o 系 100000，gpt-4.1 32768，gpt-4o 16384；Gemini 2.5 及以后 65536，2.0 / 1.5 为 8192；认不出的 16384。配置（本机 `ai.json`）的 `maxTokens` 是上限的上限：发出去的是它和模型上限里小的那个；没写、写 0、或等于旧缺省 4096 时当作没写，用模型上限。
 - **字段**：OpenAI 兼容口对 o 系、GPT-5 及以后发 `max_completion_tokens`，其余发 `max_tokens`，两个不同时带；Anthropic 发 `max_tokens`，Gemini 发 `generationConfig.maxOutputTokens`。
 - **400 降档**：回 400 且报错说的是输出上限太大，按报错里写的上限（没写就取下一档：128000、100000、65536、64000、32768、32000、16384、8192、4096）重发一次；OpenAI 兼容口报错说字段名不对（`max_tokens` 不支持、要用 `max_completion_tokens`，或反过来）就换字段重发一次。每种至多一次，再不行照常报错。每次重发记一行日志 `[harness.max-output-fallback]`（厂商、模型、动作、前后的数），并作为 `diagnostic` 事件（`stage: 'max-output-fallback'`）进运行日志与诊断报告。
-- **截断时保住写了一半的参数**：provider 在停止原因是写到上限（OpenAI 兼容口 `length`、Anthropic `max_tokens`）时，把参数 JSON 解不开的那次工具调用交成 `tool_use_partial`（带收到的参数原文），不执行、不进历史；写完的那几次照常执行。Gemini 的工具调用整块到达，截断时没有半截调用可保。`server/harness/partial-json.mjs` 从半截 JSON 里取出写到一半的那个字符串字段（最后一个、没收引号的；没有就取最长的字符串字段）和已经写完整的其它字段。
-- **存进代码块、让模型接着写**（`server/harness/truncation.mjs`）：取出的字段存进新代码块 `cut_<工具名>_<序号>`，在下一条给模型的消息里写明：哪个工具、哪个参数、写到第几行、存在哪个块、结尾三行、其它参数原样是什么、怎么接着写（`code_cache_append` 从断开处接着写，一次几百行以内；写完以 `@code_cache:<块名>` 交给原工具）。半截的调用本身就是 `code_cache_append` / `code_cache_write` 且块名已写完的，写出的那一截直接接进（或写进）那个块。
-- **中途被掐断按截断处理**（2026-10-22 用户定）：流已经出过数据（文字、思考、工具调用）之后、正常收尾（OpenAI 兼容口 `finish_reason`、Anthropic `message_stop`、Gemini `finishReason`）之前结束的——流里来了 error 事件、连接被断、流读完却没有收尾标志——三家 provider 都以停止原因 `stream_cut` 收尾（`server/harness/providers/base.mjs` 的 `STREAM_CUT`）：已经收到的文字照常交出，写完的工具调用照常执行，参数没写完（或一个字还没来）的那次交成 `tool_use_partial`；`agent.mjs` 把 `stream_cut` 和写到上限一样处理（存代码块、让模型接着写、次数上限相同）。还没收到任何数据就断的照旧是错误：先走 `retry-fetch.mjs` 的首块预读重试，重试用完由 `server/runners/api.mjs` 报错并标成可续跑（`retryable`，本机自动接着说一次）。
-- **按实测速度设单次上限**（`server/harness/output-speed.mjs`）：单次上限 = min(模型上限, 配置上限, 速度 × 250 秒)，速度那一项不低于 4096。本机保存在 `ai.json` 同目录的 `output-speed.json`。
-- **次数上限**（`server/harness/agent.mjs`）：每次截断都留下了内容的，一轮里最多接着写 6 次（第 7 次停）；什么也没留下的截断连续 3 次就停；到了这一轮的轮次上限也停。停下时这一轮以错误结束，话里写明已经写出的部分存在哪些代码块。
+- **截断时保住写了一半的参数**：provider 在停止原因是写到上限（OpenAI 兼容口 `length`、Anthropic `max_tokens`）时，把参数 JSON 解不开的那次工具调用交成 `tool_use_partial`（带收到的参数原文），不执行、不进历史；写完的那几次照常执行。Gemini 的工具调用整块到达，截断时没有半截调用可保。`promptcut-harness/partial-json.mjs` 从半截 JSON 里取出写到一半的那个字符串字段（最后一个、没收引号的；没有就取最长的字符串字段）和已经写完整的其它字段。
+- **存进代码块、让模型接着写**（`promptcut-harness/truncation.mjs`）：取出的字段存进新代码块 `cut_<工具名>_<序号>`，在下一条给模型的消息里写明：哪个工具、哪个参数、写到第几行、存在哪个块、结尾三行、其它参数原样是什么、怎么接着写（`code_cache_append` 从断开处接着写，一次几百行以内；写完以 `@code_cache:<块名>` 交给原工具）。半截的调用本身就是 `code_cache_append` / `code_cache_write` 且块名已写完的，写出的那一截直接接进（或写进）那个块。
+- **中途被掐断按截断处理**（2026-10-22 用户定）：流已经出过数据（文字、思考、工具调用）之后、正常收尾（OpenAI 兼容口 `finish_reason`、Anthropic `message_stop`、Gemini `finishReason`）之前结束的——流里来了 error 事件、连接被断、流读完却没有收尾标志——三家 provider 都以停止原因 `stream_cut` 收尾（`promptcut-harness/providers/base.mjs` 的 `STREAM_CUT`）：已经收到的文字照常交出，写完的工具调用照常执行，参数没写完（或一个字还没来）的那次交成 `tool_use_partial`；`agent.mjs` 把 `stream_cut` 和写到上限一样处理（存代码块、让模型接着写、次数上限相同）。还没收到任何数据就断的照旧是错误：先走 `retry-fetch.mjs` 的首块预读重试，重试用完由 `server/runners/api.mjs` 报错并标成可续跑（`retryable`，本机自动接着说一次）。
+- **按实测速度设单次上限**（`promptcut-harness/output-speed.mjs`）：单次上限 = min(模型上限, 配置上限, 速度 × 250 秒)，速度那一项不低于 4096。本机保存在 `ai.json` 同目录的 `output-speed.json`。
+- **次数上限**（`promptcut-harness/agent.mjs`）：每次截断都留下了内容的，一轮里最多接着写 6 次（第 7 次停）；什么也没留下的截断连续 3 次就停；到了这一轮的轮次上限也停。停下时这一轮以错误结束，话里写明已经写出的部分存在哪些代码块。
 - **代码块空间**（`server/tools/code-cache.mjs`）：六个工具 `code_cache_write`、`code_cache_append`、`code_cache_read`、`code_cache_replace`、`code_cache_list`、`code_cache_delete`。块名只用字母、数字、`_`、`.`、`-`，1～64 字，不以点开头。一块最多 2 MiB，一个项目最多 64 块、合计 16 MiB。
 - **引用**：任何工具的字符串参数**整个**写成 `@code_cache:<块名>` 时，`harness/agent.mjs` 在调用工具之前把它换成那一块的内容（嵌套的对象、数组里也换）；块不存在时这次调用报错、不执行。
 - **存在哪**：一个目录一个项目，一块一个文件 `<块名>.txt`，`index.json` 记每块的更新时间和最后写它的对话。本机位于编辑器工作目录 `exports/ai-workspace/code-cache/<项目 id>`（没绑项目时 `local`）。不进项目文档、不经文档服务，不进撤销历史。
 
 ## 汇报与对用户说话（2026-10-20 用户定，见 `../product/agent.md`「汇报」）
 
-- Agent 对用户说话用工具 `send_message`，`to` 填 `"user"`、`text` 写一两句话。它和多 Agent 协调的 `send_message`（发给别的 Agent 的对话 ID 或 `all`）是同一个工具。API 直连由 `server/harness/tools/index.mjs` 就地答，不经公告板；经 MCP 的 CLI 驱动由公告板 `server/agent/agent-board.mjs` 直接答「已显示」。
+- Agent 对用户说话用工具 `send_message`，`to` 填 `"user"`、`text` 写一两句话。它和多 Agent 协调的 `send_message`（发给别的 Agent 的对话 ID 或 `all`）是同一个工具。API 直连由 `promptcut-harness/tools/index.mjs` 就地答，不经公告板；经 MCP 的 CLI 驱动由公告板 `server/agent/agent-board.mjs` 直接答「已显示」。
 - harness 的执行规则在有 `send_message` 时让模型每组操作前后用它说一两句，和这一组的工具调用放在同一次回复里；收尾仍交 `final: true` 的 `report_progress`。说过话的一轮，最后一次空回复不算「没有返回」。
 - 气泡里显示的话由页面从这一轮的事件里取（`src/ai/userMessages.ts`）：这一轮调过 `send_message`（发给 user、没失败）的，按先后列出它们的 `text`；一次都没调的，用文字回复（相邻的文字并成一句）。两种不混：调过的那一轮，文字回复只在「显示思考」里看得到。
 - 操作区（`src/editor/right/chat/ActivityPanel.tsx`）一次显示一轮：缺省跟着最新一轮，点气泡切到那一轮，也能前后翻；内容是这一轮的操作图标、操作详细预览（写了项目的那一步能「撤销这步」）和阶段 / 本轮小结。只取这个对话的消息，不取文档服务项目频道上的工具事件。每一轮的回复各占一个气泡，紧跟在发起它的用户消息后面。

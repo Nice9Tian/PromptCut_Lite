@@ -1,5 +1,5 @@
 diff --git a/src/i18n/table.json b/src/i18n/table.json
-index 984f80713148fcd1027e7c19849cf60a0a3166af..41a3ef1245046366d4fb92d8383dd9ff418c68db 100644
+index 7f7418c4af2601eed8f3cb99f4c044a0526edd2c..eb4aba1f15ed64b360613762a1fc69d86d122e9b 100644
 --- a/src/i18n/table.json
 +++ b/src/i18n/table.json
 @@ -7539,6 +7539,10 @@

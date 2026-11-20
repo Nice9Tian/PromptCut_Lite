@@ -1,5 +1,5 @@
 diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
-index a72b52fcad161b1ac4df76d88c5df5a83f7f489c..0be28372589807cca1c37a3acf356a7c0c0e3286 100644
+index b55feb3f226d7decccda55bb15af9f45944f0392..c37e9a364a9903204e9a0c5560fe11b3950ebae9 100644
 --- a/CONTRIBUTING.md
 +++ b/CONTRIBUTING.md
 @@ -1,4 +1,4 @@
@@ -17,9 +17,9 @@ index a72b52fcad161b1ac4df76d88c5df5a83f7f489c..0be28372589807cca1c37a3acf356a7c
  
  | 区域 | 现在 |
  |---|---|
-@@ -26,10 +26,13 @@ English: [CONTRIBUTING.en.md](CONTRIBUTING.en.md)。
- | `src/mcp/`、`src/voice/` | 欢迎 PR |
- | `server/bakery/`、`server/harness/`、`server/runners/`、`server/vision/`、`server/voice/`、`server/render-queue/` | 欢迎 PR |
+@@ -27,10 +27,13 @@ English: [CONTRIBUTING.en.md](CONTRIBUTING.en.md)。
+ | `server/bakery/`、`server/runners/`、`server/vision/`、`server/voice/`、`server/render-queue/` | 欢迎 PR |
+ | Agent 循环、模型接入、skill、对话压缩 | 在单独的仓库 [promptcut-harness](https://github.com/Nice9Tian/promptcut-harness) 里（本仓库依赖的 npm 包），这部分的 PR 提到那边；这里的 `server/agent/`、`server/runners/` 只放把它接到 PromptCut 上的那一层 |
  | `python/`、`scripts/`、`docs/` | 欢迎 PR |
 -| `src/editor/`（含 `sync/`、`right/`）、`src/start/`、`src/ai/` | 欢迎 PR |
 -| `src/online/`、`src/mobile/`、`server/auth/`、`server/lan/`（局域网共享与手机界面） | 欢迎 PR |

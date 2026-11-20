@@ -1,5 +1,5 @@
 diff --git a/docs/semantics/README.md b/docs/semantics/README.md
-index 38a5056b136bd65215118e1a50198af215113120..d2a2b93d44a35faf324acd84b6ff5a2539f35bcc 100644
+index 1cbbe3c4411f0f125f24c9c9fd8e270d48e2ee52..7211b6cc05d9d26ba80013f998c3e417a9a9a251 100644
 --- a/docs/semantics/README.md
 +++ b/docs/semantics/README.md
 @@ -17,7 +17,7 @@
@@ -13,7 +13,7 @@ index 38a5056b136bd65215118e1a50198af215113120..d2a2b93d44a35faf324acd84b6ff5a25
  - `product-purpose.md`、`architecture.md` 是三级之上的总纲，改它们按二级办。
 @@ -36,7 +36,7 @@
  | 编辑界面（`src/editor/`） | `user-workflow.md`、`workflow/editing.md` |
- | Agent 与工具（`src/ai/`、`src/mcp/`、`server/tools/`、`server/runners/`、`server/harness/`） | `product/agent.md`、`workflow/production.md`；改实现再读 `mechanism/agent.md` |
+ | Agent 与工具（`src/ai/`、`src/mcp/`、`server/tools/`、`server/runners/`，以及 npm 包 `promptcut-harness`：Agent 循环与模型接入，在它自己的仓库里） | `product/agent.md`、`workflow/production.md`；改实现再读 `mechanism/agent.md` |
  | 素材导入、感知类工具（`server/vite-plugin-media.ts` 等、`python/`） | `workflow/materials.md`、`product/asset-service.md`；改实现再读 `mechanism/asset-service.md` |
 -| 文档服务、素材服务、云端、协作 | `product/document-service.md`、`product/asset-service.md`、`product/hosting.md`；改实现再读同名的 `mechanism/` |
 +| 文档服务、素材服务 | `product/document-service.md`、`product/asset-service.md`；改实现再读同名的 `mechanism/` |

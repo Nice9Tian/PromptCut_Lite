@@ -1,5 +1,5 @@
 diff --git a/server/vite-plugin-ai.ts b/server/vite-plugin-ai.ts
-index bf237d197ebd526ee14616ef392baef1d39c7c5d..c7900f158915821542b7b6030abb44cac07a68f2 100644
+index ac77f0669d4e197e71959526a0a217bda22c496e..096dcc22b38fcf55ebf1497aeb6f04a1ac6403aa 100644
 --- a/server/vite-plugin-ai.ts
 +++ b/server/vite-plugin-ai.ts
 @@ -6,7 +6,7 @@ import os from 'node:os';
